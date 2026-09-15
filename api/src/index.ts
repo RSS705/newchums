@@ -64,7 +64,7 @@ import {
   hardDeleteUser,
 } from "./lib/adminHardDelete";
 import { KUDOS_TAGS, KUDOS_MAX_PER_PLAN, KUDOS_WINDOW_MS, isKudosTag, kudosTagInfo } from "./lib/kudos";
-import { MTG_SPECIALIZATION, MTG_RARITIES, type MtgSetRow, easternHour, mtgPhase, mtgTimeline, syncScryfallSet } from "./lib/mtg";
+import { MTG_SPECIALIZATION, MTG_RARITIES, MTG_SLOTS_PER_RARITY, type MtgRarity, type MtgSetRow, type ValidatedPick, easternHour, mtgPhase, mtgPicksOpen, mtgTimeline, syncScryfallSet, validateEntryPicks } from "./lib/mtg";
 import { checkDbRateLimit, isDbRateLimited, recordDbRateEvent } from "./lib/dbRateLimit";
 import {
   generateOtpCode,
@@ -1049,6 +1049,7 @@ async function mtgSetPayload(sql: ReturnType<typeof getSql>, set: MtgSetRow) {
     galleryComplete: !!set.gallery_complete_at && now.getTime() >= new Date(set.gallery_complete_at).getTime(),
     lastCardSyncAt: lastSync[0]?.ran_at ?? null,
     scoringVersion: set.scoring_version,
+    picksOpen: mtgPicksOpen(set, now),
   };
 }
 
@@ -1078,16 +1079,35 @@ app.get("/mtg/sets/:code", async (c) => {
   }
 });
 
+/** Card fields the pick screens use, shared by the pool and entry routes. */
+function mapMtgCard(r: Record<string, unknown>) {
+  return {
+    id: r.id, scryfallId: r.scryfall_id, arenaId: r.arena_id, name: r.name, rarity: r.rarity,
+    collectorNumber: r.collector_number, layout: r.layout, colors: r.colors, manaCost: r.mana_cost,
+    manaValue: r.mana_value == null ? null : Number(r.mana_value), typeLine: r.type_line, oracleText: r.oracle_text,
+    imageNormal: r.image_normal, imageLarge: r.image_large, imageBackNormal: r.image_back_normal, imageBackLarge: r.image_back_large,
+    imageStatus: r.image_status, previewedAt: r.previewed_at, previewSource: r.preview_source, previewSourceUri: r.preview_source_uri,
+    firstSeenAt: r.first_seen_at,
+  };
+}
+
 /** GET /mtg/sets/:code/cards?rarity=common, the pool at one rarity (or all),
- *  in collector order. Public: card data is Scryfall's, not ours. */
+ *  in collector order. Public: card data is Scryfall's, not ours. A signed-in
+ *  caller also gets `isNew` on each card: first seen after they last opened
+ *  that rarity. On a first visit nothing is new, or every card would be. */
 app.get("/mtg/sets/:code/cards", async (c) => {
   const sql = getSql(c.env);
   const rarity = (c.req.query("rarity") ?? "").toLowerCase();
-  if (rarity && !MTG_RARITIES.includes(rarity as (typeof MTG_RARITIES)[number]))
+  if (rarity && !MTG_RARITIES.includes(rarity as MtgRarity))
     return c.json({ ok: false, error: "VALIDATION", message: "Unknown rarity" }, 400);
   try {
     const set = await loadMtgSet(sql, c.req.param("code"));
     if (!set) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    const payload = await requireAuth(c);
+    let userId: string | null = null;
+    if (payload?.email) {
+      try { userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name); } catch { userId = null; }
+    }
     const rows = (await sql`
       SELECT id, scryfall_id, arena_id, name, rarity, collector_number, collector_sort, layout, colors, mana_cost, mana_value,
              type_line, oracle_text, image_normal, image_large, image_back_normal, image_back_large, image_status,
@@ -1097,19 +1117,255 @@ app.get("/mtg/sets/:code/cards", async (c) => {
         AND (${rarity === ""} OR rarity = ${rarity})
       ORDER BY collector_sort ASC, collector_number ASC
     `) as Record<string, unknown>[];
+    const reviewed = new Map<string, number>();
+    if (userId) {
+      const rv = (await sql`
+        SELECT rarity, last_reviewed_at FROM newchums.mtg_rarity_reviews WHERE user_id = ${userId} AND set_id = ${set.id}
+      `) as { rarity: string; last_reviewed_at: string }[];
+      for (const r of rv) reviewed.set(r.rarity, new Date(r.last_reviewed_at).getTime());
+    }
     return c.json({
       ok: true,
-      cards: rows.map((r) => ({
-        id: r.id, scryfallId: r.scryfall_id, arenaId: r.arena_id, name: r.name, rarity: r.rarity,
-        collectorNumber: r.collector_number, layout: r.layout, colors: r.colors, manaCost: r.mana_cost,
-        manaValue: r.mana_value == null ? null : Number(r.mana_value), typeLine: r.type_line, oracleText: r.oracle_text,
-        imageNormal: r.image_normal, imageLarge: r.image_large, imageBackNormal: r.image_back_normal, imageBackLarge: r.image_back_large,
-        imageStatus: r.image_status, previewedAt: r.previewed_at, previewSource: r.preview_source, previewSourceUri: r.preview_source_uri,
-        firstSeenAt: r.first_seen_at,
-      })),
+      cards: rows.map((r) => {
+        const card = mapMtgCard(r);
+        if (!userId) return card;
+        const seen = reviewed.get(String(r.rarity));
+        // Date objects from the driver: String() would drop the milliseconds.
+        return { ...card, isNew: seen !== undefined && new Date(r.first_seen_at as string | Date).getTime() > seen };
+      }),
     });
   } catch (err) {
     console.error("[GET /mtg/sets/:code/cards]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** POST /mtg/sets/:code/reviewed { rarity }: the player just opened this
+ *  rarity. NEW ribbons shown on this visit clear on the next. */
+app.post("/mtg/sets/:code/reviewed", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email) return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  let body: Record<string, unknown>;
+  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
+  const rarity = String(body.rarity ?? "");
+  if (!MTG_RARITIES.includes(rarity as MtgRarity)) return c.json({ ok: false, error: "VALIDATION", message: "Unknown rarity" }, 400);
+  const sql = getSql(c.env);
+  try {
+    const set = await loadMtgSet(sql, c.req.param("code"));
+    if (!set) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+    await sql`
+      INSERT INTO newchums.mtg_rarity_reviews (user_id, set_id, rarity, last_reviewed_at)
+      VALUES (${userId}, ${set.id}, ${rarity}, now())
+      ON CONFLICT (user_id, set_id, rarity) DO UPDATE SET last_reviewed_at = now()
+    `;
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("[POST /mtg/sets/:code/reviewed]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/**
+ * Replace an entry's picks in one transaction. `playerChange` is true for a
+ * save by the player (it moves updated_at, the tie-break input) and false
+ * for housekeeping such as dropping a card that left the pool.
+ * completed_at records when the entry most recently became complete: kept
+ * while it stays at twenty, cleared when it drops below.
+ */
+async function writeMtgPicks(sql: ReturnType<typeof getSql>, entryId: string, picks: ValidatedPick[], playerChange: boolean) {
+  const complete = picks.length === MTG_RARITIES.length * MTG_SLOTS_PER_RARITY;
+  const queries = [sql`DELETE FROM newchums.mtg_picks WHERE entry_id = ${entryId}`];
+  if (picks.length > 0) {
+    queries.push(sql`
+      INSERT INTO newchums.mtg_picks (entry_id, rarity, slot, card_id, note)
+      SELECT ${entryId}::uuid, x.rarity, x.slot, x.card_id, x.note
+      FROM UNNEST(
+        ${picks.map((p) => p.rarity)}::text[],
+        ${picks.map((p) => p.slot)}::smallint[],
+        ${picks.map((p) => p.cardId)}::uuid[],
+        ${picks.map((p) => p.note)}::text[]
+      ) AS x(rarity, slot, card_id, note)
+    `);
+  }
+  queries.push(playerChange
+    ? sql`UPDATE newchums.mtg_entries SET updated_at = now(), completed_at = CASE WHEN ${complete} THEN COALESCE(completed_at, now()) ELSE NULL END WHERE id = ${entryId}`
+    : sql`UPDATE newchums.mtg_entries SET completed_at = CASE WHEN ${complete} THEN completed_at ELSE NULL END WHERE id = ${entryId}`);
+  await sql.transaction(queries);
+}
+
+/** GET /mtg/sets/:code/entry, the caller's own entry. Other players' picks
+ *  never leave the server before the lock (spec 12.6), so this route only
+ *  ever reads the caller's row. Before the lock, a pick whose card has left
+ *  the pool is removed and the rest renumbered, and the response names it
+ *  once so the player knows. */
+app.get("/mtg/sets/:code/entry", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email) return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  const sql = getSql(c.env);
+  try {
+    const set = await loadMtgSet(sql, c.req.param("code"));
+    if (!set) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+    const summary = await mtgSetPayload(sql, set);
+    const now = new Date();
+    const locked = now.getTime() >= new Date(set.lock_at).getTime();
+    const setOut = {
+      code: set.code, name: set.name, phase: summary.phase, lockAt: set.lock_at, locked,
+      picksOpen: mtgPicksOpen(set, now), pool: summary.pool,
+    };
+    const entries = (await sql`
+      SELECT id, updated_at, completed_at FROM newchums.mtg_entries WHERE user_id = ${userId} AND set_id = ${set.id} LIMIT 1
+    `) as { id: string; updated_at: string; completed_at: string | null }[];
+    const entry = entries[0];
+    if (!entry) return c.json({ ok: true, set: setOut, entry: null });
+
+    const rows = (await sql`
+      SELECT p.rarity AS pick_rarity, p.slot, p.note, (c.in_pool AND NOT c.voided) AS valid,
+             c.id, c.scryfall_id, c.arena_id, c.name, c.rarity, c.collector_number, c.layout, c.colors, c.mana_cost, c.mana_value,
+             c.type_line, c.oracle_text, c.image_normal, c.image_large, c.image_back_normal, c.image_back_large, c.image_status,
+             c.previewed_at, c.preview_source, c.preview_source_uri, c.first_seen_at
+      FROM newchums.mtg_picks p
+      JOIN newchums.mtg_cards c ON c.id = p.card_id
+      WHERE p.entry_id = ${entry.id}
+      ORDER BY p.rarity, p.slot
+    `) as Record<string, unknown>[];
+
+    const dropped: { name: string; rarity: string }[] = [];
+    const keep = locked ? rows : rows.filter((r) => {
+      if (r.valid === true) return true;
+      dropped.push({ name: String(r.name), rarity: String(r.pick_rarity) });
+      return false;
+    });
+    if (dropped.length > 0) {
+      const renumbered: ValidatedPick[] = [];
+      for (const rarity of MTG_RARITIES) {
+        keep.filter((r) => r.pick_rarity === rarity).forEach((r, i) => {
+          renumbered.push({ rarity, slot: i + 1, cardId: String(r.id), note: (r.note as string | null) ?? null });
+        });
+      }
+      await writeMtgPicks(sql, entry.id, renumbered, false);
+    }
+
+    const picks: Record<string, Array<{ slot: number; note: string | null; card: ReturnType<typeof mapMtgCard> }>> = { common: [], uncommon: [], rare: [], mythic: [] };
+    for (const rarity of MTG_RARITIES) {
+      keep.filter((r) => r.pick_rarity === rarity).forEach((r, i) => {
+        picks[rarity].push({ slot: dropped.length > 0 ? i + 1 : Number(r.slot), note: (r.note as string | null) ?? null, card: mapMtgCard(r) });
+      });
+    }
+    const fresh = dropped.length > 0
+      ? ((await sql`SELECT updated_at, completed_at FROM newchums.mtg_entries WHERE id = ${entry.id}`) as { updated_at: string; completed_at: string | null }[])[0]
+      : entry;
+    return c.json({
+      ok: true,
+      set: setOut,
+      entry: { updatedAt: fresh.updated_at, completedAt: fresh.completed_at, picks, dropped },
+    });
+  } catch (err) {
+    console.error("[GET /mtg/sets/:code/entry]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** PUT /mtg/sets/:code/entry { picks: { common: [{ cardId, slot, note }], ... } }
+ *  Full replace of the caller's entry. The server clock is the lock: 423
+ *  after lock_at, whatever the page thinks. 409 before picks open. */
+app.put("/mtg/sets/:code/entry", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email) return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  let body: Record<string, unknown>;
+  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
+  const sql = getSql(c.env);
+  try {
+    const set = await loadMtgSet(sql, c.req.param("code"));
+    if (!set) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    const now = new Date();
+    if (set.status !== "active" || now.getTime() >= new Date(set.lock_at).getTime())
+      return c.json({ ok: false, error: "LOCKED", message: "Picks are locked" }, 423);
+    if (!mtgPicksOpen(set, now))
+      return c.json({ ok: false, error: "NOT_OPEN", message: "Picks aren't open yet" }, 409);
+
+    const poolRows = (await sql`
+      SELECT id, rarity FROM newchums.mtg_cards WHERE set_id = ${set.id} AND in_pool = true AND voided = false
+    `) as { id: string; rarity: MtgRarity }[];
+    const validation = validateEntryPicks(body.picks, new Map(poolRows.map((r) => [r.id, r.rarity])));
+    if (!validation.ok) return c.json({ ok: false, error: "VALIDATION", message: validation.message }, 400);
+
+    const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
+    const entryRows = (await sql`
+      INSERT INTO newchums.mtg_entries (user_id, set_id) VALUES (${userId}, ${set.id})
+      ON CONFLICT (user_id, set_id) DO UPDATE SET user_id = EXCLUDED.user_id
+      RETURNING id
+    `) as { id: string }[];
+    const entryId = entryRows[0].id;
+    await writeMtgPicks(sql, entryId, validation.picks, true);
+    const after = (await sql`SELECT updated_at, completed_at FROM newchums.mtg_entries WHERE id = ${entryId}`) as { updated_at: string; completed_at: string | null }[];
+    const picked = validation.picks.length;
+    return c.json({
+      ok: true,
+      entry: { updatedAt: after[0]?.updated_at, completedAt: after[0]?.completed_at ?? null, picked, complete: picked === MTG_RARITIES.length * MTG_SLOTS_PER_RARITY },
+    });
+  } catch (err) {
+    console.error("[PUT /mtg/sets/:code/entry]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** GET /mtg/communities/:id/progress, who in the group has finished their
+ *  picks (spec rule 4). Counts only, never cards. Members of that challenge
+ *  community and super admins. */
+app.get("/mtg/communities/:id/progress", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email) return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  const communityId = c.req.param("id");
+  const sql = getSql(c.env);
+  try {
+    const viewerRows = (await sql`SELECT id, role FROM newchums.users WHERE email = ${payload.email} LIMIT 1`) as { id: string; role: string | null }[];
+    const viewer = viewerRows[0];
+    if (!viewer) return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+    const communityRows = (await sql`
+      SELECT id, specialization, COALESCE(status, 'active') AS status FROM newchums.communities WHERE id = ${communityId} LIMIT 1
+    `) as { id: string; specialization: string | null; status: string }[];
+    const community = communityRows[0];
+    if (!community || community.specialization !== MTG_SPECIALIZATION || community.status !== "active")
+      return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    if (viewer.role !== "super_admin") {
+      const member = (await sql`
+        SELECT 1 FROM newchums.community_members WHERE community_id = ${communityId} AND user_id = ${viewer.id} AND status = 'active' LIMIT 1
+      `) as unknown[];
+      if (member.length === 0) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+    }
+    const set = await loadMtgSet(sql, null);
+    if (!set) return c.json({ ok: true, set: null, members: [] });
+    const rows = (await sql`
+      SELECT u.id, u.name, u.username, u.avatar_key, u.avatar_updated_at,
+             COALESCE((
+               SELECT COUNT(*)::int FROM newchums.mtg_picks p
+               JOIN newchums.mtg_entries e ON e.id = p.entry_id
+               WHERE e.user_id = u.id AND e.set_id = ${set.id}
+             ), 0) AS picked
+      FROM newchums.community_members cm
+      JOIN newchums.users u ON u.id = cm.user_id
+      WHERE cm.community_id = ${communityId} AND cm.status = 'active'
+      ORDER BY picked DESC, LOWER(COALESCE(u.name, u.username, '')) ASC
+      LIMIT 500
+    `) as { id: string; name: string | null; username: string | null; avatar_key: string | null; avatar_updated_at: string | null; picked: number }[];
+    const full = MTG_RARITIES.length * MTG_SLOTS_PER_RARITY;
+    return c.json({
+      ok: true,
+      set: { code: set.code },
+      members: rows.map((r) => ({
+        userId: r.id,
+        name: r.name,
+        username: r.username,
+        avatarUrl: buildAvatarUrl(r.id, r.avatar_key, r.avatar_updated_at, c.env.MEDIA_BUCKET),
+        picked: r.picked,
+        complete: r.picked >= full,
+        isViewer: r.id === viewer.id,
+      })),
+    });
+  } catch (err) {
+    console.error("[GET /mtg/communities/:id/progress]", err);
     return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
   }
 });

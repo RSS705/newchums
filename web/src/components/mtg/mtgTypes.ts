@@ -29,6 +29,8 @@ export type MtgSetPayload = {
   galleryComplete: boolean;
   lastCardSyncAt: string | null;
   scoringVersion: number;
+  /** True from the first preview day until the lock (server rule). */
+  picksOpen: boolean;
 };
 
 export type MtgCard = {
@@ -80,3 +82,51 @@ export function countdown(iso: string, nowMs: number): string | null {
   if (m > 0) return `${m}m`;
   return "under a minute";
 }
+
+// ── Picks (Batch 2) ──────────────────────────────────────────────────────────
+
+export const MTG_NOTE_MAX = 140;
+export const MTG_SLOTS_PER_RARITY = 5;
+export const MTG_TOTAL_PICKS = 20;
+/** Points multiplier by slot, #1 first (spec 6.3). */
+export const SLOT_MULTIPLIERS = [1.5, 1.25, 1, 0.75, 0.5] as const;
+export const RARITY_SINGULAR: Record<MtgRarity, string> = { common: "common", uncommon: "uncommon", rare: "rare", mythic: "mythic" };
+export const RARITY_PLURAL: Record<MtgRarity, string> = { common: "commons", uncommon: "uncommons", rare: "rares", mythic: "mythics" };
+
+/** A card as served to a signed-in player: NEW when it was first seen after
+ *  they last opened this rarity. */
+export type MtgCardWithNew = MtgCard & { isNew?: boolean };
+
+export type MtgEntryPick = { slot: number; note: string | null; card: MtgCard };
+
+/** GET /mtg/sets/:code/entry. The caller's own entry only: other players'
+ *  picks never leave the server before the lock. */
+export type MtgEntryPayload = {
+  set: {
+    code: string;
+    name: string;
+    phase: MtgPhase;
+    lockAt: string;
+    locked: boolean;
+    picksOpen: boolean;
+    pool: Record<MtgRarity, number>;
+  };
+  entry: null | {
+    updatedAt: string;
+    completedAt: string | null;
+    picks: Record<MtgRarity, MtgEntryPick[]>;
+    /** Picks whose card has since left the pool; shown once, then gone. */
+    dropped: { name: string; rarity: MtgRarity }[];
+  };
+};
+
+/** GET /mtg/communities/:id/progress. Counts only, never cards. */
+export type MtgProgressMember = {
+  userId: string;
+  name: string | null;
+  username: string | null;
+  avatarUrl: string | null;
+  picked: number;
+  complete: boolean;
+  isViewer: boolean;
+};

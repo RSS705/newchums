@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import Avatar from "@mui/material/Avatar";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Chip from "@mui/material/Chip";
@@ -8,12 +10,17 @@ import Stack from "@mui/material/Stack";
 import Tab from "@mui/material/Tab";
 import Tabs from "@mui/material/Tabs";
 import Typography from "@mui/material/Typography";
-import StyleRoundedIcon from "@mui/icons-material/StyleRounded";
+import CheckCircleRoundedIcon from "@mui/icons-material/CheckCircleRounded";
+import GroupsRoundedIcon from "@mui/icons-material/GroupsRounded";
 import LockClockOutlinedIcon from "@mui/icons-material/LockClockOutlined";
+import StyleRoundedIcon from "@mui/icons-material/StyleRounded";
 import { AppCard } from "@/components/ui";
-import { apiFetch } from "@/lib/apiClient";
+import { apiFetch, getAvatarBaseUrl } from "@/lib/apiClient";
 import SeasonTimeline from "./SeasonTimeline";
-import { MTG_ATTRIBUTION, MTG_RARITIES, RARITY_LABEL, type MtgCard, type MtgRarity, type MtgSetPayload, countdown, formatWhen } from "./mtgTypes";
+import {
+  MTG_ATTRIBUTION, MTG_RARITIES, MTG_TOTAL_PICKS, RARITY_LABEL,
+  type MtgCard, type MtgEntryPayload, type MtgProgressMember, type MtgRarity, type MtgSetPayload, countdown, formatWhen,
+} from "./mtgTypes";
 
 type Props = {
   communityId: string;
@@ -24,27 +31,28 @@ type Props = {
 };
 
 const PHASE_COPY: Record<MtgSetPayload["phase"], { title: string; body: string }> = {
-  upcoming: { title: "Next season is on the way", body: "Dates are set. Cards start appearing when previews begin." },
-  previews: { title: "Previews are running", body: "New cards land here every day as they are revealed. Picks open once the full card list is out." },
+  upcoming: { title: "Next season is on the way", body: "Dates are set. Cards start appearing, and picks open, when previews begin." },
+  previews: { title: "Previews are running", body: "New cards land every day as they're revealed. You can start picking now and change anything until the lock." },
   open: { title: "Picks are open", body: "Pick the five cards you think will post the highest win rate at each rarity, in order. Everything saves as you go." },
-  locked: { title: "Picks are locked", body: "Entries are sealed and revealed to the group. Standings start the morning after the Arena launch." },
+  locked: { title: "Picks are locked", body: "Entries are sealed. Standings start the morning after the Arena launch." },
   live: { title: "The season is live", body: "Standings update every morning from 17Lands Premier Draft data." },
   final: { title: "Season complete", body: "The final standings are in and badges have been awarded." },
 };
 
 /**
  * The challenge view that replaces a specialized community's body (the
- * community header stays above it). Batch 1: phase card with the lock
- * countdown, the pool as it fills during previews, the season timeline and
- * a read-only card grid. Picks, reveal and standings arrive in later
- * batches and slot into the same page.
+ * community header stays above it): the phase card with the lock countdown
+ * and the picks button, who in the group has finished (counts only, never
+ * cards), the pool as it fills, and the season timeline.
  */
-export default function MtgChallengeHome({ isMember, isAuthenticated }: Props) {
+export default function MtgChallengeHome({ communityId, slug, isMember, isAuthenticated }: Props) {
   const [set, setSet] = useState<MtgSetPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [rarity, setRarity] = useState<MtgRarity>("common");
   const [cards, setCards] = useState<Record<string, MtgCard[]>>({});
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const [myPicked, setMyPicked] = useState<number | null>(null);
+  const [progress, setProgress] = useState<MtgProgressMember[] | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -61,6 +69,27 @@ export default function MtgChallengeHome({ isMember, isAuthenticated }: Props) {
     const t = setInterval(() => setNowMs(Date.now()), 60000);
     return () => clearInterval(t);
   }, []);
+
+  // The viewer's own progress, for the button label, and the group's.
+  const setCode = set?.code ?? null;
+  useEffect(() => {
+    if (!setCode || !isMember || !isAuthenticated) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const [eRes, pRes] = await Promise.all([
+          apiFetch(`/mtg/sets/${setCode}/entry`, { auth: true }),
+          apiFetch(`/mtg/communities/${communityId}/progress`, { auth: true }),
+        ]);
+        const eData = (await eRes.json()) as { ok?: boolean } & MtgEntryPayload;
+        const pData = (await pRes.json()) as { ok?: boolean; members?: MtgProgressMember[] };
+        if (cancelled) return;
+        if (eData.ok) setMyPicked(eData.entry ? MTG_RARITIES.reduce((n, r) => n + (eData.entry?.picks[r]?.length ?? 0), 0) : 0);
+        if (pData.ok && Array.isArray(pData.members)) setProgress(pData.members);
+      } catch { /* the page still works without progress */ }
+    })();
+    return () => { cancelled = true; };
+  }, [setCode, communityId, isMember, isAuthenticated]);
 
   useEffect(() => {
     if (!set || cards[rarity]) return;
@@ -86,6 +115,33 @@ export default function MtgChallengeHome({ isMember, isAuthenticated }: Props) {
 
   const copy = PHASE_COPY[set.phase];
   const list = cards[rarity];
+  const picksHref = `/communities/${slug}/picks`;
+  const afterLock = set.phase === "locked" || set.phase === "live" || set.phase === "final";
+
+  let cta: React.ReactNode = null;
+  if (set.picksOpen) {
+    cta = isMember ? (
+      <Button component={Link} href={picksHref} variant="contained" size="large" sx={{ mt: 2, textTransform: "none", fontWeight: 700, borderRadius: 2.5, boxShadow: "none", width: { xs: "100%", sm: "auto" } }}>
+        {myPicked ? `Edit your picks (${myPicked} of ${MTG_TOTAL_PICKS})` : "Make your picks"}
+      </Button>
+    ) : (
+      <Button variant="contained" disabled sx={{ mt: 2, textTransform: "none", fontWeight: 700, borderRadius: 2.5, boxShadow: "none" }}>
+        Join to make your picks
+      </Button>
+    );
+  } else if (afterLock && isMember && myPicked) {
+    cta = (
+      <Button component={Link} href={picksHref} variant="outlined" sx={{ mt: 2, textTransform: "none", fontWeight: 700, borderRadius: 2.5 }}>
+        View your picks
+      </Button>
+    );
+  } else if (set.phase === "upcoming") {
+    cta = (
+      <Button variant="contained" disabled sx={{ mt: 2, textTransform: "none", fontWeight: 700, borderRadius: 2.5, boxShadow: "none" }}>
+        {set.dates.previewsStartAt ? `Picks open ${formatWhen(set.dates.previewsStartAt)}` : "Picks open soon"}
+      </Button>
+    );
+  }
 
   return (
     <Stack spacing={{ xs: 2, sm: 2.5 }}>
@@ -100,7 +156,7 @@ export default function MtgChallengeHome({ isMember, isAuthenticated }: Props) {
             <Typography component="h2" sx={{ fontWeight: 700, fontSize: { xs: "1.25rem", sm: "1.375rem" }, lineHeight: 1.2 }}>{copy.title}</Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, lineHeight: 1.55 }}>{copy.body}</Typography>
           </Box>
-          {(set.phase === "previews" || set.phase === "open" || set.phase === "upcoming") && (
+          {!afterLock && set.phase !== "final" && (
             <Box
               sx={{
                 flexShrink: 0, px: 2, py: 1.5, borderRadius: 2.5, border: "1px solid", borderColor: "divider",
@@ -117,17 +173,50 @@ export default function MtgChallengeHome({ isMember, isAuthenticated }: Props) {
             </Box>
           )}
         </Stack>
-        {(set.phase === "previews" || set.phase === "upcoming") && (
-          <Button variant="contained" disabled sx={{ mt: 2, textTransform: "none", fontWeight: 700, borderRadius: 2.5, boxShadow: "none" }}>
-            {set.dates.picksOpenAt ? `Picks open ${formatWhen(set.dates.picksOpenAt)}` : "Picks open soon"}
-          </Button>
-        )}
-        {set.phase === "open" && (
-          <Button variant="contained" disabled sx={{ mt: 2, textTransform: "none", fontWeight: 700, borderRadius: 2.5, boxShadow: "none" }}>
-            {isMember ? "Make your picks (coming in the next update)" : "Join to make your picks"}
-          </Button>
-        )}
+        {cta}
       </AppCard>
+
+      {/* Who has finished. Counts only: nobody's cards leave the server
+          before the lock. */}
+      {isMember && progress && progress.length > 0 && (
+        <AppCard>
+          <Stack direction="row" spacing={1.25} alignItems="center" sx={{ mb: 1.5 }}>
+            <Box sx={{ width: 32, height: 32, borderRadius: "50%", bgcolor: "primary.light", color: "primary.dark", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <GroupsRoundedIcon sx={{ fontSize: 18 }} />
+            </Box>
+            <Box sx={{ minWidth: 0 }}>
+              <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem", lineHeight: 1.2 }}>Who&apos;s finished</Typography>
+              <Typography variant="caption" color="text.secondary">
+                {progress.filter((m) => m.complete).length} of {progress.length} done. Picks stay sealed until the lock.
+              </Typography>
+            </Box>
+          </Stack>
+          <Stack spacing={0.75}>
+            {progress.map((m) => (
+              <Stack key={m.userId} direction="row" spacing={1.25} alignItems="center" sx={{ py: 0.5 }}>
+                <Avatar src={m.avatarUrl ? `${getAvatarBaseUrl()}${m.avatarUrl}` : undefined} sx={{ width: 32, height: 32, fontSize: "0.875rem", bgcolor: "grey.300" }}>
+                  {(m.name || m.username || "?").charAt(0).toUpperCase()}
+                </Avatar>
+                <Box sx={{ minWidth: 0, flex: 1 }}>
+                  <Typography variant="body2" fontWeight={600} sx={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {m.isViewer ? "You" : m.name || (m.username ? `@${m.username}` : "Member")}
+                  </Typography>
+                </Box>
+                {m.complete ? (
+                  <Stack direction="row" spacing={0.5} alignItems="center" sx={{ color: "success.main", flexShrink: 0 }}>
+                    <CheckCircleRoundedIcon sx={{ fontSize: 18 }} />
+                    <Typography variant="caption" fontWeight={700} sx={{ color: "inherit" }}>Done</Typography>
+                  </Stack>
+                ) : (
+                  <Typography variant="caption" color="text.secondary" fontWeight={600} sx={{ flexShrink: 0 }}>
+                    {m.picked === 0 ? "Not started" : `${m.picked} of ${MTG_TOTAL_PICKS}`}
+                  </Typography>
+                )}
+              </Stack>
+            ))}
+          </Stack>
+        </AppCard>
+      )}
 
       {/* Pool as it fills during previews. */}
       <AppCard>

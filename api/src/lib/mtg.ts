@@ -248,3 +248,99 @@ export async function syncScryfallSet(
   }
   return summary;
 }
+
+// ── Picks (Batch 2) ──────────────────────────────────────────────────────────
+
+/** Receipts note limit, in characters (spec 10.3). */
+export const MTG_NOTE_MAX = 140;
+/** Picks per rarity; four rarities make a twenty-card entry. */
+export const MTG_SLOTS_PER_RARITY = 5;
+
+/**
+ * Whether entries can change right now. Picks open when previews start,
+ * earlier than the spec's full-gallery date, so a group can start arguing
+ * as cards are revealed; a pick whose card later leaves the pool is dropped
+ * with a notice. They close at the lock, and a set that is no longer active
+ * never accepts changes.
+ */
+export function mtgPicksOpen(
+  // The Neon driver hands timestamptz columns back as Date objects, and
+  // tests pass ISO strings, so accept both.
+  set: { status: string; lock_at: string | Date; previews_start_at: string | Date | null; picks_open_at: string | Date | null },
+  now: Date = new Date(),
+): boolean {
+  if (set.status !== "active") return false;
+  const t = now.getTime();
+  if (t >= new Date(set.lock_at).getTime()) return false;
+  const starts = [set.previews_start_at, set.picks_open_at]
+    .map((v) => (v ? new Date(v).getTime() : Number.NaN))
+    .filter((ms) => Number.isFinite(ms));
+  return starts.length === 0 || t >= Math.min(...starts);
+}
+
+export type ValidatedPick = { rarity: MtgRarity; slot: number; cardId: string; note: string | null };
+export type EntryValidation = { ok: true; picks: ValidatedPick[] } | { ok: false; message: string };
+
+/**
+ * Normalise a Receipts note: control characters become spaces, runs of
+ * whitespace collapse, and an empty note is null. Returns undefined when the
+ * value is not text at all, so the caller can reject it.
+ */
+export function cleanPickNote(raw: unknown): string | null | undefined {
+  if (raw === undefined || raw === null) return null;
+  if (typeof raw !== "string") return undefined;
+  // eslint-disable-next-line no-control-regex
+  const cleaned = raw.replace(/[\x00-\x1F\x7F]/g, " ").replace(/\s+/g, " ").trim();
+  return cleaned.length > 0 ? cleaned : null;
+}
+
+/**
+ * Validate a full-replace entry against the set's pool (spec 12.6): at most
+ * five picks per rarity, slots 1 to 5 and unique within a rarity, every card
+ * in the pool at the rarity it is listed under, no card twice, and notes of
+ * at most 140 characters. `pool` maps card id to rarity for cards that are in
+ * the pool and not voided.
+ */
+export function validateEntryPicks(input: unknown, pool: Map<string, MtgRarity>): EntryValidation {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return { ok: false, message: "Picks must be grouped by rarity" };
+  }
+  const record = input as Record<string, unknown>;
+  for (const key of Object.keys(record)) {
+    if (!(MTG_RARITIES as readonly string[]).includes(key)) return { ok: false, message: `Unknown rarity "${key}"` };
+  }
+  const picks: ValidatedPick[] = [];
+  const seenCards = new Set<string>();
+  for (const rarity of MTG_RARITIES) {
+    const list = record[rarity];
+    if (list === undefined || list === null) continue;
+    if (!Array.isArray(list)) return { ok: false, message: `The ${rarity} picks must be a list` };
+    if (list.length > MTG_SLOTS_PER_RARITY) return { ok: false, message: `At most ${MTG_SLOTS_PER_RARITY} ${rarity} picks` };
+    const seenSlots = new Set<number>();
+    for (const item of list) {
+      if (!item || typeof item !== "object") return { ok: false, message: "Each pick needs a card and a slot" };
+      const { cardId, slot, note } = item as Record<string, unknown>;
+      if (typeof cardId !== "string" || cardId.length === 0) return { ok: false, message: "Each pick needs a card" };
+      if (typeof slot !== "number" || !Number.isInteger(slot) || slot < 1 || slot > MTG_SLOTS_PER_RARITY) {
+        return { ok: false, message: `Slots run from 1 to ${MTG_SLOTS_PER_RARITY}` };
+      }
+      if (seenSlots.has(slot)) return { ok: false, message: `Two ${rarity} picks share slot ${slot}` };
+      seenSlots.add(slot);
+      const cardRarity = pool.get(cardId);
+      if (!cardRarity) return { ok: false, message: "One of those cards is no longer in the pool" };
+      if (cardRarity !== rarity) return { ok: false, message: `That card is a ${cardRarity}, not a ${rarity}` };
+      if (seenCards.has(cardId)) return { ok: false, message: "A card can only be picked once" };
+      seenCards.add(cardId);
+      const cleaned = cleanPickNote(note);
+      if (cleaned === undefined) return { ok: false, message: "Receipts notes must be text" };
+      // Count code points, the way Postgres char_length does.
+      if (cleaned !== null && [...cleaned].length > MTG_NOTE_MAX) {
+        return { ok: false, message: `Receipts notes are ${MTG_NOTE_MAX} characters at most` };
+      }
+      picks.push({ rarity, slot, cardId, note: cleaned });
+    }
+  }
+  const order = (r: MtgRarity) => MTG_RARITIES.indexOf(r);
+  picks.sort((a, b) => order(a.rarity) - order(b.rarity) || a.slot - b.slot);
+  return { ok: true, picks };
+}
