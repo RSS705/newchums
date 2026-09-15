@@ -1,0 +1,13 @@
+{{heading}}
+
+{{setName}}, {{dateLabel}}: {{outcomeLabel}}.
+
+{{reason}}
+
+{{statusLine}} {{nextLine}} From MTG Seasons you can fetch again, paste the feed's response, or fix a card mapping.
+
+{{ctaText}}: {{ctaUrl}}
+
+---
+
+This alert went to the admin inbox from the MTG Prediction Challenge stats job on NewChums.

@@ -35,6 +35,8 @@ export type MtgSetPayload = {
   revealOpen: boolean;
   /** When the lock job ran; null until then. */
   lockedAt: string | null;
+  /** The latest published standings; null before the first day. */
+  standings: MtgStandingsSummary | null;
 };
 
 export type MtgCard = {
@@ -198,4 +200,43 @@ export type MtgRevealPayload = {
   players: MtgRevealPlayer[];
   mind: Record<MtgRarity, MtgMindPick[]>;
   mostPicked: Record<MtgRarity, Array<{ card: MtgCard; count: number }>>;
+};
+
+// ── Standings (Batch 5) ──────────────────────────────────────────────────────
+
+export type MtgStandingsSummary = { date: string; takenAt: string; day: number | null; totalDays: number | null };
+
+export type MtgLeaderboardRow = {
+  userId: string;
+  name: string | null;
+  username: string | null;
+  avatarUrl: string | null;
+  isViewer: boolean;
+  rank: number;
+  previousRank: number | null;
+  total: number;
+  /** Points gained or lost since the previous day; null on the first day. */
+  change: number | null;
+  behind: number;
+  subtotals: Record<MtgRarity, number>;
+  /** The top three badges, best first. */
+  badges: MtgBadge[];
+  badgeCount: number;
+};
+
+/** GET /mtg/communities/:id/leaderboard */
+export type MtgLeaderboardPayload = {
+  dates: string[];
+  standings: null | {
+    date: string;
+    previousDate: string | null;
+    takenAt: string;
+    isFinal: boolean;
+    day: number | null;
+    totalDays: number | null;
+    rows: MtgLeaderboardRow[];
+    noEntry: Array<{ userId: string; name: string | null; username: string | null; isViewer: boolean }>;
+    groupMind: { total: number; change: number | null; atLock: boolean } | null;
+    randomPicks: number;
+  };
 };

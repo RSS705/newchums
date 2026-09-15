@@ -1294,6 +1294,33 @@ export const sendMtgRevealedEmail = async (
     { subjectKey: "mtgRevealed", idempotencyKey: p.idempotencyKey },
   );
 
+/** MTG stats ingest alert (spec 9.1): to the admin inbox when a day's 17Lands
+ *  data fails its checks, or the day ends without new standings. */
+export const sendMtgIngestAlertEmail = async (
+  env: Bindings,
+  p: { setName: string; dateLabel: string; outcome: string; reason: string; adminUrl: string; hasStandings: boolean; lastAttempt: boolean },
+) =>
+  dispatch(
+    env,
+    CONTACT_EMAIL,
+    "mtgIngestAlert",
+    {
+      heading: p.lastAttempt ? "No new standings today" : "Today's 17Lands data failed its checks",
+      setName: p.setName,
+      dateLabel: p.dateLabel,
+      outcomeLabel: p.outcome === "failed_validation"
+        ? "the data failed its checks"
+        : p.outcome === "fetch_failed" ? "17Lands couldn't be reached"
+        : p.outcome === "error" ? "the stats job hit an error" : "17Lands had no newer data all day",
+      statusLine: p.hasStandings ? "The previous standings stay up." : "No standings are published yet.",
+      nextLine: p.lastAttempt ? "That was today's last attempt; the next is tomorrow at 9 AM ET." : "The job tries again at its next hour (9 and 11 AM, 1, 4 and 8 PM ET).",
+      reason: p.reason,
+      ctaText: "Open MTG Seasons",
+      ctaUrl: p.adminUrl,
+    },
+    { subjectKey: "mtgIngestAlert" },
+  );
+
 /** "You got a tag" notice (kudos internally), sent once daily to a recipient for whatever
  *  arrived since the last run. Batched per recipient: three kudos in one
  *  sitting send one email, not three. Givers are never named, matching the

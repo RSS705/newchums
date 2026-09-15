@@ -12,6 +12,7 @@ import Typography from "@mui/material/Typography";
 import { AppCard, useToast } from "@/components/ui";
 import { apiFetch } from "@/lib/apiClient";
 import type { MtgSetPayload } from "@/components/mtg/mtgTypes";
+import AdminMtgStats from "./AdminMtgStats";
 
 type AdminSet = {
   code: string;
@@ -133,7 +134,7 @@ export default function AdminMtgClient() {
     if (!/^[a-z0-9]{2,6}$/.test(code)) { toast.error("Use the Scryfall set code, like fra"); return; }
     if (drafts[code]) { toast.error("That set already exists"); return; }
     setDrafts((prev) => ({ ...prev, [code]: { name: "", feed_url: `https://www.17lands.com/api/card_data?expansion=${code.toUpperCase()}&event_type=PremierDraft&time_period=ALL_TIME`, status: "active" } }));
-    setSets((prev) => [{ code, name: "", previews_start_at: null, gallery_complete_at: null, prerelease_start_at: null, prerelease_end_at: null, picks_open_at: null, lock_at: "", arena_release_at: null, tabletop_release_at: null, final_at: "", feed_url: "", status: "active", phase: "upcoming", payload: { code, name: "", phase: "upcoming", dates: { previewsStartAt: null, galleryCompleteAt: null, prereleaseStartAt: null, prereleaseEndAt: null, picksOpenAt: null, lockAt: "", arenaReleaseAt: null, tabletopReleaseAt: null, finalAt: "" }, timeline: [], pool: { common: 0, uncommon: 0, rare: 0, mythic: 0 }, poolTotal: 0, galleryComplete: false, lastCardSyncAt: null, scoringVersion: 1, picksOpen: false, revealOpen: false, lockedAt: null }, locked_at: null, syncs: [] }, ...prev]);
+    setSets((prev) => [{ code, name: "", previews_start_at: null, gallery_complete_at: null, prerelease_start_at: null, prerelease_end_at: null, picks_open_at: null, lock_at: "", arena_release_at: null, tabletop_release_at: null, final_at: "", feed_url: "", status: "active", phase: "upcoming", payload: { code, name: "", phase: "upcoming", dates: { previewsStartAt: null, galleryCompleteAt: null, prereleaseStartAt: null, prereleaseEndAt: null, picksOpenAt: null, lockAt: "", arenaReleaseAt: null, tabletopReleaseAt: null, finalAt: "" }, timeline: [], pool: { common: 0, uncommon: 0, rare: 0, mythic: 0 }, poolTotal: 0, galleryComplete: false, lastCardSyncAt: null, scoringVersion: 1, picksOpen: false, revealOpen: false, lockedAt: null, standings: null }, locked_at: null, syncs: [] }, ...prev]);
     setNewCode("");
   };
 
@@ -226,6 +227,7 @@ export default function AdminMtgClient() {
                 </Stack>
               </Box>
             )}
+            <AdminMtgStats code={s.code} />
           </AppCard>
         );
       })}

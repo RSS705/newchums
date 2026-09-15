@@ -233,7 +233,7 @@ export async function syncScryfallSet(
       )
       ON CONFLICT (set_id, oracle_id) DO UPDATE SET
         scryfall_id = EXCLUDED.scryfall_id, arena_id = COALESCE(EXCLUDED.arena_id, newchums.mtg_cards.arena_id),
-        name = EXCLUDED.name, rarity = EXCLUDED.rarity, collector_number = EXCLUDED.collector_number,
+        name = EXCLUDED.name, rarity = CASE WHEN now() >= ${new Date(set.lock_at).toISOString()}::timestamptz THEN newchums.mtg_cards.rarity ELSE EXCLUDED.rarity END, collector_number = EXCLUDED.collector_number,
         collector_sort = EXCLUDED.collector_sort, layout = EXCLUDED.layout, colors = EXCLUDED.colors,
         mana_cost = EXCLUDED.mana_cost, mana_value = EXCLUDED.mana_value, type_line = EXCLUDED.type_line,
         oracle_text = EXCLUDED.oracle_text, image_normal = EXCLUDED.image_normal, image_large = EXCLUDED.image_large,
@@ -242,7 +242,7 @@ export async function syncScryfallSet(
         previewed_at = COALESCE(EXCLUDED.previewed_at, newchums.mtg_cards.previewed_at),
         preview_source = COALESCE(EXCLUDED.preview_source, newchums.mtg_cards.preview_source),
         preview_source_uri = COALESCE(EXCLUDED.preview_source_uri, newchums.mtg_cards.preview_source_uri),
-        in_pool = EXCLUDED.in_pool, updated_at = now()
+        in_pool = CASE WHEN now() >= ${new Date(set.lock_at).toISOString()}::timestamptz THEN (newchums.mtg_cards.in_pool OR EXCLUDED.in_pool) ELSE EXCLUDED.in_pool END, updated_at = now()
       RETURNING (xmax = 0) AS inserted
     `) as { inserted: boolean }[];
     summary.kept += 1;

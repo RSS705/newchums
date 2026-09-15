@@ -69,6 +69,7 @@ export const SUBJECTS = {
   mtgLockWarning: "Picks lock tomorrow night",
   mtgLockWarning_tonight: "Picks lock tonight",
   mtgRevealed: "The picks are in for {{setName}}",
+  mtgIngestAlert: "MTG standings for {{setName}} weren't updated ({{dateLabel}})",
   planWrapUp_attendee: "Anyone earn a tag at {{planTitle}}?",
 
   // Digests

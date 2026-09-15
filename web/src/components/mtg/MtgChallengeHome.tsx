@@ -18,6 +18,7 @@ import { AppCard } from "@/components/ui";
 import { apiFetch, getAvatarBaseUrl } from "@/lib/apiClient";
 import SeasonTimeline from "./SeasonTimeline";
 import RevealSummary from "./reveal/RevealSummary";
+import Leaderboard from "./leaderboard/Leaderboard";
 import {
   MTG_ATTRIBUTION, MTG_RARITIES, MTG_TOTAL_PICKS, RARITY_LABEL,
   type MtgCard, type MtgProgressMember, type MtgRarity, type MtgSetPayload, countdown, formatWhen,
@@ -44,8 +45,8 @@ const PHASE_COPY: Record<MtgSetPayload["phase"], { title: string; body: string }
  * The challenge view that replaces a specialized community's body (the
  * community header stays above it): the phase card with the lock countdown
  * and the picks button, who in the group has finished (counts only, never
- * cards) or, after the lock, the Reveal summary, the pool, and the season
- * timeline.
+ * cards) or, after the lock, the Reveal summary (below the standings once
+ * they start), the pool, and the season timeline.
  */
 export default function MtgChallengeHome({ communityId, slug, isMember, isAuthenticated }: Props) {
   const [set, setSet] = useState<MtgSetPayload | null>(null);
@@ -193,6 +194,9 @@ export default function MtgChallengeHome({ communityId, slug, isMember, isAuthen
         )}
       </AppCard>
 
+      {/* From the Arena launch the standings lead (waiting for the first day at
+          first), and the Reveal sits one tap below. */}
+      {isMember && (set.standings || set.phase === "live" || set.phase === "final") && <Leaderboard communityId={communityId} nowMs={nowMs} />}
       {revealOpen && isMember && <RevealSummary communityId={communityId} slug={slug} />}
 
       {/* Who has finished. Counts only: nobody's cards leave the server

@@ -39,6 +39,7 @@ import {
   sendMtgWelcomeEmail,
   sendMtgLockWarningEmail,
   sendMtgRevealedEmail,
+  sendMtgIngestAlertEmail,
   sendRunItAgainEmail,
   sendPlanReminderEmail,
   sendKudosReceivedEmail,
@@ -67,7 +68,8 @@ import {
   hardDeleteUser,
 } from "./lib/adminHardDelete";
 import { KUDOS_TAGS, KUDOS_MAX_PER_PLAN, KUDOS_WINDOW_MS, isKudosTag, kudosTagInfo } from "./lib/kudos";
-import { MTG_SPECIALIZATION, MTG_RARITIES, MTG_SLOTS_PER_RARITY, type MtgRarity, type MtgSetRow, type ValidatedPick, MTG_BADGES, badgeDescription, badgeLabel, buildIcsEvent, compareBadges, computeEntryBadges, computeGroupMind, earlyBirdWinners, easternDateKey, easternHour, formatEasternDate, formatEasternLong, formatEasternShort, mtgLockWarningAt, mtgMorningAfter, mtgPhase, mtgPicksOpen, mtgRevealedEmailAt, mtgTimeline, revealFunFact, syncScryfallSet, validateEntryPicks } from "./lib/mtg";
+import { MTG_USER_AGENT, MTG_SPECIALIZATION, MTG_RARITIES, MTG_SLOTS_PER_RARITY, type MtgRarity, type MtgSetRow, type ValidatedPick, MTG_BADGES, badgeDescription, badgeLabel, buildIcsEvent, compareBadges, computeEntryBadges, computeGroupMind, earlyBirdWinners, easternDateKey, easternHour, formatEasternDate, formatEasternLong, formatEasternShort, mtgLockWarningAt, mtgMorningAfter, mtgPhase, mtgPicksOpen, mtgRevealedEmailAt, mtgTimeline, revealFunFact, syncScryfallSet, validateEntryPicks } from "./lib/mtg";
+import { checkSnapshot, computeCardScores, isDateKey, matchFeed, mtgIngestSlot, mtgIngestWindow, mtgStandingsDay, parseCardDataFeed, rankStandings, scoreEntry, type FeedRecord, type PoolCard } from "./lib/mtgScoring";
 import { checkDbRateLimit, isDbRateLimited, recordDbRateEvent } from "./lib/dbRateLimit";
 import {
   generateOtpCode,
@@ -1035,6 +1037,10 @@ async function mtgSetPayload(sql: ReturnType<typeof getSql>, set: MtgSetRow) {
   const lastSync = (await sql`
     SELECT ran_at, outcome FROM newchums.mtg_card_syncs WHERE set_id = ${set.id} ORDER BY ran_at DESC LIMIT 1
   `) as { ran_at: string; outcome: string }[];
+  const latestStandings = (await sql`
+    SELECT snapshot_date::text AS snapshot_date, taken_at FROM newchums.mtg_snapshots
+    WHERE set_id = ${set.id} ORDER BY snapshot_date DESC LIMIT 1
+  `) as { snapshot_date: string; taken_at: string }[];
   const now = new Date();
   return {
     code: set.code,
@@ -1056,6 +1062,14 @@ async function mtgSetPayload(sql: ReturnType<typeof getSql>, set: MtgSetRow) {
     // Batch 4: the Reveal opens at the lock; lockedAt is when the lock job ran.
     revealOpen: now.getTime() >= new Date(set.lock_at).getTime(),
     lockedAt: set.locked_at ?? null,
+    // Batch 5: the latest published standings, or null before the first day.
+    standings: latestStandings[0]
+      ? {
+          date: latestStandings[0].snapshot_date,
+          takenAt: latestStandings[0].taken_at,
+          ...(mtgStandingsDay(latestStandings[0].snapshot_date, set.arena_release_at, set.final_at) ?? { day: null, totalDays: null }),
+        }
+      : null,
   };
 }
 
@@ -2228,6 +2242,649 @@ async function mtgRevealedDetails(sql: ReturnType<typeof getSql>, env: Bindings,
     revealUrl: primary ? primary.url : `${web}/communities`,
   };
 }
+
+// ── Stats ingest and scoring (Batch 5) ──────────────────────────────────────
+
+type MtgIngestTrigger = "schedule" | "admin" | "paste";
+type MtgIngestResult = {
+  outcome: "published" | "not_newer" | "fetch_failed" | "failed_validation" | "skipped";
+  reason: string | null;
+  snapshotDate: string;
+  matched?: number;
+  poolSize?: number;
+  totalGames?: number;
+  replaced?: boolean;
+};
+
+/** The scoring pool (spec 6): pool cards that aren't voided, with their 17Lands match hints. */
+async function loadMtgScoringPool(sql: ReturnType<typeof getSql>, setId: string): Promise<PoolCard[]> {
+  const rows = (await sql`
+    SELECT id, name, rarity, arena_id, stats_arena_id, stats_name, collector_sort
+    FROM newchums.mtg_cards WHERE set_id = ${setId} AND in_pool = true AND voided = false
+  `) as { id: string; name: string; rarity: MtgRarity; arena_id: number | null; stats_arena_id: number | null; stats_name: string | null; collector_sort: number }[];
+  return rows.map((r) => ({ id: r.id, name: r.name, rarity: r.rarity, arenaId: r.arena_id, statsArenaId: r.stats_arena_id, statsName: r.stats_name, collectorSort: Number(r.collector_sort) }));
+}
+
+async function loadMtgSetPicks(sql: ReturnType<typeof getSql>, setId: string) {
+  return (await sql`
+    SELECT p.entry_id, p.rarity, p.slot, p.card_id
+    FROM newchums.mtg_picks p JOIN newchums.mtg_entries e ON e.id = p.entry_id
+    WHERE e.set_id = ${setId}
+  `) as { entry_id: string; rarity: MtgRarity; slot: number; card_id: string }[];
+}
+
+/**
+ * The statements that fill one snapshot (spec 6 and 12.4): stats and a Card
+ * Score for every pool card, points for every entry with picks. They replace
+ * whatever the snapshot held, so re-scoring a day is idempotent, and they find
+ * the snapshot by set and date, so they can't point at a row that lost a race.
+ */
+function mtgSnapshotWrites(
+  sql: ReturnType<typeof getSql>,
+  key: { setId: string; date: string },
+  pool: PoolCard[],
+  matched: Map<string, FeedRecord>,
+  picks: { entry_id: string; rarity: MtgRarity; slot: number; card_id: string }[],
+) {
+  const scores = computeCardScores(pool, new Map([...matched].map(([id, r]) => [id, { gihGames: r.gihGames, gihWr: r.gihWr }])));
+  const cards = pool.map((c) => ({ c, r: matched.get(c.id) ?? null, s: scores.get(c.id) ?? { score: 50, adjWr: null, rank: null, ranked: 0 } }));
+  const byEntry = new Map<string, { rarity: MtgRarity; slot: number; cardId: string }[]>();
+  for (const p of picks) {
+    const list = byEntry.get(p.entry_id) ?? [];
+    list.push({ rarity: p.rarity, slot: Number(p.slot), cardId: p.card_id });
+    byEntry.set(p.entry_id, list);
+  }
+  const entries = [...byEntry].map(([id, list]) => ({ id, s: scoreEntry(list, scores) }));
+  const queries = [
+    sql`DELETE FROM newchums.mtg_card_stats WHERE snapshot_id = (SELECT id FROM newchums.mtg_snapshots WHERE set_id = ${key.setId} AND snapshot_date = ${key.date})`,
+    sql`
+      INSERT INTO newchums.mtg_card_stats (snapshot_id, card_id, gih_games, gih_wr, adj_wr, rarity_rank, ranked, card_score, alsa, ata, iwd)
+      SELECT s.id, x.card_id, x.gih_games, x.gih_wr, x.adj_wr, x.rarity_rank, x.ranked, x.card_score, x.alsa, x.ata, x.iwd
+      FROM newchums.mtg_snapshots s, UNNEST(
+        ${cards.map((x) => x.c.id)}::uuid[],
+        ${cards.map((x) => (x.r ? x.r.gihGames : null))}::int[],
+        ${cards.map((x) => x.r?.gihWr ?? null)}::numeric[],
+        ${cards.map((x) => x.s.adjWr)}::numeric[],
+        ${cards.map((x) => x.s.rank)}::int[],
+        ${cards.map((x) => x.s.ranked)}::int[],
+        ${cards.map((x) => x.s.score)}::numeric[],
+        ${cards.map((x) => x.r?.alsa ?? null)}::numeric[],
+        ${cards.map((x) => x.r?.ata ?? null)}::numeric[],
+        ${cards.map((x) => x.r?.iwd ?? null)}::numeric[]
+      ) AS x(card_id, gih_games, gih_wr, adj_wr, rarity_rank, ranked, card_score, alsa, ata, iwd)
+      WHERE s.set_id = ${key.setId} AND s.snapshot_date = ${key.date}
+    `,
+    sql`DELETE FROM newchums.mtg_entry_scores WHERE snapshot_id = (SELECT id FROM newchums.mtg_snapshots WHERE set_id = ${key.setId} AND snapshot_date = ${key.date})`,
+  ];
+  if (entries.length > 0) {
+    queries.push(sql`
+      INSERT INTO newchums.mtg_entry_scores (snapshot_id, entry_id, total, common, uncommon, rare, mythic, slot1_points)
+      SELECT s.id, x.entry_id, x.total, x.common, x.uncommon, x.rare, x.mythic, x.slot1
+      FROM newchums.mtg_snapshots s, UNNEST(
+        ${entries.map((e) => e.id)}::uuid[],
+        ${entries.map((e) => e.s.total)}::numeric[],
+        ${entries.map((e) => e.s.common)}::numeric[],
+        ${entries.map((e) => e.s.uncommon)}::numeric[],
+        ${entries.map((e) => e.s.rare)}::numeric[],
+        ${entries.map((e) => e.s.mythic)}::numeric[],
+        ${entries.map((e) => e.s.slot1)}::numeric[]
+      ) AS x(entry_id, total, common, uncommon, rare, mythic, slot1)
+      WHERE s.set_id = ${key.setId} AND s.snapshot_date = ${key.date}
+    `);
+  }
+  return queries;
+}
+
+/** Keep every response the feed gave us, published or not (spec 9.1). */
+async function archiveMtgFeed(env: Bindings, code: string, date: string, text: string): Promise<string | null> {
+  if (!env.MEDIA_BUCKET) return null;
+  const key = `mtg/17lands/${code}/${date}-${Date.now()}.json`;
+  try {
+    await env.MEDIA_BUCKET.put(key, text, { httpMetadata: { contentType: "application/json" } });
+    return key;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * One ingest attempt (spec 9.1): fetch 17Lands' feed, or take a pasted
+ * response, archive it, check it, and when it passes publish the day's
+ * snapshot with its scores in one transaction. Every attempt is recorded in
+ * mtg_ingest_runs. A scheduled attempt stops once the day is published; an
+ * admin's fetch or paste replaces the day's snapshot when its data is newer,
+ * or when forced.
+ */
+async function runMtgIngest(
+  sql: ReturnType<typeof getSql>,
+  env: Bindings,
+  set: MtgSetRow,
+  opts: { trigger: MtgIngestTrigger; text?: string; force?: boolean },
+): Promise<MtgIngestResult> {
+  const { date: snapshotDate, open } = mtgIngestWindow(set);
+  if (!open) return { outcome: "skipped", reason: "Standings can only be published from the day after the Arena launch through the final day", snapshotDate };
+  const today = (await sql`
+    SELECT id, is_final FROM newchums.mtg_snapshots WHERE set_id = ${set.id} AND snapshot_date = ${snapshotDate} LIMIT 1
+  `) as { id: string; is_final: boolean }[];
+  if (today[0]?.is_final) return { outcome: "skipped", reason: "Today's standings are final and can't be replaced", snapshotDate };
+  if (today[0] && opts.trigger === "schedule") return { outcome: "skipped", reason: "Already published today", snapshotDate };
+
+  const recordRun = async (outcome: "not_newer" | "fetch_failed" | "failed_validation", notes: string | null, extra: { rawKey?: string | null; totalGames?: number; matched?: number } = {}) => {
+    await sql`
+      INSERT INTO newchums.mtg_ingest_runs (set_id, snapshot_date, trigger, outcome, notes, raw_key, total_games, matched)
+      VALUES (${set.id}, ${snapshotDate}, ${opts.trigger}, ${outcome}, ${notes}, ${extra.rawKey ?? null}, ${extra.totalGames ?? null}, ${extra.matched ?? null})
+    `;
+  };
+
+  let text = opts.text ?? null;
+  if (text === null) {
+    try {
+      const res = await fetch(set.feed_url, {
+        headers: { "User-Agent": MTG_USER_AGENT, Accept: "application/json" },
+        signal: AbortSignal.timeout(30000),
+      });
+      text = await res.text();
+      if (!res.ok) {
+        const reason = `17Lands answered HTTP ${res.status}`;
+        await recordRun("fetch_failed", reason, { rawKey: await archiveMtgFeed(env, set.code, snapshotDate, text) });
+        return { outcome: "fetch_failed", reason, snapshotDate };
+      }
+    } catch (err) {
+      const reason = `Couldn't reach 17Lands: ${err instanceof Error ? err.message : String(err)}`;
+      await recordRun("fetch_failed", reason);
+      return { outcome: "fetch_failed", reason, snapshotDate };
+    }
+  }
+  const rawKey = await archiveMtgFeed(env, set.code, snapshotDate, text);
+
+  const parsed = parseCardDataFeed(text);
+  if (!parsed.ok) {
+    await recordRun("failed_validation", parsed.reason, { rawKey });
+    return { outcome: "failed_validation", reason: parsed.reason, snapshotDate };
+  }
+  if (parsed.records.length === 0) {
+    await recordRun("not_newer", "The feed has no cards yet", { rawKey });
+    return { outcome: "not_newer", reason: "The feed has no cards yet", snapshotDate };
+  }
+  const pool = await loadMtgScoringPool(sql, set.id);
+  const match = matchFeed(parsed.records, pool);
+
+  // Compare with the latest standings: today's when replacing, else the last day's.
+  const prevRows = (await sql`
+    SELECT id, total_games FROM newchums.mtg_snapshots
+    WHERE set_id = ${set.id} AND snapshot_date <= ${snapshotDate}
+    ORDER BY snapshot_date DESC LIMIT 1
+  `) as { id: string; total_games: string | number }[];
+  let previous: { totalGames: number; gamesByCard: Map<string, number> } | null = null;
+  if (prevRows[0]) {
+    const games = (await sql`
+      SELECT card_id, gih_games FROM newchums.mtg_card_stats WHERE snapshot_id = ${prevRows[0].id} AND gih_games IS NOT NULL
+    `) as { card_id: string; gih_games: number }[];
+    previous = { totalGames: Number(prevRows[0].total_games), gamesByCard: new Map(games.map((g) => [g.card_id, Number(g.gih_games)])) };
+  }
+  const check = checkSnapshot({ matched: match.matched, poolSize: pool.length, previous, force: opts.force });
+  const summary = { snapshotDate, matched: check.matched, poolSize: pool.length, totalGames: check.totalGames };
+  if (check.outcome !== "published") {
+    await recordRun(check.outcome, check.reason, { rawKey, totalGames: check.totalGames, matched: check.matched });
+    return { outcome: check.outcome, reason: check.reason, ...summary };
+  }
+
+  const picks = await loadMtgSetPicks(sql, set.id);
+  const source = opts.trigger === "paste" ? "paste" : "feed";
+  await sql.transaction([
+    sql`
+      INSERT INTO newchums.mtg_snapshots (set_id, snapshot_date, taken_at, scored_at, source, raw_key, raw_json, total_games, matched, pool_size, scoring_version)
+      VALUES (${set.id}, ${snapshotDate}, now(), now(), ${source}, ${rawKey}, ${text}, ${check.totalGames}, ${check.matched}, ${pool.length}, ${set.scoring_version})
+      ON CONFLICT (set_id, snapshot_date) DO UPDATE SET
+        taken_at = now(), scored_at = now(), source = EXCLUDED.source, raw_key = EXCLUDED.raw_key, raw_json = EXCLUDED.raw_json,
+        total_games = EXCLUDED.total_games, matched = EXCLUDED.matched, pool_size = EXCLUDED.pool_size, scoring_version = EXCLUDED.scoring_version
+    `,
+    ...mtgSnapshotWrites(sql, { setId: set.id, date: snapshotDate }, pool, match.matched, picks),
+    sql`
+      INSERT INTO newchums.mtg_ingest_runs (set_id, snapshot_date, trigger, outcome, notes, raw_key, total_games, matched, snapshot_id)
+      SELECT s.set_id, s.snapshot_date, ${opts.trigger}::text, 'published', ${today[0] ? "Replaced the day's standings" : null}::text, ${rawKey}::text, ${check.totalGames}::bigint, ${check.matched}::int, s.id
+      FROM newchums.mtg_snapshots s WHERE s.set_id = ${set.id} AND s.snapshot_date = ${snapshotDate}
+    `,
+  ]);
+  console.log(`[mtg-ingest] ${set.code} ${snapshotDate}: published matched=${check.matched}/${pool.length} games=${check.totalGames}${today[0] ? " (replaced)" : ""}`);
+  return { outcome: "published", reason: null, ...summary, replaced: !!today[0] };
+}
+
+/** Re-score a published day from its stored response with today's pool,
+ *  mappings and picks, after a mapping fix or a void. Final days are left
+ *  alone, and a day replaced mid-way aborts rather than mixing responses. */
+async function rescoreMtgSnapshot(sql: ReturnType<typeof getSql>, set: MtgSetRow, snapshotDate: string) {
+  const rows = (await sql`
+    SELECT id, raw_json, is_final, taken_at::text AS taken FROM newchums.mtg_snapshots
+    WHERE set_id = ${set.id} AND snapshot_date = ${snapshotDate} LIMIT 1
+  `) as { id: string; raw_json: string; is_final: boolean; taken: string }[];
+  const row = rows[0];
+  if (!row) return { ok: false as const, status: 404 as const, error: "NOT_FOUND", message: "No standings for that day" };
+  if (row.is_final) return { ok: false as const, status: 409 as const, error: "FINAL", message: "Final standings can't be re-scored" };
+  const parsed = parseCardDataFeed(row.raw_json);
+  if (!parsed.ok) return { ok: false as const, status: 409 as const, error: "UNREADABLE", message: parsed.reason };
+  const pool = await loadMtgScoringPool(sql, set.id);
+  const match = matchFeed(parsed.records, pool);
+  let totalGames = 0;
+  for (const r of match.matched.values()) totalGames += r.gihGames;
+  const picks = await loadMtgSetPicks(sql, set.id);
+  try {
+    await sql.transaction([
+      // Division by zero aborts the transaction if the day was replaced after it was read.
+      sql`SELECT 1 / (CASE WHEN taken_at::text = ${row.taken} THEN 1 ELSE 0 END) FROM newchums.mtg_snapshots WHERE id = ${row.id}`,
+      sql`UPDATE newchums.mtg_snapshots SET scored_at = now(), total_games = ${totalGames}, matched = ${match.matched.size}, pool_size = ${pool.length} WHERE id = ${row.id}`,
+      ...mtgSnapshotWrites(sql, { setId: set.id, date: snapshotDate }, pool, match.matched, picks),
+    ]);
+  } catch (err) {
+    if (/division by zero/i.test(err instanceof Error ? err.message : String(err))) {
+      return { ok: false as const, status: 409 as const, error: "CHANGED", message: "The day's standings were replaced while re-scoring. Try again." };
+    }
+    throw err;
+  }
+  return { ok: true as const, matched: match.matched.size, poolSize: pool.length, unmatchedCards: match.unmatchedCards.length, unmatchedRecords: match.unmatchedRecords.length };
+}
+
+/** One alert per set per day: the first caller to flag the day's latest run
+ *  sends it, and a failed send releases the flag so a later attempt retries. */
+async function alertMtgIngest(sql: ReturnType<typeof getSql>, env: Bindings, set: MtgSetRow, date: string, result: { outcome: string; reason: string | null }, lastAttempt: boolean) {
+  const claimed = (await sql`
+    UPDATE newchums.mtg_ingest_runs SET alerted = true
+    WHERE id = (SELECT id FROM newchums.mtg_ingest_runs WHERE set_id = ${set.id} AND snapshot_date = ${date} ORDER BY attempted_at DESC LIMIT 1)
+      AND NOT EXISTS (SELECT 1 FROM newchums.mtg_ingest_runs WHERE set_id = ${set.id} AND snapshot_date = ${date} AND alerted)
+    RETURNING id
+  `) as { id: string }[];
+  if (claimed.length === 0) return;
+  Sentry.captureMessage(`MTG stats for ${set.code} on ${date}: ${result.outcome}${result.reason ? ` (${result.reason})` : ""}`, "warning");
+  const hasStandings = ((await sql`SELECT 1 FROM newchums.mtg_snapshots WHERE set_id = ${set.id} LIMIT 1`) as unknown[]).length > 0;
+  let sent = false;
+  try {
+    const res = (await sendMtgIngestAlertEmail(env, {
+      setName: set.name,
+      dateLabel: formatEasternDate(`${date}T16:00:00Z`),
+      outcome: result.outcome,
+      reason: result.reason ?? "No reason was recorded",
+      adminUrl: `${env.WEB_BASE_URL}/admin/mtg`,
+      hasStandings,
+      lastAttempt,
+    })) as unknown as { ok?: boolean; error?: unknown } | null | undefined;
+    sent = res === undefined || (res !== null && res.ok !== false && !res.error);
+  } catch (err) {
+    console.error(`[mtg-ingest] ${set.code}: alert email failed`, err);
+  }
+  if (!sent) await sql`UPDATE newchums.mtg_ingest_runs SET alerted = false WHERE id = ${claimed[0].id}`;
+}
+
+/**
+ * The hourly stats ingest (spec 9.1 and 12.3): at 9 and 11 AM, 1, 4 and 8 PM
+ * ET from the morning after the Arena launch through the final day, until
+ * the day is published. A failed check emails the admin straight away, and a
+ * day that ends without standings emails after its last attempt. An
+ * unexpected error is recorded as an attempt and reported to Sentry.
+ */
+async function processMtgIngest(sql: ReturnType<typeof getSql>, env: Bindings) {
+  const sets = (await sql`
+    SELECT * FROM newchums.mtg_sets
+    WHERE status = 'active' AND arena_release_at IS NOT NULL AND arena_release_at < now() AND final_at > now() - interval '1 day'
+  `) as MtgSetRow[];
+  for (const set of sets) {
+    const slot = mtgIngestSlot(set);
+    if (!slot.due) continue;
+    let result: { outcome: string; reason: string | null };
+    try {
+      result = await runMtgIngest(sql, env, set, { trigger: "schedule" });
+    } catch (err) {
+      console.error(`[mtg-ingest] ${set.code} failed:`, err);
+      Sentry.captureException(err);
+      result = { outcome: "error", reason: `Something went wrong: ${err instanceof Error ? err.message : String(err)}`.slice(0, 500) };
+      try {
+        await sql`INSERT INTO newchums.mtg_ingest_runs (set_id, snapshot_date, trigger, outcome, notes) VALUES (${set.id}, ${slot.date}, 'schedule', 'error', ${result.reason})`;
+      } catch { /* the database may be what failed */ }
+    }
+    const noStandings = result.outcome === "fetch_failed" || result.outcome === "not_newer" || result.outcome === "error";
+    if (result.outcome === "failed_validation" || (noStandings && slot.last)) {
+      try {
+        await alertMtgIngest(sql, env, set, slot.date, result, slot.last);
+      } catch (err) {
+        console.error(`[mtg-ingest] ${set.code}: alert failed`, err);
+      }
+    }
+  }
+}
+
+/** POST /admin/mtg/sets/:code/ingest { force? }: fetch 17Lands now (super
+ *  admins). Replaces the day's standings when the data is newer, or when
+ *  forced past the match and growth checks. */
+app.post("/admin/mtg/sets/:code/ingest", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+  let body: Record<string, unknown> = {};
+  try { body = await c.req.json(); } catch { /* no body: a plain fetch */ }
+  const sql = getSql(c.env);
+  try {
+    const set = await loadMtgSet(sql, c.req.param("code"));
+    if (!set) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    const result = await runMtgIngest(sql, c.env, set, { trigger: "admin", force: body.force === true });
+    return c.json({ ok: true, result });
+  } catch (err) {
+    console.error("[POST /admin/mtg/sets/:code/ingest]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** POST /admin/mtg/sets/:code/ingest/paste { raw, force? }: publish a response
+ *  copied from the feed in a browser (spec 9.1, fallback 1). Same checks. */
+app.post("/admin/mtg/sets/:code/ingest/paste", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+  let body: Record<string, unknown>;
+  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
+  const raw = typeof body.raw === "string" ? body.raw.trim() : "";
+  if (!raw) return c.json({ ok: false, error: "VALIDATION", message: "Paste the feed's response first" }, 400);
+  if (raw.length > 5_000_000) return c.json({ ok: false, error: "VALIDATION", message: "That paste is too large" }, 400);
+  const sql = getSql(c.env);
+  try {
+    const set = await loadMtgSet(sql, c.req.param("code"));
+    if (!set) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    const result = await runMtgIngest(sql, c.env, set, { trigger: "paste", text: raw, force: body.force === true });
+    return c.json({ ok: true, result });
+  } catch (err) {
+    console.error("[POST /admin/mtg/sets/:code/ingest/paste]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** POST /admin/mtg/sets/:code/snapshots/:date/rescore: score a published day
+ *  again from its stored response, after a mapping fix or a void. */
+app.post("/admin/mtg/sets/:code/snapshots/:date/rescore", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+  const date = c.req.param("date");
+  if (!isDateKey(date)) return c.json({ ok: false, error: "VALIDATION", message: "Use a real date like 2026-09-30" }, 400);
+  const sql = getSql(c.env);
+  try {
+    const set = await loadMtgSet(sql, c.req.param("code"));
+    if (!set) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    const result = await rescoreMtgSnapshot(sql, set, date);
+    if (!result.ok) return c.json({ ok: false, error: result.error, message: result.message }, result.status);
+    return c.json({ ok: true, result });
+  } catch (err) {
+    console.error("[POST /admin/mtg/sets/:code/snapshots/:date/rescore]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** GET /admin/mtg/sets/:code/stats: recent ingest attempts and published
+ *  days, and from the latest day the feed records and pool cards that didn't
+ *  match, with the current mapping overrides and voided cards. */
+app.get("/admin/mtg/sets/:code/stats", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+  const sql = getSql(c.env);
+  try {
+    const set = await loadMtgSet(sql, c.req.param("code"));
+    if (!set) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    const runs = await sql`
+      SELECT attempted_at, snapshot_date::text AS snapshot_date, trigger, outcome, notes, total_games, matched, alerted
+      FROM newchums.mtg_ingest_runs WHERE set_id = ${set.id} ORDER BY attempted_at DESC LIMIT 15
+    `;
+    const snapshots = await sql`
+      SELECT snapshot_date::text AS snapshot_date, source, matched, pool_size, total_games, taken_at, scored_at
+      FROM newchums.mtg_snapshots WHERE set_id = ${set.id} ORDER BY snapshot_date DESC LIMIT 60
+    `;
+    let unmatchedRecords: { name: string; mtgaId: number | null; rarity: string; gihGames: number }[] = [];
+    let unmatchedCards: { id: string; name: string; rarity: string; arenaId: number | null }[] = [];
+    let listsFrom: { date: string; outcome: string } | null = null;
+    // The newest response that parses: the latest attempt's R2 archive (so a
+    // failed first day can still be matched), else the latest published day.
+    let raw: { text: string; date: string; outcome: string } | null = null;
+    const newest = (await sql`
+      SELECT raw_key, snapshot_date::text AS snapshot_date, outcome FROM newchums.mtg_ingest_runs
+      WHERE set_id = ${set.id} AND raw_key IS NOT NULL ORDER BY attempted_at DESC LIMIT 1
+    `) as { raw_key: string; snapshot_date: string; outcome: string }[];
+    if (newest[0] && c.env.MEDIA_BUCKET) {
+      try {
+        const obj = await c.env.MEDIA_BUCKET.get(newest[0].raw_key);
+        if (obj) raw = { text: await obj.text(), date: newest[0].snapshot_date, outcome: newest[0].outcome };
+      } catch { /* fall back to the stored copy */ }
+    }
+    let parsed = raw ? parseCardDataFeed(raw.text) : null;
+    if (!parsed || !parsed.ok || parsed.records.length === 0) {
+      const latest = (await sql`
+        SELECT raw_json, snapshot_date::text AS snapshot_date FROM newchums.mtg_snapshots WHERE set_id = ${set.id} ORDER BY snapshot_date DESC LIMIT 1
+      `) as { raw_json: string; snapshot_date: string }[];
+      raw = latest[0] ? { text: latest[0].raw_json, date: latest[0].snapshot_date, outcome: "published" } : null;
+      parsed = raw ? parseCardDataFeed(raw.text) : null;
+    }
+    if (raw && parsed && parsed.ok) {
+      const m = matchFeed(parsed.records, await loadMtgScoringPool(sql, set.id));
+      listsFrom = { date: raw.date, outcome: raw.outcome };
+      unmatchedRecords = m.unmatchedRecords.slice(0, 400).map((r) => ({ name: r.name, mtgaId: r.mtgaId, rarity: r.rarity, gihGames: r.gihGames }));
+      unmatchedCards = m.unmatchedCards.map((x) => ({ id: x.id, name: x.name, rarity: x.rarity, arenaId: x.arenaId }));
+    }
+    const voided = await sql`SELECT id, name, rarity FROM newchums.mtg_cards WHERE set_id = ${set.id} AND voided = true ORDER BY name`;
+    const mapped = await sql`
+      SELECT id, name, rarity, stats_arena_id, stats_name FROM newchums.mtg_cards
+      WHERE set_id = ${set.id} AND (stats_arena_id IS NOT NULL OR stats_name IS NOT NULL) ORDER BY name
+    `;
+    return c.json({ ok: true, runs, snapshots, listsFrom, unmatchedRecords, unmatchedCards, voided, mapped });
+  } catch (err) {
+    console.error("[GET /admin/mtg/sets/:code/stats]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** PUT /admin/mtg/cards/:id/stats-match { statsArenaId, statsName }: point a
+ *  pool card at the 17Lands record whose Arena ID or name doesn't line up
+ *  (spec 6.8's admin queue). Nulls clear it. Re-score the day to apply it. */
+app.put("/admin/mtg/cards/:id/stats-match", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+  const id = c.req.param("id");
+  if (!MTG_UUID_RE.test(id)) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+  let body: Record<string, unknown>;
+  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
+  const arenaRaw = body.statsArenaId;
+  const statsArenaId = arenaRaw === null || arenaRaw === undefined || arenaRaw === "" ? null : Number(arenaRaw);
+  if (statsArenaId !== null && (!Number.isInteger(statsArenaId) || statsArenaId <= 0))
+    return c.json({ ok: false, error: "VALIDATION", message: "The Arena ID should be a whole number" }, 400);
+  const statsName = typeof body.statsName === "string" && body.statsName.trim() ? body.statsName.trim().slice(0, 200) : null;
+  const sql = getSql(c.env);
+  try {
+    const rows = (await sql`
+      UPDATE newchums.mtg_cards SET stats_arena_id = ${statsArenaId}, stats_name = ${statsName}, updated_at = now()
+      WHERE id = ${id} RETURNING id, name, stats_arena_id, stats_name
+    `) as { id: string; name: string; stats_arena_id: number | null; stats_name: string | null }[];
+    if (!rows[0]) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    return c.json({ ok: true, card: rows[0] });
+  } catch (err) {
+    console.error("[PUT /admin/mtg/cards/:id/stats-match]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** PUT /admin/mtg/cards/:id/voided { voided }: take a card out of the pool, or
+ *  put it back. A voided card is never pickable or ranked, and a locked pick
+ *  of it scores a neutral 50. Re-score the day to apply it. */
+app.put("/admin/mtg/cards/:id/voided", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+  const id = c.req.param("id");
+  if (!MTG_UUID_RE.test(id)) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+  let body: Record<string, unknown>;
+  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
+  if (typeof body.voided !== "boolean") return c.json({ ok: false, error: "VALIDATION", message: "voided must be true or false" }, 400);
+  const sql = getSql(c.env);
+  try {
+    const rows = (await sql`
+      UPDATE newchums.mtg_cards SET voided = ${body.voided}, updated_at = now() WHERE id = ${id} RETURNING id, name, voided
+    `) as { id: string; name: string; voided: boolean }[];
+    if (!rows[0]) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    return c.json({ ok: true, card: rows[0] });
+  } catch (err) {
+    console.error("[PUT /admin/mtg/cards/:id/voided]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/**
+ * GET /mtg/communities/:id/leaderboard?date=YYYY-MM-DD (spec 10.5): the
+ * group's standings on the latest published day, or the given one. Members
+ * and super admins, after the lock. Rows carry rank, movement and points
+ * change since the day before, points behind the leader, per-rarity
+ * subtotals and the player's top three badges. Ghosts: the Group Mind (stored
+ * at the lock, or worked out from the members' picks) and random picks at
+ * 1,000. `standings` is null until the first day is published.
+ */
+app.get("/mtg/communities/:id/leaderboard", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email) return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  const communityId = c.req.param("id");
+  if (!MTG_UUID_RE.test(communityId)) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+  const dateParam = c.req.query("date");
+  if (dateParam && !isDateKey(dateParam)) return c.json({ ok: false, error: "VALIDATION", message: "Use a real date like 2026-09-30" }, 400);
+  const sql = getSql(c.env);
+  try {
+    const viewerRows = (await sql`SELECT id, role FROM newchums.users WHERE email = ${payload.email} LIMIT 1`) as { id: string; role: string | null }[];
+    const viewer = viewerRows[0];
+    if (!viewer) return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+    const communityRows = (await sql`
+      SELECT id, specialization, COALESCE(status, 'active') AS status FROM newchums.communities WHERE id = ${communityId} LIMIT 1
+    `) as { id: string; specialization: string | null; status: string }[];
+    const community = communityRows[0];
+    if (!community || community.specialization !== MTG_SPECIALIZATION || community.status !== "active")
+      return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    const memberCheck = (await sql`
+      SELECT 1 FROM newchums.community_members WHERE community_id = ${communityId} AND user_id = ${viewer.id} AND status = 'active' LIMIT 1
+    `) as unknown[];
+    if (memberCheck.length === 0 && viewer.role !== "super_admin") return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+    const set = await loadMtgSet(sql, null);
+    if (!set) return c.json({ ok: false, error: "NO_SEASON" }, 404);
+    if (Date.now() < new Date(set.lock_at).getTime())
+      return c.json({ ok: false, error: "SEALED", message: "Standings start after the lock" }, 403);
+
+    const snaps = (await sql`
+      SELECT id, snapshot_date::text AS snapshot_date, taken_at, is_final FROM newchums.mtg_snapshots
+      WHERE set_id = ${set.id} ORDER BY snapshot_date DESC
+    `) as { id: string; snapshot_date: string; taken_at: string; is_final: boolean }[];
+    if (snaps.length === 0) return c.json({ ok: true, standings: null, dates: [] });
+    const at = dateParam ? snaps.findIndex((s) => s.snapshot_date === dateParam) : 0;
+    if (at < 0) return c.json({ ok: false, error: "NOT_FOUND", message: "No standings for that day" }, 404);
+    const current = snaps[at];
+    const previous = snaps[at + 1] ?? null;
+    const snapIds = previous ? [current.id, previous.id] : [current.id];
+
+    const members = (await sql`
+      SELECT u.id, u.name, u.username, u.avatar_key, u.avatar_updated_at, e.id AS entry_id, e.completed_at, e.updated_at
+      FROM newchums.community_members cm
+      JOIN newchums.users u ON u.id = cm.user_id
+      LEFT JOIN newchums.mtg_entries e ON e.user_id = cm.user_id AND e.set_id = ${set.id}
+      WHERE cm.community_id = ${communityId} AND cm.status = 'active'
+      ORDER BY LOWER(COALESCE(u.name, u.username, ''))
+    `) as { id: string; name: string | null; username: string | null; avatar_key: string | null; avatar_updated_at: string | null; entry_id: string | null; completed_at: string | null; updated_at: string | null }[];
+    const entryIds = members.map((m) => m.entry_id).filter((x): x is string => !!x);
+    const scoreRows = entryIds.length === 0 ? [] : ((await sql`
+      SELECT snapshot_id, entry_id, total, common, uncommon, rare, mythic, slot1_points
+      FROM newchums.mtg_entry_scores WHERE entry_id = ANY(${entryIds}::uuid[]) AND snapshot_id = ANY(${snapIds}::uuid[])
+    `) as { snapshot_id: string; entry_id: string; total: string; common: string; uncommon: string; rare: string; mythic: string; slot1_points: string }[]);
+    const scoresFor = (snapId: string | undefined) => new Map(scoreRows.filter((r) => r.snapshot_id === snapId).map((r) => [r.entry_id, r]));
+    const cur = scoresFor(current.id);
+    const prev = scoresFor(previous?.id);
+    const standing = (m: (typeof members)[number], s: (typeof scoreRows)[number]) => ({
+      key: m.id, member: m, score: s, total: Number(s.total), slot1: Number(s.slot1_points), completedAt: m.completed_at, updatedAt: m.updated_at,
+    });
+    const scored = members.filter((m) => m.entry_id && cur.has(m.entry_id));
+    const ranked = rankStandings(scored.map((m) => standing(m, cur.get(m.entry_id as string)!)));
+    const prevRank = new Map(
+      rankStandings(scored.filter((m) => prev.has(m.entry_id as string)).map((m) => standing(m, prev.get(m.entry_id as string)!))).map((r) => [r.key, r]),
+    );
+    const leader = ranked[0]?.total ?? 0;
+    const round = (n: number) => Math.round(n * 10000) / 10000;
+
+    const badgeRows = scored.length === 0 ? [] : ((await sql`
+      SELECT user_id, badge_code, detail FROM newchums.mtg_badge_awards
+      WHERE set_id = ${set.id} AND status = 'awarded' AND user_id = ANY(${scored.map((m) => m.id)}::uuid[])
+        AND (community_id IS NULL OR community_id = ${communityId})
+    `) as { user_id: string; badge_code: string; detail: Record<string, unknown> | null }[]);
+
+    // The Group Mind ghost: stored at the lock, or worked out from the members' picks.
+    const stored = (await sql`
+      SELECT rarity, slot, card_id FROM newchums.mtg_group_minds WHERE community_id = ${communityId} AND set_id = ${set.id}
+    `) as { rarity: MtgRarity; slot: number; card_id: string }[];
+    let mindPicks = stored.map((r) => ({ rarity: r.rarity, slot: Number(r.slot), cardId: r.card_id }));
+    if (mindPicks.length === 0 && scored.length >= 2) {
+      const picks = (await sql`
+        SELECT e.user_id, p.rarity, p.slot, p.card_id, c.collector_sort
+        FROM newchums.community_members cm
+        JOIN newchums.mtg_entries e ON e.user_id = cm.user_id AND e.set_id = ${set.id}
+        JOIN newchums.mtg_picks p ON p.entry_id = e.id
+        JOIN newchums.mtg_cards c ON c.id = p.card_id
+        WHERE cm.community_id = ${communityId} AND cm.status = 'active'
+      `) as { user_id: string; rarity: MtgRarity; slot: number; card_id: string; collector_sort: number }[];
+      if (new Set(picks.map((p) => p.user_id)).size >= 2) {
+        mindPicks = computeGroupMind(
+          picks.map((p) => ({ userId: p.user_id, rarity: p.rarity, slot: Number(p.slot), cardId: p.card_id })),
+          new Map(picks.map((p) => [p.card_id, Number(p.collector_sort)])),
+        ).map((m) => ({ rarity: m.rarity, slot: m.slot, cardId: m.cardId }));
+      }
+    }
+    const mindScores = mindPicks.length === 0 ? [] : ((await sql`
+      SELECT snapshot_id, card_id, card_score FROM newchums.mtg_card_stats
+      WHERE snapshot_id = ANY(${snapIds}::uuid[]) AND card_id = ANY(${mindPicks.map((p) => p.cardId)}::uuid[])
+    `) as { snapshot_id: string; card_id: string; card_score: string }[]);
+    const mindTotal = (snapId: string) =>
+      scoreEntry(mindPicks, new Map(mindScores.filter((r) => r.snapshot_id === snapId).map((r) => [r.card_id, { score: Number(r.card_score) }]))).total;
+
+    const mindNow = mindPicks.length === 0 ? 0 : mindTotal(current.id);
+    const day = mtgStandingsDay(current.snapshot_date, set.arena_release_at, set.final_at);
+    return c.json({
+      ok: true,
+      dates: snaps.map((s) => s.snapshot_date),
+      standings: {
+        date: current.snapshot_date,
+        previousDate: previous?.snapshot_date ?? null,
+        takenAt: current.taken_at,
+        isFinal: current.is_final,
+        day: day?.day ?? null,
+        totalDays: day?.totalDays ?? null,
+        rows: ranked.map((r) => {
+          const before = prevRank.get(r.key);
+          const mine = badgeRows.filter((b) => b.user_id === r.key).sort((a, b) => compareBadges(a.badge_code, b.badge_code));
+          return {
+            userId: r.key,
+            name: r.member.name,
+            username: r.member.username,
+            avatarUrl: buildAvatarUrl(r.key, r.member.avatar_key, r.member.avatar_updated_at, c.env.MEDIA_BUCKET),
+            isViewer: r.key === viewer.id,
+            rank: r.rank,
+            previousRank: before?.rank ?? null,
+            total: r.total,
+            change: before ? round(r.total - before.total) : null,
+            behind: round(leader - r.total),
+            subtotals: { common: Number(r.score.common), uncommon: Number(r.score.uncommon), rare: Number(r.score.rare), mythic: Number(r.score.mythic) },
+            badges: mine.slice(0, 3).map((b) => ({
+              code: b.badge_code,
+              name: badgeLabel(b.badge_code, b.detail),
+              tier: MTG_BADGES[b.badge_code]?.tier ?? "common",
+              description: badgeDescription(b.badge_code, b.detail),
+              groupHonor: false,
+            })),
+            badgeCount: mine.length,
+          };
+        }),
+        noEntry: members.filter((m) => !scored.includes(m)).map((m) => ({ userId: m.id, name: m.name, username: m.username, isViewer: m.id === viewer.id })),
+        groupMind: mindPicks.length === 0 ? null : {
+          total: mindNow,
+          change: previous ? round(mindNow - mindTotal(previous.id)) : null,
+          atLock: stored.length > 0,
+        },
+        randomPicks: 1000,
+      },
+    });
+  } catch (err) {
+    console.error("[GET /mtg/communities/:id/leaderboard]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
 
 /** GET /admin/mtg/sets, every season with its sync history (super admins). */
 app.get("/admin/mtg/sets", async (c) => {
@@ -21507,6 +22164,12 @@ async function handleScheduled(
     await processMtgLock(sql);
   } catch (err) {
     console.error("[scheduled] mtg lock error:", err);
+  }
+  // Stats ingest and scoring, before the season emails that will read standings.
+  try {
+    await processMtgIngest(sql, env);
+  } catch (err) {
+    console.error("[scheduled] mtg ingest error:", err);
   }
   try {
     await processMtgLockWarnings(sql, env);
