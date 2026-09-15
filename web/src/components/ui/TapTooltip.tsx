@@ -23,6 +23,7 @@ export default function TapTooltip({
   children,
   placement = "top",
   block = false,
+  describeChild = false,
 }: {
   title: React.ReactNode;
   children: React.ReactElement;
@@ -33,6 +34,9 @@ export default function TapTooltip({
    *  single-cell grid stretches the child both ways, so equal-height rows
    *  survive. */
   block?: boolean;
+  /** Announce the title as a description of the child instead of its name,
+   *  for children with visible text of their own (badges). */
+  describeChild?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   // On touch-primary devices the tap that opens the tooltip is followed by
@@ -59,6 +63,7 @@ export default function TapTooltip({
           onOpen={() => setOpen(true)}
           onClose={() => setOpen(false)}
           disableHoverListener={touchPrimary}
+          describeChild={describeChild}
         >
           {children}
         </Tooltip>

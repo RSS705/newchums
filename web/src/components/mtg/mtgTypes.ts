@@ -31,6 +31,10 @@ export type MtgSetPayload = {
   scoringVersion: number;
   /** True from the first preview day until the lock (server rule). */
   picksOpen: boolean;
+  /** True once the lock time has passed. */
+  revealOpen: boolean;
+  /** When the lock job ran; null until then. */
+  lockedAt: string | null;
 };
 
 export type MtgCard = {
@@ -140,4 +144,58 @@ export type MtgProgressMember = {
   picked: number;
   complete: boolean;
   isViewer: boolean;
+};
+
+// ── Lock and reveal (Batch 4) ────────────────────────────────────────────────
+
+export type MtgBadgeTier = "common" | "uncommon" | "rare" | "mythic" | "shame";
+
+export type MtgBadge = {
+  code: string;
+  name: string;
+  tier: MtgBadgeTier;
+  description: string;
+  /** True for group honors such as Early Bird. */
+  groupHonor: boolean;
+};
+
+/** Badge tier colors, after Magic's rarity symbols (spec 7.1). */
+export const BADGE_TIER_STYLE: Record<MtgBadgeTier, { bg: string; fg: string; border: string }> = {
+  common: { bg: "#F3F4F6", fg: "#1F2937", border: "#1F2937" },
+  uncommon: { bg: "#EEF1F4", fg: "#4B5563", border: "#9CA3AF" },
+  rare: { bg: "#FFF7DB", fg: "#8A6200", border: "#D4A017" },
+  mythic: { bg: "#FFEDE3", fg: "#B83A0B", border: "#E65B13" },
+  shame: { bg: "#F5F5F4", fg: "#57534E", border: "#A8A29E" },
+};
+
+export type MtgRevealPick = { slot: number; note: string | null; onlyYou: boolean; card: MtgCard };
+
+export type MtgRevealPlayer = {
+  userId: string;
+  name: string | null;
+  username: string | null;
+  avatarUrl: string | null;
+  isViewer: boolean;
+  pickCount: number;
+  picks: Record<MtgRarity, MtgRevealPick[]>;
+  badges: MtgBadge[];
+};
+
+export type MtgMindPick = { slot: number; votes: number; pickers: number; card: MtgCard };
+
+/** GET /mtg/communities/:id/reveal */
+export type MtgRevealPayload = {
+  set: { code: string; name: string; lockAt: string };
+  community: { id: string; name: string; slug: string };
+  viewerIsMember: boolean;
+  /** Members with picks now. */
+  entries: number;
+  /** True when the Group Mind was stored at the lock; false when it is
+   *  worked out from the group's current members. */
+  mindAtLock: boolean;
+  /** Entries the Group Mind was worked out from. */
+  mindEntries: number;
+  players: MtgRevealPlayer[];
+  mind: Record<MtgRarity, MtgMindPick[]>;
+  mostPicked: Record<MtgRarity, Array<{ card: MtgCard; count: number }>>;
 };

@@ -1,0 +1,42 @@
+{{heading}}
+
+{{greeting}}
+
+{{bodyText}}
+
+{{entryLine}} {{standingsLine}}
+
+{{#hasBadges}}
+---
+
+Badges you earned at the lock
+{{#badges}}
+{{name}}: {{description}}
+{{/badges}}
+
+{{/hasBadges}}
+{{#hasGroups}}
+---
+
+From your groups
+{{#groups}}
+{{name}}: {{fact}} ({{url}})
+{{/groups}}
+
+{{/hasGroups}}
+---
+
+{{ctaText}}: {{ctaUrl}}
+
+{{ctaHelperText}}
+
+How scoring works: {{scoringUrl}}
+Final day in your calendar: {{finalCalendarUrl}}
+
+---
+
+You're receiving this because you're in an MTG Prediction Challenge group on NewChums.
+{{#unsubscribeUrl}}Turn off MTG Prediction Challenge emails: {{.}}{{/unsubscribeUrl}}
+
+MTG Prediction Challenge is unofficial Fan Content permitted under the Fan Content Policy. Not approved/endorsed by Wizards.
+© {{year}} {{productName}}

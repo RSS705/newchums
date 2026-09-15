@@ -68,6 +68,7 @@ export const SUBJECTS = {
   mtgWelcome_creator: "{{communityName}} is ready. Share the invite link",
   mtgLockWarning: "Picks lock tomorrow night",
   mtgLockWarning_tonight: "Picks lock tonight",
+  mtgRevealed: "The picks are in for {{setName}}",
   planWrapUp_attendee: "Anyone earn a tag at {{planTitle}}?",
 
   // Digests

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Dialog from "@mui/material/Dialog";
@@ -27,6 +27,8 @@ type Props = {
   onAdd: (card: MtgCard) => void;
   onRemove: (cardId: string) => void;
   onReplace: (card: MtgCard, slotIndex: number) => void;
+  /** Read-only browsing (the Reveal): no add, remove or locked button. */
+  hideAction?: boolean;
 };
 
 /**
@@ -35,12 +37,16 @@ type Props = {
  * a swipe, and one big action. When all five slots are full the action asks
  * which pick to replace instead of failing.
  */
-export default function CardViewer({ open, cards, index, onIndexChange, onClose, picks, locked, onAdd, onRemove, onReplace }: Props) {
+export default function CardViewer({ open, cards, index, onIndexChange, onClose, picks, locked, onAdd, onRemove, onReplace, hideAction = false }: Props) {
   const card = cards[index];
   const hasPrev = index > 0;
   const hasNext = index < cards.length - 1;
-  const prev = () => { if (hasPrev) onIndexChange(index - 1); };
-  const next = () => { if (hasNext) onIndexChange(index + 1); };
+  // The body remounts for each card, so the Previous or Next button that was
+  // used gets focus again on the new card; arrow keys and swipes leave focus
+  // where it was.
+  const [navButton, setNavButton] = useState<"prev" | "next" | null>(null);
+  const prev = (via: "prev" | null = null) => { setNavButton(via); if (hasPrev) onIndexChange(index - 1); };
+  const next = (via: "next" | null = null) => { setNavButton(via); if (hasNext) onIndexChange(index + 1); };
 
   return (
     <Dialog
@@ -48,7 +54,7 @@ export default function CardViewer({ open, cards, index, onIndexChange, onClose,
       onClose={onClose}
       maxWidth="md"
       fullWidth
-      aria-label={card ? card.name : "Card"}
+      slotProps={{ paper: { "aria-label": card ? card.name : "Card" } }}
       onKeyDown={(e) => {
         if (e.key === "ArrowLeft") { e.preventDefault(); prev(); }
         if (e.key === "ArrowRight") { e.preventDefault(); next(); }
@@ -63,12 +69,14 @@ export default function CardViewer({ open, cards, index, onIndexChange, onClose,
           hasNext={hasNext}
           onPrev={prev}
           onNext={next}
+          navButton={navButton}
           onClose={onClose}
           picks={picks}
           locked={locked}
           onAdd={onAdd}
           onRemove={onRemove}
           onReplace={onReplace}
+          hideAction={hideAction}
         />
       )}
     </Dialog>
@@ -80,21 +88,30 @@ type BodyProps = {
   position: string;
   hasPrev: boolean;
   hasNext: boolean;
-  onPrev: () => void;
-  onNext: () => void;
+  onPrev: (via?: "prev" | null) => void;
+  onNext: (via?: "next" | null) => void;
   onClose: () => void;
+  /** The navigation button that brought this card up, to focus again. */
+  navButton: "prev" | "next" | null;
   picks: PickSlot[];
   locked: boolean;
   onAdd: (card: MtgCard) => void;
   onRemove: (cardId: string) => void;
   onReplace: (card: MtgCard, slotIndex: number) => void;
+  hideAction: boolean;
 };
 
 /** Keyed by card id, so flipping and the replace sheet reset on each card. */
-function ViewerBody({ card, position, hasPrev, hasNext, onPrev, onNext, onClose, picks, locked, onAdd, onRemove, onReplace }: BodyProps) {
+function ViewerBody({ card, position, hasPrev, hasNext, onPrev, onNext, onClose, picks, locked, onAdd, onRemove, onReplace, hideAction, navButton }: BodyProps) {
   const [flipped, setFlipped] = useState(false);
   const [replacing, setReplacing] = useState(false);
   const touchStart = useRef<{ x: number; y: number } | null>(null);
+  const prevRef = useRef<HTMLButtonElement | null>(null);
+  const nextRef = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => {
+    if (navButton === "prev") prevRef.current?.focus();
+    if (navButton === "next") nextRef.current?.focus();
+  }, [navButton]);
 
   const front = card.imageLarge ?? card.imageNormal;
   const back = card.imageBackLarge ?? card.imageBackNormal;
@@ -108,8 +125,8 @@ function ViewerBody({ card, position, hasPrev, hasNext, onPrev, onNext, onClose,
       <Stack direction="row" alignItems="center" spacing={1} sx={{ px: { xs: 1, sm: 2 }, py: 1, borderBottom: "1px solid", borderColor: "divider" }}>
         <IconButton onClick={onClose} aria-label="Close" sx={{ width: 44, height: 44 }}><CloseRoundedIcon /></IconButton>
         <Typography variant="body2" color="text.secondary" sx={{ flex: 1, textAlign: "center", fontWeight: 600 }}>{position}</Typography>
-        <IconButton onClick={onPrev} disabled={!hasPrev} aria-label="Previous card" sx={{ width: 44, height: 44 }}><ChevronLeftRoundedIcon /></IconButton>
-        <IconButton onClick={onNext} disabled={!hasNext} aria-label="Next card" sx={{ width: 44, height: 44 }}><ChevronRightRoundedIcon /></IconButton>
+        <IconButton ref={prevRef} onClick={() => onPrev("prev")} disabled={!hasPrev} aria-label="Previous card" sx={{ width: 44, height: 44 }}><ChevronLeftRoundedIcon /></IconButton>
+        <IconButton ref={nextRef} onClick={() => onNext("next")} disabled={!hasNext} aria-label="Next card" sx={{ width: 44, height: 44 }}><ChevronRightRoundedIcon /></IconButton>
       </Stack>
 
       <Box sx={{ flex: 1, overflowY: "auto", px: { xs: 2, sm: 3 }, py: { xs: 2, sm: 3 } }}>
@@ -195,6 +212,7 @@ function ViewerBody({ card, position, hasPrev, hasNext, onPrev, onNext, onClose,
         </Stack>
       </Box>
 
+      {!hideAction && (
       <Box sx={{ px: { xs: 2, sm: 3 }, py: 1.5, borderTop: "1px solid", borderColor: "divider", bgcolor: "background.paper" }}>
         {locked ? (
           <Button fullWidth variant="contained" disabled sx={{ textTransform: "none", fontWeight: 700, borderRadius: 2.5, py: 1.25 }}>Picks are locked</Button>
@@ -213,6 +231,7 @@ function ViewerBody({ card, position, hasPrev, hasNext, onPrev, onNext, onClose,
           </Button>
         )}
       </Box>
+      )}
     </Box>
   );
 }

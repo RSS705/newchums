@@ -28,6 +28,7 @@ type AdminSet = {
   feed_url: string;
   status: string;
   phase: string;
+  locked_at: string | null;
   payload: MtgSetPayload;
   syncs: { ran_at: string; outcome: string; cards_seen: number; cards_new: number; notes: string | null }[];
 };
@@ -100,6 +101,20 @@ export default function AdminMtgClient() {
     finally { setBusy(null); }
   };
 
+  /** Run the lock job for a season whose lock time has passed. Safe to repeat. */
+  const lockNow = async (code: string) => {
+    setBusy(`${code}:lock`);
+    try {
+      const res = await apiFetch(`/admin/mtg/sets/${code}/lock`, { auth: true, method: "POST" });
+      const data = (await res.json()) as { ok?: boolean; message?: string; result?: { entries: number; badges: number; groups: number; failed: number; dropped: number } | null };
+      if (!res.ok || !data.ok || !data.result) { toast.error(data.message ?? "The lock didn't run"); return; }
+      const r = data.result;
+      toast.success(`Lock ran: ${r.entries} entries, ${r.badges} new badges, ${r.groups} groups locked${r.dropped ? `, ${r.dropped} stale picks dropped` : ""}${r.failed ? `, ${r.failed} groups failed` : ""}`);
+      await load();
+    } catch { toast.error("Lock failed"); }
+    finally { setBusy(null); }
+  };
+
   const syncNow = async (code: string) => {
     setBusy(`${code}:sync`);
     try {
@@ -118,7 +133,7 @@ export default function AdminMtgClient() {
     if (!/^[a-z0-9]{2,6}$/.test(code)) { toast.error("Use the Scryfall set code, like fra"); return; }
     if (drafts[code]) { toast.error("That set already exists"); return; }
     setDrafts((prev) => ({ ...prev, [code]: { name: "", feed_url: `https://www.17lands.com/api/card_data?expansion=${code.toUpperCase()}&event_type=PremierDraft&time_period=ALL_TIME`, status: "active" } }));
-    setSets((prev) => [{ code, name: "", previews_start_at: null, gallery_complete_at: null, prerelease_start_at: null, prerelease_end_at: null, picks_open_at: null, lock_at: "", arena_release_at: null, tabletop_release_at: null, final_at: "", feed_url: "", status: "active", phase: "upcoming", payload: { code, name: "", phase: "upcoming", dates: { previewsStartAt: null, galleryCompleteAt: null, prereleaseStartAt: null, prereleaseEndAt: null, picksOpenAt: null, lockAt: "", arenaReleaseAt: null, tabletopReleaseAt: null, finalAt: "" }, timeline: [], pool: { common: 0, uncommon: 0, rare: 0, mythic: 0 }, poolTotal: 0, galleryComplete: false, lastCardSyncAt: null, scoringVersion: 1, picksOpen: false }, syncs: [] }, ...prev]);
+    setSets((prev) => [{ code, name: "", previews_start_at: null, gallery_complete_at: null, prerelease_start_at: null, prerelease_end_at: null, picks_open_at: null, lock_at: "", arena_release_at: null, tabletop_release_at: null, final_at: "", feed_url: "", status: "active", phase: "upcoming", payload: { code, name: "", phase: "upcoming", dates: { previewsStartAt: null, galleryCompleteAt: null, prereleaseStartAt: null, prereleaseEndAt: null, picksOpenAt: null, lockAt: "", arenaReleaseAt: null, tabletopReleaseAt: null, finalAt: "" }, timeline: [], pool: { common: 0, uncommon: 0, rare: 0, mythic: 0 }, poolTotal: 0, galleryComplete: false, lastCardSyncAt: null, scoringVersion: 1, picksOpen: false, revealOpen: false, lockedAt: null }, locked_at: null, syncs: [] }, ...prev]);
     setNewCode("");
   };
 
@@ -153,6 +168,7 @@ export default function AdminMtgClient() {
               <Typography variant="caption" color="text.secondary">
                 Pool {s.payload.poolTotal}: {s.payload.pool.common} C · {s.payload.pool.uncommon} U · {s.payload.pool.rare} R · {s.payload.pool.mythic} M
               </Typography>
+              {s.locked_at && <Chip label={`Locked ${new Date(s.locked_at).toLocaleString()}`} size="small" variant="outlined" sx={{ fontWeight: 600 }} />}
             </Stack>
             <Grid container spacing={1.5}>
               <Grid size={{ xs: 12, sm: 6 }}>
@@ -188,6 +204,14 @@ export default function AdminMtgClient() {
               </Button>
               <Button variant="outlined" onClick={() => syncNow(s.code)} disabled={busy === `${s.code}:sync` || !s.lock_at} sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2 }}>
                 {busy === `${s.code}:sync` ? "Syncing…" : "Sync cards now"}
+              </Button>
+              <Button
+                variant="outlined"
+                onClick={() => lockNow(s.code)}
+                disabled={busy === `${s.code}:lock` || !s.lock_at}
+                sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2 }}
+              >
+                {busy === `${s.code}:lock` ? "Locking…" : s.locked_at ? "Run the lock again" : "Run the lock now"}
               </Button>
             </Stack>
             {s.syncs.length > 0 && (

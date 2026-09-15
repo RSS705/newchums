@@ -479,7 +479,7 @@ export default function PickWizard() {
           severity="warning"
           sx={{ borderRadius: 2.5 }}
           action={
-            <Button component={Link} href={`/login?next=${encodeURIComponent(`/communities/${slug}/picks`)}`} color="inherit" size="small" sx={{ textTransform: "none", fontWeight: 700 }}>
+            <Button component={Link} href={`/login?next=${encodeURIComponent(`/communities/${slug}/picks`)}`} variant="text" color="inherit" size="small" sx={{ textTransform: "none", fontWeight: 700 }}>
               Sign in
             </Button>
           }
@@ -488,7 +488,15 @@ export default function PickWizard() {
         </Alert>
       )}
       {readOnly && !signedOut && (
-        <Alert severity="info" sx={{ borderRadius: 2.5 }}>
+        <Alert
+          severity="info"
+          sx={{ borderRadius: 2.5 }}
+          action={setInfo.locked || pastLock ? (
+            <Button component={Link} href={`/communities/${slug}/reveal`} variant="text" color="inherit" size="small" sx={{ textTransform: "none", fontWeight: 700, whiteSpace: "nowrap" }}>
+              See the Reveal
+            </Button>
+          ) : undefined}
+        >
           {setInfo.locked || pastLock
             ? `Picks locked ${formatWhen(setInfo.lockAt)}. This is your final entry.`
             : "Picks aren't open yet. They open when previews begin."}

@@ -320,6 +320,8 @@ The two Hall of Shame group honors, Wooden Spoon and Whiff of the Season, are in
 39. **Gold Rush** (Uncommon). At least five of your picks are multicolored.
 40. **Artificer** (Uncommon). At least three of your picks are colorless.
 
+*As built (Batch 4, September 15, 2026):* the lock job awards these eight and Early Bird. A multicolored card counts toward each of its colors, so a white-blue card helps both Rainbow and a White or Blue Loyalist; when two colors tie for Loyalist, the first in WUBRG order names the badge. Buzzer Beater reads the entry's last real change (`updated_at`, which a save that changes nothing never moves). Locked and Loaded and Early Bird read `completed_at`, when the entry most recently reached twenty picks. Early Bird needs three members with picks when the lock job runs, and ties share it; a group formed after that has no Early Bird. Rainbow and Loyalist need all 20 picks. Before any of this, the lock drops picks whose card left the pool, was voided or changed rarity, moving the rest up as the player's next visit would have, so badges and the Group Mind count only valid picks. Badge names, tiers and descriptions live in `MTG_BADGES` in `api/src/lib/mtg.ts`, and awards in `mtg_badge_awards`, with `community_id` set only for group honors.
+
 ### 7.5 Hall of Shame — worn with pride
 
 41. **Wooden Spoon** (group honor). You finished last in your group.
@@ -350,6 +352,8 @@ Rules that apply to every email:
 The five emails:
 
 *As built (Batch 3, September 15, 2026):* welcome and lock warning are live. They share one preference, **MTG Prediction Challenge** (`mtg_challenge`), whose one-click unsubscribe link ends every challenge email, and `mtg_email_log` records each send. The welcome goes out straight away from the create, join and join-request approval flows, and only before the lock; for a challenge group it replaces NewChums' generic "request approved" email, so an approved player gets one email. A creator of an invite-only group gets the invite link; a creator of an open or approval-required group gets the group's address with a line saying how people get in. The lock warning is queued by the hourly job from 10:00 AM ET on the day before the lock until the lock, so a missed hour catches up, and is delivered through NewChums' email outbox with its retries. Its per-group line shows how many members have finished. Both emails link to How Scoring Works and to the lock's calendar file, and show times in Eastern time.
+
+*As built (Batch 4, September 15, 2026):* picks revealed is live. Once the lock job has run, the hourly job queues it for 36 hours from the first 9:00 AM ET at least an hour after the lock (the morning after an 11:59 PM or a midnight lock), to every active member of a challenge group, players and people following along alike, so someone who joins a group inside that window gets it on the next hourly run. Players with an entry but no group get nothing, since there is no Reveal to show them. Badges, the pick count and the fun facts are read when it is sent, and group honors such as Early Bird name their group. Each group's fun fact is its most-picked mythic when at least two players share one, otherwise its boldest #1 (a #1 pick nobody else in the group made, mythics first). The email names the date of the first standings instead of saying "the next morning," so a late send stays true. The subject is "The picks are in for Reality Fracture," and a member without picks is told they're following along.
 
 1. **Welcome.** Sent right after a player creates or joins their first group for a set; joining more groups for the same set is confirmed in the app only. It confirms the group, gives the creator the invite link to share, states the lock date and time, lists the season's key dates, and has a *Make your picks* button. If the player already has an entry for the set, it tells them their picks already count in this group.
 2. **Lock warning.** Sent at 10:00 AM ET on the day before the lock — Sunday, September 27, 2026 for Reality Fracture — to every player who has an entry or belongs to a group for the set, finished or not. The subject is "Picks lock tomorrow night." It states the exact lock time, shows the player's progress ("You've made 17 of 20 picks") and links straight to their picks.
@@ -448,6 +452,8 @@ The community's usual header stays in every phase — name, picture, members, pu
 - **After the lock,** it shows the Reveal. From the first standings onward, it shows the leaderboard with a "Last updated" line and "Day 6 of 28," the Season timeline, and the Reveal one tap away.
 - **From the final day on,** it shows the podium, the final leaderboard, every badge awarded in the group, the share image, and the next season.
 
+*As built (Batch 4):* after the lock, members see a **The Reveal** card in place of *Who's finished*, with their lock badges, the Group Mind's five mythics and a *See everyone's picks* button that opens the full Reveal at `/communities/<slug>/reveal`. The phase card keeps *View your picks*, which opens the wizard read-only with a *See the Reveal* link. Non-members see a line saying the picks are revealed to the group's members. The card pool's grid folds away behind *Browse the cards* after the lock, so the Reveal leads.
+
 ### 10.3 The pick wizard
 
 - **Stepper:** Commons → Uncommons → Rares → Mythics → Review. Each step shows progress ("3 of 5") and how many cards are new ("12 new").
@@ -470,6 +476,8 @@ At the lock, entries freeze (enforced by the server), entry badges are awarded, 
 - the most-picked cards with counts, and *Only you* tags on picks nobody else made;
 - each player's entry badges;
 - the **Group Mind** — the group's consensus top five per rarity, worked out by giving each #1 pick 5 votes down to 1 vote for a #5. It plays on the leaderboard as a ghost entry all season.
+
+*As built (Batch 4, September 15, 2026):* the Reveal is its own page, `/communities/<slug>/reveal`, open to the group's members and super admins whatever the group's visibility (section 11). Rarity tabs start with Mythics. Each tab shows the Group Mind's five cards with their votes and how many players picked each, up to three most-picked cards (picked by at least two players), then one card per player: the viewer first, with five thumbnails in slot order, *Only you* under the viewer's solo picks and *Solo* under other players' (card images are never covered), their Receipts notes and their lock badges; a player with no picks at that rarity gets one short line instead of empty slots. The first Reveal a viewer opens each season starts with a short burst of confetti, skipped for anyone who prefers reduced motion. Members without picks are listed last as following along. Tapping a card opens the card viewer without pick buttons. The Group Mind needs picks from at least two members; ties go to more #1 votes, then more players, then collector order. For groups that exist when the lock job runs it is stored then and does not change as members join or leave; a group formed later, or with fewer than two entries at the lock, shows one worked out from its current members' locked entries, which updates as players join. Before the lock the page says picks are sealed, and the API answers 403 `SEALED` with no card data.
 
 ### 10.5 Leaderboard
 
@@ -527,9 +535,9 @@ A large image; GIH WR, games-in-hand and ALSA; Card Score and rank; a rank-over-
 
 ## 11. Groups — rules
 
-- **Public groups** appear in NewChums' community directory with an "MTG Prediction Challenge" label. Anyone who can view a public community can see its standings, and after the lock its picks. Anyone with a NewChums account can join.
+- **Public groups** appear in NewChums' community directory with an "MTG Prediction Challenge" label. Anyone who can view a public community can see its standings; its picks are shown to its members after the lock. Anyone with a NewChums account can join.
 - **Approval-required groups** are discoverable; outsiders see a restricted preview and can request to join (the owner approves), and only members see the standings and picks. **Invite-only groups** are hidden from the directory; anyone with the invite link joins instantly, and only members see the standings and picks.
-- **Joining a public group** shows a one-line heads-up: "Your picks will be visible to anyone once picks lock."
+- **Joining a public group** shows a one-line heads-up: "Your picks will be visible to everyone in the group once picks lock."
 - **Sharing.** The header's Share button copies the community's address; for invite-only groups it becomes *Invite link* and copies the link with its code. The owner can reset the link from Edit (old links stop working) and controls entry through the access mode (open, approval required, invite only).
 - **Joining after the lock** requires a locked entry for that set; anyone else can follow along. Because entries belong to players rather than groups, a new group formed after the lock works immediately with everyone's existing picks.
 - **Roles** are the community's owner and members. Once a season has started, "delete group" becomes "archive group," so the season's history survives.
@@ -538,6 +546,8 @@ A large image; GIH WR, games-in-hand and ALSA; Card Score and rank; a rank-over-
 - **Plans:** the *Plans* button creates real-world meetups from the group — a prerelease trip, a draft night, a final-day watch party.
 - **Store leagues:** a game store can create a public group and put a QR code on the counter. If a store wants to award a prize, entry stays free and the prize is the store's own promotion (check contest rules first).
 - **The Everyone board** includes every entry for the set, except players who opt out.
+
+*As built (Batch 4):* the Reveal is shown to a group's members and super admins only, public groups included. Joining after the lock stays open to everyone: no entry can be created or changed after the lock (the save returns 423), so a new member without an entry is following along, and one with a locked entry brings those picks into the group's Reveal. Groups that exist when the lock job runs have their Group Mind and Early Bird fixed then, and they don't change as members come and go. A group formed after the lock has no Early Bird, and its Group Mind is worked out from its current members' locked entries, so it grows as players join. Once the lock has run, the season's lock time can't be changed.
 
 ---
 
@@ -685,7 +695,18 @@ create table mtg_group_minds (                       -- consensus picks, compute
   rarity       text     not null,
   slot         smallint not null,
   card_id      int      not null references mtg_cards(id),
+  votes        int      not null,                    -- 5 for each #1 pick down to 1 for a #5, summed
+  pickers      int      not null,
+  entries      int      not null,                    -- members with picks when computed
   primary key (community_id, set_id, rarity, slot)
+);
+
+create table mtg_group_locks (                       -- the group's Group Mind and Early Bird are done
+  community_id int         not null,
+  set_id       int         not null references mtg_sets(id),
+  entries      int         not null,
+  locked_at    timestamptz not null default now(),
+  primary key (community_id, set_id)
 );
 
 create table mtg_badge_awards (
@@ -694,6 +715,7 @@ create table mtg_badge_awards (
   user_id      int  not null,
   community_id int,                                  -- null for badges not tied to one group
   badge_code   text not null,                        -- e.g. 'called_it'
+  award_key    text not null default '',             -- tells stacked awards apart, e.g. 'mythic' or 'u'
   detail       jsonb,                                -- e.g. {"rarity": "mythic", "card_id": 123}
   status       text not null default 'awarded',      -- on_track | awarded
   awarded_at   timestamptz not null default now()
@@ -709,15 +731,18 @@ create table mtg_email_log (                         -- guarantees one email per
 );
 -- Group standings are computed on read (rank plus change since the previous snapshot).
 -- Badge definitions (code, name, tier, rule) live in code as a constant list.
+-- Batch 4 also added mtg_sets.locked_at (when the lock job finished), mtg_entries.locked_at and
+-- locked_pick_count (the entry as frozen), and a unique index on mtg_badge_awards
+-- (set_id, user_id, community_id, badge_code, award_key).
 ```
 
 ### 12.3 Scheduled jobs
 
 - **Card sync** (built) runs from the hourly cron at even Eastern hours from the first preview day until the lock, then at 6:00 AM ET until the final day, skipping when a successful run happened in the last 100 minutes. It searches Scryfall for the set, keeps one row per oracle card, adds new cards with their first-seen time, refreshes images when better scans arrive, archives each response page to R2 and records the run in `mtg_card_syncs`.
-- **Lock** runs at the lock time. It freezes entries, computes each group's Group Mind, awards entry badges and Early Bird, and opens the Reveal.
+- **Lock** (built in Batch 4 as `processMtgLock`) runs on the first hourly pass at least 30 seconds after the lock time (midnight ET for an 11:59 PM lock); the server refuses saves from the lock time itself. It first drops picks whose card left the pool, was voided or changed rarity, moving the rest up as a visit would have, then stamps each entry with `locked_at` and its pick count, awards entry badges to everyone with picks, locks every challenge group that exists (Group Mind, Early Bird and a `mtg_group_locks` row), and records `mtg_sets.locked_at`. A group that fails to lock is logged and retried on later passes without holding up the others or the reveal email, and super admins can run the job again from *MTG Seasons*. The Reveal opens at `lock_at`; until the job has run, and for groups formed later, it works the Group Mind out from the members' locked entries.
 - **Stats ingest** runs every day at 9:00 AM ET from the day after the Arena launch through the final day, retrying at 11:00 AM, 1:00 PM, 4:00 PM and 8:00 PM ET when needed. It fetches the 17Lands feed, validates it, archives it and records the outcome in `mtg_ingest_runs` (section 9.1).
 - **Scoring** runs right after each successful ingest. It computes adjusted win rates, ranks, Card Scores, entry scores and group standings, and refreshes "on track" badges. It can safely re-run for the same day.
-- **Emails** (welcome and lock warning built in Batch 3; the lock warning job is `processMtgLockWarnings`, queued before the outbox runs in the same hourly pass) follow section 8: the welcome goes out when a player creates or joins their first group for a set; the lock warning at 10:00 AM ET the day before the lock; picks revealed at 9:00 AM ET the morning after the lock; weekly standings on Tuesdays at 10:00 AM ET during the season, after that day's scoring; and season results at 10:00 AM ET on the final day. Each checks the email log before sending.
+- **Emails** (welcome and lock warning built in Batch 3, picks revealed in Batch 4; `processMtgLockWarnings` and `processMtgRevealedEmails` queue their rows after the lock job and before the challenge outbox pass in the same hourly run) follow section 8: the welcome goes out when a player creates or joins their first group for a set; the lock warning at 10:00 AM ET the day before the lock; picks revealed at 9:00 AM ET the morning after the lock; weekly standings on Tuesdays at 10:00 AM ET during the season, after that day's scoring; and season results at 10:00 AM ET on the final day. Each checks the email log before sending.
 - **Finalize** runs on the final day after that morning's scoring. It marks the final snapshot, awards the final-day badges, freezes the season, and triggers the season results email.
 
 ### 12.4 Scoring — reference implementation
@@ -759,24 +784,25 @@ const entryScore = (picks, scores) =>
 
 ### 12.5 API
 
-- `GET  /mtg/sets/current` and `GET /mtg/sets/:code` (built) → the set with its phase, dates, timeline entries and pool counts
+- `GET  /mtg/sets/current` and `GET /mtg/sets/:code` (built) → the set with its phase, dates, timeline entries, pool counts, `picksOpen`, `revealOpen` and `lockedAt`
 - `GET  /mtg/sets/:code/cards?rarity=common` (built) → cards, plus `isNew` for a signed-in caller
 - `POST /mtg/sets/:code/reviewed` `{ rarity }` (built) → stamps `last_reviewed_at`
 - `GET  /mtg/sets/:code/entry` and `PUT /mtg/sets/:code/entry` (built; full replace, validated by the server; 423 after the lock, 409 before picks open)
 - `GET  /mtg/communities/:id/progress` (built) → who in the group has finished, counts only; members and super admins
 - `GET  /mtg/sets/:code/calendar/lock.ics` and `final.ics` (built) → calendar files, public
+- `GET  /mtg/communities/:id/reveal` (built) → everyone's picks by rarity with notes and *Only you* flags, lock badges, the most-picked cards and the Group Mind; members and super admins; 403 `SEALED` before the lock; `?view=summary` returns only the viewer's badges and the Group Mind's mythics
 - Creating and joining use NewChums' existing community endpoints; the create form sends `specialization: 'mtg_prediction_challenge'`.
 - `GET  /mtg/communities/:id/leaderboard?date=2026-10-05`
 - `GET  /mtg/communities/:id/players/:userId` → picks, per-card stats and badges (after the lock only, unless it's you)
 - `GET  /mtg/sets/:code/cards/:id/history`
 - `GET  /mtg/players/:userId/badges` → trophy case
 - `GET  /mtg/sets/:code/everyone` → the Everyone board
-- Admin (built so far): `GET /admin/mtg/sets`, `PUT /admin/mtg/sets/:code` (dates, feed address, status) and `POST /admin/mtg/sets/:code/sync`, behind the *MTG Seasons* super-admin page. Still to come: re-run a snapshot, paste stats, fix a card mapping, void a card
+- Admin (built so far): `GET /admin/mtg/sets`, `PUT /admin/mtg/sets/:code` (dates, feed address, status), `POST /admin/mtg/sets/:code/sync` and `POST /admin/mtg/sets/:code/lock` (runs the lock job again; 409 before the lock time), behind the *MTG Seasons* super-admin page. Still to come: re-run a snapshot, paste stats, fix a card mapping, void a card
 
 ### 12.6 Integrity rules
 
 - **The lock is enforced by the server clock,** never just the UI: `PUT /entry` returns 423 after `lock_at`.
-- **Other players' picks never leave the server before the lock.** The API filters them; React never receives them.
+- **Other players' picks never leave the server before the lock.** The API filters them; React never receives them. After the lock they go only to members of the player's groups and to super admins.
 - **Entry validation:** at most five picks per rarity, slots 1 to 5 unique, each card's rarity matching its list, no duplicates, and every card in the set's pool.
 - **Snapshots are immutable and reproducible** from the stored raw response, and scoring is idempotent per `snapshot_date`.
 - **All times are stored in UTC** and displayed in the viewer's time zone, with ET as the default.
@@ -791,7 +817,7 @@ These dates are a general guide, not deadlines.
 - **Phase 1 — about September 11 to 14: the shell and the data.** *Done September 11, 2026.* Add the *Specialized Community* option and dropdown to the Create Community form, the `specialization` column, and the challenge home view for that type; create the new tables; build the Scryfall sync for Reality Fracture; show a read-only card grid.
 - **Phase 2 — about September 14 to 17: the pick flow.** *Done September 15, 2026 (the How Scoring Works page moves to Batch 3).* Build the pick wizard, card viewer, pick tray with reordering, autosave, NEW badges, the server-side lock, the Season timeline and the How Scoring Works page.
 - **Target — Friday, September 18: open picks.** Invite the group the day the full card list is out.
-- **Phase 3 — about September 18 to 28: before the lock.** Add the welcome and lock warning emails, the "who's finished" status, the Reveal page, the Group Mind and entry badges. In the same window, build the 17Lands ingest, scoring and leaderboard against a live set's data — The Hobbit's feed worked in testing on September 10 — so they're proven before Reality Fracture data exists.
+- **Phase 3 — about September 18 to 28: before the lock.** Add the welcome and lock warning emails, the "who's finished" status, the Reveal page, the Group Mind and entry badges. *Done September 15, 2026 (batches 3 and 4), together with the picks-revealed email.* In the same window, build the 17Lands ingest, scoring and leaderboard against a live set's data — The Hobbit's feed worked in testing on September 10 — so they're proven before Reality Fracture data exists.
 - **Fixed — Monday, September 28 at 11:59 PM ET: the lock.**
 - **Phase 4 — about September 29 to 30: go live.** Send the picks-revealed email, point the tested pipeline at Reality Fracture, and publish the first standings Wednesday morning.
 - **Phase 5 — about October 1 to 26: during the season.** Add the weekly standings email, player and card pages with charts, "on track" badges, the Everyone board, past seasons and the trophy case.
@@ -824,8 +850,9 @@ These dates are a general guide, not deadlines.
 - **Version 5 — September 11, 2026.** Batch 1 built: migration 123, the *Specialized community* switch on the create form, the directory label, the *MTG Seasons* super-admin page, the Scryfall card sync on the hourly cron with R2 archives, and the challenge home shell (phase card, lock countdown, pool counts, read-only card grid, Season timeline, attribution). Recorded Rob's decisions of September 10: use the 17Lands `api/card_data` feed despite its `notes` field restricting use to 17Lands.com, accepting that it may be blocked; the challenge replaces the community body entirely while the header stays; the Everyone board shows handle, rank and points only; the results share image is a real PNG rendered in the browser; the full pick wizard is built as specified. Mapped the spec onto NewChums as it is: no invite links (the Share button copies the community's address and the join mode controls entry) and no member chat (Discord or WhatsApp links); the feed is an object `{ copyright, notes, data }`, not a list; users are UUIDs; jobs run from the existing hourly cron gated by Eastern time; the card pool counts every non-digital card until the full-gallery date because Scryfall's `booster` flag is unreliable during previews.
 - **Version 6 — September 11, 2026.** Community access gained an *Invite only* mode (hidden from the directory, instant join through an invite link, no approval), and *Private* was relabelled *Approval required*. Sections 3, 10.1 and 11 now describe invite links instead of stating that none exist.
 - **Version 7 — September 15, 2026.** Batch 2 built: entries, picks and NEW-badge bookkeeping (migration 126), the pick wizard with card grid, filters, card viewer, pick tray with drag and button reordering, autosave, Review with Receipts, and "who's finished" on the group home. Design changes: picks open when previews start instead of on the full-gallery date, with a card that leaves the pool dropped from entries on the player's next visit and the rest renumbered; each rarity's picks are a gapless ordered list; `completed_at` is when the entry most recently became complete rather than first; a first visit to a rarity marks nothing NEW.
-- **Version 9 — September 15, 2026.** Review fixes for batches 2 and 3: a save now drops cards that left the pool or changed rarity instead of failing, and only players in a challenge group can hold an entry; leaving the pick wizard saves a pending change first; removing a pick can be undone; the lock warning reads each player's progress when it is sent, is skipped for anyone welcomed in the last 12 hours, and is never sent after the lock; a failed welcome can be retried by the next join.
 - **Version 8 — September 15, 2026.** Batch 3 built: the welcome and lock warning emails with their own preference and one-click unsubscribe, the email log (migration 127), calendar files for the lock and the final day, and the public How Scoring Works page. Design changes: the welcome replaces NewChums' generic approval email for challenge groups instead of being merged into it; no welcome is sent after the lock; season emails reuse NewChums' email outbox, which now accepts rows about a season instead of a plan; calendar links point at newchums.com through a pass-through route.
+- **Version 9 — September 15, 2026.** Review fixes for batches 2 and 3: a save now drops cards that left the pool or changed rarity instead of failing, and only players in a challenge group can hold an entry; leaving the pick wizard saves a pending change first; removing a pick can be undone; the lock warning reads each player's progress when it is sent, is skipped for anyone welcomed in the last 12 hours, and is never sent after the lock; a failed welcome can be retried by the next join.
+- **Version 10 — September 15, 2026.** Batch 4 built, reviewed and fixed: the lock job, entry badges and Early Bird, the Group Mind, the Reveal page with a summary on the group home, and the picks-revealed email (migration 128). Design changes: the Reveal is shown to a group's members and super admins only, public groups included; joining after the lock stays open to everyone, because no entry can be created or changed after the lock, so a new member without picks follows along; the lock applies the pool rule before it freezes entries, so a pick whose card left the pool is dropped even if the player never came back; groups that exist when the lock job runs have their Group Mind and Early Bird fixed then, while a group formed later has no Early Bird and a Group Mind worked out from its current members; the Group Mind needs picks from two members, and its ties go to more #1 votes, then more players, then collector order; a multicolored card counts toward each of its colors, Rainbow and Loyalist need all 20 picks, and Loyalist ties go to WUBRG order; the lock time can't change once the lock has run; the picks-revealed email goes to every member of a challenge group, including those following along, for 36 hours from the first 9:00 AM ET at least an hour after the lock, names the date of the first standings, and names the group on group honors; *Only you* and *Solo* markers sit under card images rather than over them; the Season timeline's first standings are now exactly 9:00 AM ET the morning after the Arena launch.
 - *Claude Code: add a line here whenever you change the design.*
 
 ---

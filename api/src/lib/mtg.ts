@@ -28,6 +28,8 @@ export type MtgSetRow = {
   feed_url: string;
   scoring_version: number;
   status: string;
+  /** When the lock job finished (Batch 4); null until then. */
+  locked_at?: string | Date | null;
 };
 
 export type MtgPhase = "upcoming" | "previews" | "open" | "locked" | "live" | "final";
@@ -93,7 +95,7 @@ export function mtgTimeline(set: MtgSetRow, now: Date = new Date()): TimelineEnt
   entries.push({ key: "lock", label: "Picks lock", at: set.lock_at, detail: "After this moment nothing can change, and everyone's picks are revealed to the group.", calendar: true });
   if (set.arena_release_at) {
     entries.push({ key: "arena", label: "Arena launch", at: set.arena_release_at, detail: "Premier Draft opens and 17Lands starts collecting games." });
-    const firstStandings = new Date(new Date(set.arena_release_at).getTime() + 19 * 3600000); // next morning, ~9 AM ET
+    const firstStandings = mtgMorningAfter(set.arena_release_at); // 9 AM ET the morning after
     entries.push({ key: "first_standings", label: "First standings", at: firstStandings.toISOString(), detail: "Day 1 of scoring. The first few days swing a lot." });
     // Weekly standings: Tuesdays at 10 AM ET between the first standings and the final week.
     const finalMs = new Date(set.final_at).getTime();
@@ -472,4 +474,217 @@ export function buildIcsEvent(ev: IcsEvent, now: Date = new Date()): string {
   }
   lines.push("END:VEVENT", "END:VCALENDAR");
   return lines.map(foldIcsLine).join("\r\n") + "\r\n";
+}
+
+
+// ── Lock, Group Mind and entry badges (Batch 4) ──────────────────────────────
+
+export type MtgBadgeTier = "common" | "uncommon" | "rare" | "mythic" | "shame";
+
+/** Badge definitions (spec section 7, where `number` comes from). Later
+ *  batches add the rest. */
+export const MTG_BADGES: Record<string, { number: number; name: string; tier: MtgBadgeTier; description: string }> = {
+  early_bird: { number: 15, name: "Early Bird", tier: "common", description: "First in the group to complete all 20 picks." },
+  on_the_record: { number: 33, name: "On the Record", tier: "common", description: "Made all 20 picks before the lock." },
+  locked_and_loaded: { number: 34, name: "Locked and Loaded", tier: "common", description: "Had a complete entry at least seven days before the lock." },
+  buzzer_beater: { number: 35, name: "Buzzer Beater", tier: "common", description: "Made a last change in the final hour before the lock." },
+  receipts_on_file: { number: 36, name: "Receipts on File", tier: "common", description: "Wrote a Receipts note on at least five picks." },
+  rainbow: { number: 37, name: "Rainbow", tier: "common", description: "Picked at least one card of each of the five colors." },
+  loyalist: { number: 38, name: "Loyalist", tier: "common", description: "At least 10 of 20 picks share a color." },
+  gold_rush: { number: 39, name: "Gold Rush", tier: "uncommon", description: "Picked at least five multicolored cards." },
+  artificer: { number: 40, name: "Artificer", tier: "uncommon", description: "Picked at least three colorless cards." },
+};
+
+const TIER_RANK: Record<MtgBadgeTier, number> = { mythic: 4, rare: 3, uncommon: 2, common: 1, shame: 0 };
+
+/** Best first: the higher tier, then the spec's badge number. */
+export function compareBadges(a: string, b: string): number {
+  const x = MTG_BADGES[a];
+  const y = MTG_BADGES[b];
+  return TIER_RANK[y?.tier ?? "common"] - TIER_RANK[x?.tier ?? "common"] || (x?.number ?? 999) - (y?.number ?? 999);
+}
+
+const COLOR_NAMES: Record<string, string> = { W: "White", U: "Blue", B: "Black", R: "Red", G: "Green" };
+
+/** The badge's display name, which for Loyalist names the color. */
+export function badgeLabel(code: string, detail: Record<string, unknown> | null | undefined): string {
+  const base = MTG_BADGES[code]?.name ?? code;
+  if (code === "loyalist" && typeof detail?.colorName === "string") return `${detail.colorName} Loyalist`;
+  return base;
+}
+
+/** Why the player earned it, naming the Loyalist color. */
+export function badgeDescription(code: string, detail: Record<string, unknown> | null | undefined): string {
+  if (code === "loyalist" && typeof detail?.colorName === "string") return `At least 10 of 20 picks are ${detail.colorName.toLowerCase()}.`;
+  return MTG_BADGES[code]?.description ?? "";
+}
+
+/** Colour letters on a card, whatever separator the sync stored them with. */
+export function colorLetters(colors: string | null | undefined): string[] {
+  return Array.from(new Set((colors ?? "").toUpperCase().match(/[WUBRG]/g) ?? []));
+}
+
+export type BadgeAward = { code: string; key: string; detail: Record<string, unknown> };
+
+export type LockEntryInput = {
+  completedAt: string | Date | null;
+  updatedAt: string | Date;
+  picks: Array<{ rarity: MtgRarity; slot: number; note: string | null; colors: string | null }>;
+};
+
+/**
+ * Entry badges awarded at the lock (spec 7.4). A multicolored card counts
+ * toward each of its colors; Loyalist goes to the most-picked color, with
+ * ties settled in WUBRG order.
+ */
+export function computeEntryBadges(entry: LockEntryInput, lockAt: string | Date): BadgeAward[] {
+  const lock = new Date(lockAt).getTime();
+  const picks = entry.picks;
+  const full = MTG_RARITIES.length * MTG_SLOTS_PER_RARITY;
+  const out: BadgeAward[] = [];
+  if (picks.length === 0) return out;
+  const complete = picks.length >= full;
+  if (complete) out.push({ code: "on_the_record", key: "", detail: {} });
+  const completedMs = entry.completedAt ? new Date(entry.completedAt).getTime() : null;
+  if (complete && completedMs !== null && completedMs <= lock - 7 * 86400000) out.push({ code: "locked_and_loaded", key: "", detail: {} });
+  const updatedMs = new Date(entry.updatedAt).getTime();
+  if (updatedMs >= lock - 3600000 && updatedMs < lock) out.push({ code: "buzzer_beater", key: "", detail: {} });
+  const notes = picks.filter((p) => (p.note ?? "").trim().length > 0).length;
+  if (notes >= 5) out.push({ code: "receipts_on_file", key: "", detail: { notes } });
+
+  const perColor: Record<string, number> = { W: 0, U: 0, B: 0, R: 0, G: 0 };
+  let multicolored = 0;
+  let colorless = 0;
+  for (const p of picks) {
+    const letters = colorLetters(p.colors);
+    if (letters.length === 0) colorless += 1;
+    if (letters.length > 1) multicolored += 1;
+    for (const l of letters) perColor[l] += 1;
+  }
+  // Rainbow and Loyalist are about "your 20 picks" (spec 7.4), so they need a complete entry.
+  if (complete && Object.values(perColor).every((n) => n > 0)) out.push({ code: "rainbow", key: "", detail: {} });
+  let best = "W";
+  for (const l of "WUBRG") if (perColor[l] > perColor[best]) best = l;
+  if (complete && perColor[best] >= 10) {
+    out.push({ code: "loyalist", key: best.toLowerCase(), detail: { color: best, colorName: COLOR_NAMES[best], count: perColor[best] } });
+  }
+  if (multicolored >= 5) out.push({ code: "gold_rush", key: "", detail: { count: multicolored } });
+  if (colorless >= 3) out.push({ code: "artificer", key: "", detail: { count: colorless } });
+  return out;
+}
+
+export type MindPickInput = { userId: string; rarity: MtgRarity; slot: number; cardId: string };
+export type MindRow = { rarity: MtgRarity; slot: number; cardId: string; votes: number; pickers: number };
+
+/**
+ * The Group Mind (spec 10.4): each #1 pick is worth 5 votes down to 1 for a
+ * #5, and the five cards with the most votes at each rarity make the
+ * consensus. Ties go to more #1 votes, then more players, then collector
+ * order (`order` maps card id to collector number), then card id, so the
+ * result never depends on query order.
+ */
+export function computeGroupMind(picks: MindPickInput[], order: Map<string, number> = new Map()): MindRow[] {
+  const tally = new Map<string, { rarity: MtgRarity; cardId: string; votes: number; firsts: number; users: Set<string> }>();
+  for (const p of picks) {
+    if (!Number.isInteger(p.slot) || p.slot < 1 || p.slot > MTG_SLOTS_PER_RARITY) continue;
+    const key = `${p.rarity}|${p.cardId}`;
+    const t = tally.get(key) ?? { rarity: p.rarity, cardId: p.cardId, votes: 0, firsts: 0, users: new Set<string>() };
+    t.votes += MTG_SLOTS_PER_RARITY + 1 - p.slot;
+    if (p.slot === 1) t.firsts += 1;
+    t.users.add(p.userId);
+    tally.set(key, t);
+  }
+  const rows: MindRow[] = [];
+  for (const rarity of MTG_RARITIES) {
+    const ranked = [...tally.values()]
+      .filter((t) => t.rarity === rarity)
+      .sort((a, b) =>
+        b.votes - a.votes
+        || b.firsts - a.firsts
+        || b.users.size - a.users.size
+        || (order.get(a.cardId) ?? Number.MAX_SAFE_INTEGER) - (order.get(b.cardId) ?? Number.MAX_SAFE_INTEGER)
+        || a.cardId.localeCompare(b.cardId));
+    ranked.slice(0, MTG_SLOTS_PER_RARITY).forEach((t, i) => rows.push({ rarity, slot: i + 1, cardId: t.cardId, votes: t.votes, pickers: t.users.size }));
+  }
+  return rows;
+}
+
+/**
+ * Early Bird (spec 7.2, #15): the first member to complete all 20 picks, in
+ * a group with at least three players with entries (the group-honor rule in
+ * 7.1). Everyone tied for first gets it.
+ */
+export function earlyBirdWinners(members: Array<{ userId: string; pickCount: number; completedAt: string | Date | null }>): string[] {
+  const full = MTG_RARITIES.length * MTG_SLOTS_PER_RARITY;
+  if (members.filter((m) => m.pickCount > 0).length < 3) return [];
+  const complete = members.filter((m) => m.pickCount >= full && m.completedAt);
+  if (complete.length === 0) return [];
+  const first = Math.min(...complete.map((m) => new Date(m.completedAt as string | Date).getTime()));
+  return complete.filter((m) => new Date(m.completedAt as string | Date).getTime() === first).map((m) => m.userId);
+}
+
+/** 9:00 AM Eastern on the Eastern calendar day after an instant. */
+export function mtgMorningAfter(at: string | Date, hour = 9): Date {
+  const p = easternParts(new Date(at));
+  const next = new Date(Date.UTC(p.year, p.month - 1, p.day) + 86400000);
+  return easternToUtc(next.getUTCFullYear(), next.getUTCMonth() + 1, next.getUTCDate(), hour, 0);
+}
+
+/** When the picks-revealed email goes out (spec section 8, email 3): the
+ *  first 9:00 AM ET at least an hour after the lock, so an 11:59 PM lock and
+ *  a midnight lock both send that morning. */
+export function mtgRevealedEmailAt(lockAt: string | Date): Date {
+  const earliest = new Date(new Date(lockAt).getTime() + 3600000);
+  const p = easternParts(earliest);
+  const sameDay = easternToUtc(p.year, p.month, p.day, 9, 0);
+  return sameDay.getTime() >= earliest.getTime() ? sameDay : mtgMorningAfter(earliest);
+}
+
+/** "Wednesday, September 30" in Eastern time. */
+export function formatEasternDate(at: string | Date): string {
+  return new Intl.DateTimeFormat("en-US", { timeZone: EASTERN, weekday: "long", month: "long", day: "numeric" }).format(new Date(at));
+}
+
+export type FunFactPlayer = { name: string; picks: Array<{ rarity: MtgRarity; slot: number; cardId: string; cardName: string }> };
+
+const RARITY_PLURAL_LOWER: Record<MtgRarity, string> = { common: "commons", uncommon: "uncommons", rare: "rares", mythic: "mythics" };
+
+/**
+ * One fun fact for a group's reveal email (spec section 8, email 3): the
+ * most-picked mythic when at least two players share it, otherwise the
+ * boldest #1, a #1 pick nobody else in the group picked at all (mythics
+ * first). Null when there is nothing worth saying.
+ */
+export function revealFunFact(players: FunFactPlayer[]): string | null {
+  const withPicks = players.filter((p) => p.picks.length > 0);
+  if (withPicks.length === 0) return null;
+  const mythicCounts = new Map<string, { name: string; count: number }>();
+  const pickers = new Map<string, number>();
+  for (const player of withPicks) {
+    const seen = new Set<string>();
+    for (const pick of player.picks) {
+      const key = `${pick.rarity}|${pick.cardId}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      pickers.set(key, (pickers.get(key) ?? 0) + 1);
+      if (pick.rarity === "mythic") {
+        const m = mythicCounts.get(pick.cardId) ?? { name: pick.cardName, count: 0 };
+        m.count += 1;
+        mythicCounts.set(pick.cardId, m);
+      }
+    }
+  }
+  const topMythic = [...mythicCounts.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))[0];
+  if (topMythic && topMythic.count >= 2) {
+    return `Most-picked mythic: ${topMythic.name}, picked by ${topMythic.count} of ${withPicks.length} players.`;
+  }
+  for (const rarity of ["mythic", "rare", "uncommon", "common"] as MtgRarity[]) {
+    for (const player of withPicks) {
+      const first = player.picks.find((p) => p.rarity === rarity && p.slot === 1);
+      if (first && (pickers.get(`${rarity}|${first.cardId}`) ?? 0) === 1 && withPicks.length > 1) {
+        return `Boldest #1: ${player.name} put ${first.cardName} at #1 among ${RARITY_PLURAL_LOWER[rarity]}, and nobody else picked it.`;
+      }
+    }
+  }
+  return null;
 }

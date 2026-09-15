@@ -1242,6 +1242,58 @@ export const sendMtgLockWarningEmail = async (
   );
 };
 
+/** MTG picks revealed (spec section 8, email 3): 9 AM ET the morning after
+ *  the lock. Announces that picks are sealed and revealed, lists the entry
+ *  badges the player earned, gives one fun fact per group, and says when
+ *  the first standings arrive. */
+export const sendMtgRevealedEmail = async (
+  env: Bindings,
+  p: {
+    to: string;
+    recipientName: string;
+    setName: string;
+    lockAtLabel: string;
+    standingsLabel: string | null;
+    standingsLive: boolean;
+    picked: number;
+    badges: Array<{ name: string; description: string }>;
+    groups: Array<{ name: string; url: string; fact: string | null }>;
+    revealUrl: string;
+    scoringUrl: string;
+    finalCalendarUrl: string;
+    unsubscribeUrl: string;
+    idempotencyKey?: string;
+  },
+) =>
+  dispatch(
+    env,
+    p.to,
+    "mtgRevealed",
+    {
+      heading: "The picks are in",
+      greeting: `Hi ${p.recipientName},`,
+      setName: p.setName,
+      bodyText: `Picks for ${p.setName} locked ${p.lockAtLabel}, and everyone's picks are now revealed to their groups.`,
+      entryLine: p.picked > 0
+        ? `You locked in ${p.picked} of 20 picks.`
+        : "You didn't lock in picks this season, so you're following along.",
+      standingsLine: p.standingsLabel
+        ? `The first standings arrive ${p.standingsLabel}.`
+        : p.standingsLive ? "The first standings are already up." : "Standings start once the set is being played on Arena.",
+      hasBadges: p.badges.length > 0,
+      badges: p.badges,
+      hasGroups: p.groups.length > 0,
+      groups: p.groups.map((g) => ({ ...g, fact: g.fact ?? "Everyone's picks are ready to compare." })),
+      ctaText: "See the Reveal",
+      ctaUrl: p.revealUrl,
+      ctaHelperText: "Everyone's picks side by side, and your group's consensus.",
+      scoringUrl: p.scoringUrl,
+      finalCalendarUrl: p.finalCalendarUrl,
+      unsubscribeUrl: hasContent(p.unsubscribeUrl) ? p.unsubscribeUrl : null,
+    },
+    { subjectKey: "mtgRevealed", idempotencyKey: p.idempotencyKey },
+  );
+
 /** "You got a tag" notice (kudos internally), sent once daily to a recipient for whatever
  *  arrived since the last run. Batched per recipient: three kudos in one
  *  sitting send one email, not three. Givers are never named, matching the
