@@ -69,6 +69,17 @@ export function formatWhen(iso: string): string {
   }
 }
 
+/** The same moment in Eastern time with an "ET" suffix. Deterministic on
+ *  the server, where the reader's zone is unknown, so server-rendered pages
+ *  hydrate cleanly before switching to `formatWhen`. */
+export function formatWhenEastern(iso: string): string {
+  try {
+    return `${new Date(iso).toLocaleString("en-US", { timeZone: "America/New_York", weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} ET`;
+  } catch {
+    return iso;
+  }
+}
+
 /** "3d 4h" / "6h 12m" / "under a minute" until `iso`, or null once passed. */
 export function countdown(iso: string, nowMs: number): string | null {
   const diff = new Date(iso).getTime() - nowMs;

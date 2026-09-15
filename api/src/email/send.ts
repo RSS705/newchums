@@ -1138,6 +1138,110 @@ export const sendPlanWrapUpEmail = async (
   );
 };
 
+export type MtgKeyDate = { label: string; when: string };
+
+/** MTG Prediction Challenge welcome (spec section 8, email 1): sent when a
+ *  player creates or joins their first challenge group for a set. The
+ *  creator gets the invite link to share; everyone gets the lock time, the
+ *  key dates in Eastern time, and a button to their picks. */
+export const sendMtgWelcomeEmail = async (
+  env: Bindings,
+  p: {
+    to: string;
+    recipientName: string;
+    communityName: string;
+    isCreator: boolean;
+    inviteUrl: string | null;
+    inviteHelp: string;
+    setName: string;
+    lockAtLabel: string;
+    keyDates: MtgKeyDate[];
+    picked: number;
+    picksUrl: string;
+    scoringUrl: string;
+    lockCalendarUrl: string;
+    unsubscribeUrl: string;
+    idempotencyKey?: string;
+  },
+) =>
+  dispatch(
+    env,
+    p.to,
+    "mtgWelcome",
+    {
+      heading: p.isCreator ? `${p.communityName} is ready` : `You're in ${p.communityName}`,
+      greeting: `Hi ${p.recipientName},`,
+      bodyText: p.isCreator
+        ? `Your MTG Prediction Challenge group for ${p.setName} is set up. Share the invite link with your friends, then pick the five cards you think will perform best at each rarity, in order.`
+        : `You've joined an MTG Prediction Challenge group for ${p.setName}. Pick the five cards you think will perform best at each rarity, in order, and 17Lands data keeps score once the set is on Arena.`,
+      communityName: p.communityName,
+      setName: p.setName,
+      hasEntry: p.picked > 0,
+      picked: p.picked,
+      inviteUrl: p.isCreator && hasContent(p.inviteUrl) ? p.inviteUrl : null,
+      inviteHelp: p.inviteHelp,
+      keyDates: p.keyDates,
+      ctaText: p.picked > 0 ? "Review your picks" : "Make your picks",
+      ctaUrl: p.picksUrl,
+      ctaHelperText: `Picks lock ${p.lockAtLabel}. Change anything until then.`,
+      scoringUrl: p.scoringUrl,
+      lockCalendarUrl: p.lockCalendarUrl,
+      unsubscribeUrl: hasContent(p.unsubscribeUrl) ? p.unsubscribeUrl : null,
+    },
+    { subjectKey: p.isCreator ? "mtgWelcome_creator" : "mtgWelcome", idempotencyKey: p.idempotencyKey },
+  );
+
+/** MTG Prediction Challenge lock warning (spec section 8, email 2): 10 AM ET
+ *  the day before the lock, to everyone with an entry or a group for the
+ *  set, finished or not. One email per player, with a line per group. */
+export const sendMtgLockWarningEmail = async (
+  env: Bindings,
+  p: {
+    to: string;
+    recipientName: string;
+    setName: string;
+    lockAtLabel: string;
+    /** True when the lock falls later today, Eastern time: a catch-up send
+     *  must not say "tomorrow". */
+    lockTonight: boolean;
+    picked: number;
+    total: number;
+    groups: Array<{ name: string; url: string; finished: number; members: number }>;
+    picksUrl: string;
+    scoringUrl: string;
+    lockCalendarUrl: string;
+    unsubscribeUrl: string;
+    idempotencyKey?: string;
+  },
+) => {
+  const complete = p.picked >= p.total;
+  return dispatch(
+    env,
+    p.to,
+    "mtgLockWarning",
+    {
+      heading: p.lockTonight ? "Picks lock tonight" : "Picks lock tomorrow night",
+      greeting: `Hi ${p.recipientName},`,
+      bodyText: `Picks for ${p.setName} lock ${p.lockAtLabel}. After that nothing can change, and everyone's picks are revealed to their groups.`,
+      progressLine: complete
+        ? "Your entry is complete. You can still change anything until the lock."
+        : p.picked === 0
+          ? `You haven't made any picks yet. Empty slots score 0.`
+          : `You've made ${p.picked} of ${p.total} picks. Empty slots score 0.`,
+      progressBg: complete ? "#ECFDF3" : "#FFF7ED",
+      hasGroups: p.groups.length > 0,
+      groups: p.groups.map((g) => ({ ...g, finishedLine: `${g.finished} of ${g.members} finished` })),
+      ctaText: complete ? "Review your picks" : p.picked === 0 ? "Make your picks" : "Finish your picks",
+      ctaUrl: p.picksUrl,
+      ctaHelperText: "Everything saves as you go.",
+      scoringUrl: p.scoringUrl,
+      lockCalendarUrl: p.lockCalendarUrl,
+      unsubscribeUrl: hasContent(p.unsubscribeUrl) ? p.unsubscribeUrl : null,
+    },
+    { subjectKey: p.lockTonight ? "mtgLockWarning_tonight" : "mtgLockWarning", idempotencyKey: p.idempotencyKey },
+  );
+};
+
 /** "You got a tag" notice (kudos internally), sent once daily to a recipient for whatever
  *  arrived since the last run. Batched per recipient: three kudos in one
  *  sitting send one email, not three. Givers are never named, matching the

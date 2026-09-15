@@ -67,6 +67,10 @@ import planReminderHtml from "./templates/planReminder.html";
 import planReminderTxt from "./templates/planReminder.txt";
 import kudosReceivedHtml from "./templates/kudosReceived.html";
 import kudosReceivedTxt from "./templates/kudosReceived.txt";
+import mtgWelcomeHtml from "./templates/mtgWelcome.html";
+import mtgWelcomeTxt from "./templates/mtgWelcome.txt";
+import mtgLockWarningHtml from "./templates/mtgLockWarning.html";
+import mtgLockWarningTxt from "./templates/mtgLockWarning.txt";
 import planRemovedByAdminHtml from "./templates/planRemovedByAdmin.html";
 import planRemovedByAdminTxt from "./templates/planRemovedByAdmin.txt";
 import planSigninHtml from "./templates/planSignin.html";
@@ -119,6 +123,8 @@ const TEMPLATES: Record<string, TemplatePair> = {
   runItAgain: { html: runItAgainHtml, text: runItAgainTxt },
   planReminder: { html: planReminderHtml, text: planReminderTxt },
   kudosReceived: { html: kudosReceivedHtml, text: kudosReceivedTxt },
+  mtgWelcome: { html: mtgWelcomeHtml, text: mtgWelcomeTxt },
+  mtgLockWarning: { html: mtgLockWarningHtml, text: mtgLockWarningTxt },
   planRemovedByAdmin: { html: planRemovedByAdminHtml, text: planRemovedByAdminTxt },
   planSignin: { html: planSigninHtml, text: planSigninTxt },
   rsvpReconfirmRequest: { html: rsvpReconfirmRequestHtml, text: rsvpReconfirmRequestTxt },

@@ -24,14 +24,19 @@ type Props = {
   onOpenCard?: (card: MtgCard) => void;
   /** Review step: a Receipts field under each pick. */
   onNoteChange?: (index: number, note: string) => void;
+  /** Desktop rail: one line per pick with compact controls. */
   dense?: boolean;
 };
+
+/** 40 px on phones, compact from the small breakpoint up. */
+const TOUCH = { width: { xs: 40, sm: 32 }, height: { xs: 40, sm: 32 } };
 
 /**
  * Five numbered slots for one rarity. Drag by the handle to reorder (dnd-kit
  * handles mouse, touch and keyboard), with up and down buttons as a fallback
  * for anyone who would rather tap. Empty slots stay visible so the ranking
- * always reads #1 to #5.
+ * always reads #1 to #5. On phones the controls get their own line, with
+ * remove set apart from the move buttons so a slip cannot hit it.
  */
 export default function PickList({ rarity, slots, locked, onReorder, onRemove, onOpenCard, onNoteChange, dense }: Props) {
   const sensors = useSensors(
@@ -80,7 +85,7 @@ export default function PickList({ rarity, slots, locked, onReorder, onRemove, o
             direction="row"
             alignItems="center"
             spacing={1}
-            sx={{ px: 1, py: dense ? 0.75 : 1, borderRadius: 2, border: "1px dashed", borderColor: "divider", color: "text.disabled" }}
+            sx={{ px: 1, py: dense ? 0.75 : 1, minHeight: dense ? 40 : 48, borderRadius: 2, border: "1px dashed", borderColor: "divider", color: "text.disabled" }}
           >
             <Typography sx={{ fontWeight: 800, minWidth: 28, textAlign: "center" }}>#{n}</Typography>
             <Typography variant="body2">Empty</Typography>
@@ -108,6 +113,8 @@ function SortableRow({ slot, index, count, locked, dense, onReorder, onRemove, o
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id: slot.card.id, disabled: locked });
   const { card } = slot;
   const noteLen = noteLength(slot.note);
+  // The rail is desktop-only, so dense rows stay on one line at every size.
+  const stacked = dense ? "row" : { xs: "column", sm: "row" } as const;
 
   return (
     <Box
@@ -125,46 +132,54 @@ function SortableRow({ slot, index, count, locked, dense, onReorder, onRemove, o
         py: dense ? 0.5 : 0.75,
       }}
     >
-      <Stack direction="row" alignItems="center" spacing={0.5}>
-        {!locked && (
-          <IconButton
-            ref={setActivatorNodeRef}
-            {...attributes}
-            {...listeners}
-            size="small"
-            aria-label={`Drag ${card.name} to reorder`}
-            sx={{ cursor: "grab", touchAction: "none", color: "text.disabled", "&:active": { cursor: "grabbing" } }}
+      <Stack direction={stacked} alignItems={dense ? "center" : { xs: "stretch", sm: "center" }} spacing={dense ? 0.5 : { xs: 0.25, sm: 0.5 }}>
+        <Stack direction="row" alignItems="center" spacing={0.5} sx={{ minWidth: 0, flex: 1 }}>
+          {!locked && (
+            <IconButton
+              ref={setActivatorNodeRef}
+              {...attributes}
+              {...listeners}
+              aria-label={`Drag ${card.name} to reorder`}
+              sx={{ ...(dense ? { width: 32, height: 32 } : TOUCH), cursor: "grab", touchAction: "none", color: "text.disabled", "&:active": { cursor: "grabbing" } }}
+            >
+              <DragIndicatorRoundedIcon fontSize="small" />
+            </IconButton>
+          )}
+          <Stack alignItems="center" sx={{ minWidth: 30, pl: locked ? 0.75 : 0 }}>
+            <Typography sx={{ fontWeight: 800, color: "primary.main", lineHeight: 1 }}>#{index + 1}</Typography>
+            <Typography variant="caption" color="text.disabled" sx={{ fontSize: "0.625rem", lineHeight: 1.2 }}>{SLOT_MULTIPLIERS[index]}×</Typography>
+          </Stack>
+          <Box
+            component={onOpenCard ? "button" : "div"}
+            type={onOpenCard ? "button" : undefined}
+            onClick={onOpenCard ? () => onOpenCard(card) : undefined}
+            sx={{ display: "flex", alignItems: "center", gap: 1, minWidth: 0, flex: 1, minHeight: 40, p: 0, border: 0, bgcolor: "transparent", textAlign: "left", font: "inherit", color: "inherit", cursor: onOpenCard ? "pointer" : "default" }}
           >
-            <DragIndicatorRoundedIcon fontSize="small" />
-          </IconButton>
-        )}
-        <Stack alignItems="center" sx={{ minWidth: 30, pl: locked ? 0.75 : 0 }}>
-          <Typography sx={{ fontWeight: 800, color: "primary.main", lineHeight: 1 }}>#{index + 1}</Typography>
-          <Typography variant="caption" color="text.disabled" sx={{ fontSize: "0.625rem", lineHeight: 1.2 }}>{SLOT_MULTIPLIERS[index]}×</Typography>
-        </Stack>
-        <Box
-          component={onOpenCard ? "button" : "div"}
-          type={onOpenCard ? "button" : undefined}
-          onClick={onOpenCard ? () => onOpenCard(card) : undefined}
-          sx={{ display: "flex", alignItems: "center", gap: 1, minWidth: 0, flex: 1, p: 0, border: 0, bgcolor: "transparent", textAlign: "left", font: "inherit", color: "inherit", cursor: onOpenCard ? "pointer" : "default" }}
-        >
-          <Box sx={{ width: dense ? 30 : 36, aspectRatio: "488 / 680", borderRadius: "6%", overflow: "hidden", bgcolor: "grey.100", flexShrink: 0 }}>
-            {card.imageNormal && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={card.imageNormal} alt="" loading="lazy" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-            )}
+            <Box sx={{ width: dense ? 30 : 36, aspectRatio: "488 / 680", borderRadius: "6%", overflow: "hidden", bgcolor: "grey.100", flexShrink: 0 }}>
+              {card.imageNormal && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={card.imageNormal} alt="" loading="lazy" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+              )}
+            </Box>
+            <Typography variant="body2" sx={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{card.name}</Typography>
           </Box>
-          <Typography variant="body2" sx={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{card.name}</Typography>
-        </Box>
+        </Stack>
         {!locked && (
-          <Stack direction="row" sx={{ flexShrink: 0 }}>
-            <IconButton size="small" aria-label={`Move ${card.name} up`} disabled={index === 0} onClick={() => onReorder(index, index - 1)} sx={{ p: 0.5 }}>
-              <ArrowUpwardRoundedIcon sx={{ fontSize: 18 }} />
-            </IconButton>
-            <IconButton size="small" aria-label={`Move ${card.name} down`} disabled={index === count - 1} onClick={() => onReorder(index, index + 1)} sx={{ p: 0.5 }}>
-              <ArrowDownwardRoundedIcon sx={{ fontSize: 18 }} />
-            </IconButton>
-            <IconButton size="small" aria-label={`Remove ${card.name}`} onClick={() => onRemove(index)} sx={{ p: 0.5 }}>
+          <Stack
+            direction="row"
+            alignItems="center"
+            justifyContent={dense ? "flex-end" : { xs: "space-between", sm: "flex-end" }}
+            sx={{ flexShrink: 0, pl: dense ? 0 : { xs: 5.5, sm: 0 } }}
+          >
+            <Stack direction="row" spacing={dense ? 0 : { xs: 1, sm: 0 }}>
+              <IconButton aria-label={`Move ${card.name} up`} disabled={index === 0} onClick={() => onReorder(index, index - 1)} sx={dense ? { width: 30, height: 30 } : TOUCH}>
+                <ArrowUpwardRoundedIcon sx={{ fontSize: 18 }} />
+              </IconButton>
+              <IconButton aria-label={`Move ${card.name} down`} disabled={index === count - 1} onClick={() => onReorder(index, index + 1)} sx={dense ? { width: 30, height: 30 } : TOUCH}>
+                <ArrowDownwardRoundedIcon sx={{ fontSize: 18 }} />
+              </IconButton>
+            </Stack>
+            <IconButton aria-label={`Remove ${card.name}`} onClick={() => onRemove(index)} sx={{ ...(dense ? { width: 30, height: 30 } : TOUCH), ml: dense ? 0.25 : { xs: 0, sm: 0.75 }, color: "text.secondary" }}>
               <CloseRoundedIcon sx={{ fontSize: 18 }} />
             </IconButton>
           </Stack>
@@ -180,7 +195,7 @@ function SortableRow({ slot, index, count, locked, dense, onReorder, onRemove, o
           disabled={locked}
           helperText={!locked && noteLen > 0 ? `${noteLen}/${MTG_NOTE_MAX}` : undefined}
           slotProps={{ htmlInput: { "aria-label": `Receipts note for ${card.name}` }, formHelperText: { sx: { textAlign: "right", mr: 0.5 } } }}
-          sx={{ mt: 0.75, px: 0.5, "& .MuiOutlinedInput-root": { borderRadius: 1.5, fontSize: "0.875rem" } }}
+          sx={{ mt: 0.75, px: 0.5, "& .MuiOutlinedInput-root": { borderRadius: 1.5, fontSize: { xs: "1rem", sm: "0.875rem" } } }}
         />
       )}
     </Box>

@@ -24,6 +24,7 @@ const LABEL: Record<string, string> = {
   attendee_removed: "emails when you are removed from a plan",
   unread_chat_digest: "plan chat notification emails",
   kudos_received: "emails about tags you received",
+  mtg_challenge: "MTG Prediction Challenge emails",
 };
 
 type Status = "loading" | "success" | "invalid" | "error";

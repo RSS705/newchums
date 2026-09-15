@@ -16,7 +16,7 @@ import { type MtgCard, type MtgRarity, MTG_SLOTS_PER_RARITY, RARITY_LABEL } from
 import PickList from "./PickList";
 import type { PickSlot } from "./pickUtils";
 
-export type SaveState = "idle" | "saving" | "saved" | "error" | "locked";
+export type SaveState = "idle" | "saving" | "saved" | "error" | "locked" | "signedOut";
 
 type Props = {
   rarity: MtgRarity;
@@ -29,20 +29,25 @@ type Props = {
   onOpenCard: (card: MtgCard) => void;
 };
 
-export function SaveStatus({ state }: { state: SaveState }) {
-  const map: Record<SaveState, { icon: React.ReactNode; text: string; color: string }> = {
-    idle: { icon: null, text: "", color: "text.secondary" },
-    saving: { icon: <SyncRoundedIcon sx={{ fontSize: 15 }} />, text: "Saving…", color: "text.secondary" },
-    saved: { icon: <CheckRoundedIcon sx={{ fontSize: 15 }} />, text: "Saved", color: "success.main" },
-    error: { icon: <CloudOffRoundedIcon sx={{ fontSize: 15 }} />, text: "Not saved, retrying", color: "error.main" },
-    locked: { icon: <LockRoundedIcon sx={{ fontSize: 15 }} />, text: "Locked", color: "text.secondary" },
-  };
-  const s = map[state];
+const STATUS: Record<SaveState, { icon: React.ReactNode; text: string; color: string }> = {
+  idle: { icon: null, text: "", color: "text.secondary" },
+  saving: { icon: <SyncRoundedIcon sx={{ fontSize: 15 }} />, text: "Saving…", color: "text.secondary" },
+  saved: { icon: <CheckRoundedIcon sx={{ fontSize: 15 }} />, text: "Saved", color: "success.main" },
+  error: { icon: <CloudOffRoundedIcon sx={{ fontSize: 15 }} />, text: "Not saved, retrying", color: "error.main" },
+  locked: { icon: <LockRoundedIcon sx={{ fontSize: 15 }} />, text: "Locked", color: "text.secondary" },
+  signedOut: { icon: <CloudOffRoundedIcon sx={{ fontSize: 15 }} />, text: "Signed out", color: "error.main" },
+};
+
+/** Visual save indicator. The wizard announces status once, in a single
+ *  live region, so these stay hidden from screen readers. `compact` shows
+ *  just the icon, for the narrow phone bar. */
+export function SaveStatus({ state, compact = false }: { state: SaveState; compact?: boolean }) {
+  const s = STATUS[state];
   if (!s.text) return null;
   return (
-    <Stack direction="row" spacing={0.5} alignItems="center" sx={{ color: s.color }} role="status" aria-live="polite">
+    <Stack direction="row" spacing={0.5} alignItems="center" sx={{ color: s.color, minWidth: 0 }} aria-hidden title={s.text}>
       {s.icon}
-      <Typography variant="caption" sx={{ fontWeight: 700, color: "inherit" }}>{s.text}</Typography>
+      {!compact && <Typography variant="caption" sx={{ fontWeight: 700, color: "inherit", whiteSpace: "nowrap" }}>{s.text}</Typography>}
     </Stack>
   );
 }
@@ -50,7 +55,8 @@ export function SaveStatus({ state }: { state: SaveState }) {
 /**
  * The five slots for the rarity being picked. A sticky rail beside the grid
  * on desktop; on phones a slim bar pinned to the bottom of the screen that
- * opens the full list in a sheet, so the grid keeps the whole width.
+ * opens the full list in a sheet, so the grid keeps the whole width. The bar
+ * is hidden once picks are read-only.
  */
 export default function PickTray({ rarity, slots, locked, saveState, lockCountdown, onReorder, onRemove, onOpenCard }: Props) {
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -80,54 +86,63 @@ export default function PickTray({ rarity, slots, locked, saveState, lockCountdo
         </AppCard>
       </Box>
 
-      {/* Phone bar. Sits above the page bottom; the wizard pads its content
-          so the bar never covers the step buttons. */}
-      <Box
-        sx={{
-          display: { xs: "block", md: "none" },
-          position: "fixed",
-          left: 0,
-          right: 0,
-          bottom: 0,
-          zIndex: (t) => t.zIndex.appBar,
-          bgcolor: "background.paper",
-          borderTop: "1px solid",
-          borderColor: "divider",
-          boxShadow: "0 -4px 16px rgba(0,0,0,0.08)",
-          px: 1.5,
-          pt: 1,
-          pb: "calc(8px + env(safe-area-inset-bottom))",
-        }}
-      >
-        <Stack direction="row" alignItems="center" spacing={1}>
-          <Stack direction="row" spacing={0.5} sx={{ flex: 1, minWidth: 0 }} aria-label={`${slots.length} of ${MTG_SLOTS_PER_RARITY} ${RARITY_LABEL[rarity].toLowerCase()} picked`}>
-            {Array.from({ length: MTG_SLOTS_PER_RARITY }, (_, i) => {
-              const s = slots[i];
-              return (
-                <Box key={i} sx={{ position: "relative", width: 34, aspectRatio: "488 / 680", borderRadius: "8%", overflow: "hidden", border: "1px solid", borderColor: s ? "primary.main" : "divider", borderStyle: s ? "solid" : "dashed", bgcolor: "grey.100", flexShrink: 0 }}>
-                  {s?.card.imageNormal ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={s.card.imageNormal} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-                  ) : (
-                    <Typography variant="caption" sx={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, color: "text.disabled", fontSize: "0.6875rem" }}>{i + 1}</Typography>
-                  )}
-                </Box>
-              );
-            })}
+      {!locked && (
+        <Box
+          sx={{
+            display: { xs: "block", md: "none" },
+            position: "fixed",
+            left: 0,
+            right: 0,
+            bottom: 0,
+            zIndex: (t) => t.zIndex.appBar,
+            bgcolor: "background.paper",
+            borderTop: "1px solid",
+            borderColor: "divider",
+            boxShadow: "0 -4px 16px rgba(0,0,0,0.08)",
+            px: 1.5,
+            pt: 1,
+            pb: "calc(8px + env(safe-area-inset-bottom))",
+          }}
+        >
+          <Stack direction="row" alignItems="center" spacing={1}>
+            <Stack
+              direction="row"
+              spacing={0.5}
+              sx={{ flex: 1, minWidth: 0, overflow: "hidden" }}
+              aria-label={`${slots.length} of ${MTG_SLOTS_PER_RARITY} ${RARITY_LABEL[rarity].toLowerCase()} picked`}
+            >
+              {Array.from({ length: MTG_SLOTS_PER_RARITY }, (_, i) => {
+                const s = slots[i];
+                return (
+                  <Box key={i} sx={{ position: "relative", flex: "0 1 34px", minWidth: 22, aspectRatio: "488 / 680", borderRadius: "8%", overflow: "hidden", border: "1px solid", borderColor: s ? "primary.main" : "divider", borderStyle: s ? "solid" : "dashed", bgcolor: "grey.100" }}>
+                    {s?.card.imageNormal ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={s.card.imageNormal} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                    ) : (
+                      <Typography variant="caption" sx={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, color: "text.disabled", fontSize: "0.6875rem" }}>{i + 1}</Typography>
+                    )}
+                  </Box>
+                );
+              })}
+            </Stack>
+            <Stack alignItems="flex-end" spacing={0.25} sx={{ flexShrink: 0, minWidth: 0 }}>
+              <SaveStatus state={saveState} compact />
+              {lockCountdown && (
+                <Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.6875rem", whiteSpace: "nowrap", display: "none", "@media (min-width: 380px)": { display: "block" } }}>
+                  Locks in {lockCountdown}
+                </Typography>
+              )}
+            </Stack>
+            <Button variant="contained" size="small" onClick={() => setSheetOpen(true)} aria-label={`Open your ${RARITY_LABEL[rarity].toLowerCase()}, ${slots.length} of ${MTG_SLOTS_PER_RARITY} picked`} sx={{ textTransform: "none", fontWeight: 700, borderRadius: 2, boxShadow: "none", flexShrink: 0, minHeight: 40, minWidth: 52 }}>
+              {slots.length}/{MTG_SLOTS_PER_RARITY}
+            </Button>
           </Stack>
-          <Stack alignItems="flex-end" spacing={0.25} sx={{ flexShrink: 0 }}>
-            <SaveStatus state={saveState} />
-            {lockCountdown && !locked && <Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.6875rem" }}>Locks in {lockCountdown}</Typography>}
-          </Stack>
-          <Button variant="contained" size="small" onClick={() => setSheetOpen(true)} sx={{ textTransform: "none", fontWeight: 700, borderRadius: 2, boxShadow: "none", flexShrink: 0, minHeight: 36 }}>
-            {slots.length}/{MTG_SLOTS_PER_RARITY}
-          </Button>
-        </Stack>
-      </Box>
+        </Box>
+      )}
 
       <Drawer
         anchor="bottom"
-        open={sheetOpen}
+        open={sheetOpen && !locked}
         onClose={() => setSheetOpen(false)}
         slotProps={{ paper: { sx: { borderTopLeftRadius: 16, borderTopRightRadius: 16, maxHeight: "85dvh", px: 2, pt: 2, pb: "calc(16px + env(safe-area-inset-bottom))" } } }}
       >
@@ -141,7 +156,7 @@ export default function PickTray({ rarity, slots, locked, saveState, lockCountdo
           onOpenCard={(card) => { setSheetOpen(false); onOpenCard(card); }}
         />
         {countdown}
-        <Button variant="text" onClick={() => setSheetOpen(false)} fullWidth sx={{ mt: 1.5, textTransform: "none", fontWeight: 600 }}>Done</Button>
+        <Button variant="text" onClick={() => setSheetOpen(false)} fullWidth sx={{ mt: 1.5, textTransform: "none", fontWeight: 600, minHeight: 44 }}>Done</Button>
       </Drawer>
     </>
   );

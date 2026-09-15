@@ -34,6 +34,7 @@ export const VALID_KEYS = [
   "run_it_again",
   "plan_reminder",
   "kudos_received",
+  "mtg_challenge",
 ] as const;
 
 export type NotificationKey = (typeof VALID_KEYS)[number];
@@ -64,6 +65,7 @@ export const DEFAULT_PREFS: Record<NotificationKey, NotificationPrefItem> = {
   run_it_again: { enabled: true },
   plan_reminder: { enabled: true },
   kudos_received: { enabled: true },
+  mtg_challenge: { enabled: true },
 };
 
 /**

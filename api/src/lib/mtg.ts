@@ -344,3 +344,132 @@ export function validateEntryPicks(input: unknown, pool: Map<string, MtgRarity>)
   picks.sort((a, b) => order(a.rarity) - order(b.rarity) || a.slot - b.slot);
   return { ok: true, picks };
 }
+
+// ── Emails and calendar (Batch 3) ────────────────────────────────────────────
+
+const EASTERN = "America/New_York";
+
+function easternParts(at: Date): { year: number; month: number; day: number; hour: number; minute: number; second: number } {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: EASTERN, hourCycle: "h23",
+    year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit",
+  }).formatToParts(at);
+  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? 0);
+  return { year: get("year"), month: get("month"), day: get("day"), hour: get("hour"), minute: get("minute"), second: get("second") };
+}
+
+/** Minutes the Eastern clock is offset from UTC at an instant (-240 in EDT). */
+function easternOffsetMinutes(at: Date): number {
+  const p = easternParts(at);
+  const wallAsUtc = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second);
+  return Math.round((wallAsUtc - Math.floor(at.getTime() / 1000) * 1000) / 60000);
+}
+
+/** The UTC instant for a wall-clock time in New York. Two passes settle the
+ *  offset on a daylight-saving changeover day. */
+export function easternToUtc(year: number, month: number, day: number, hour: number, minute = 0): Date {
+  const wall = Date.UTC(year, month - 1, day, hour, minute);
+  let guess = wall;
+  for (let i = 0; i < 2; i++) guess = wall - easternOffsetMinutes(new Date(guess)) * 60000;
+  return new Date(guess);
+}
+
+/** When the lock warning goes out: 10:00 AM ET on the calendar day before
+ *  the lock, in Eastern terms (spec section 8). */
+export function mtgLockWarningAt(lockAt: string | Date): Date {
+  const p = easternParts(new Date(lockAt));
+  const previous = new Date(Date.UTC(p.year, p.month - 1, p.day) - 86400000);
+  return easternToUtc(previous.getUTCFullYear(), previous.getUTCMonth() + 1, previous.getUTCDate(), 10, 0);
+}
+
+/** The Eastern calendar day of an instant as YYYY-MM-DD, for comparing days
+ *  the way players in New York would. */
+export function easternDateKey(at: string | Date): string {
+  const p = easternParts(new Date(at));
+  return `${p.year}-${String(p.month).padStart(2, "0")}-${String(p.day).padStart(2, "0")}`;
+}
+
+/** "Monday, September 28 at 11:59 PM ET" for emails, which cannot know the
+ *  reader's time zone. */
+export function formatEasternLong(at: string | Date): string {
+  const d = new Date(at);
+  const date = new Intl.DateTimeFormat("en-US", { timeZone: EASTERN, weekday: "long", month: "long", day: "numeric" }).format(d);
+  const time = new Intl.DateTimeFormat("en-US", { timeZone: EASTERN, hour: "numeric", minute: "2-digit" }).format(d);
+  return `${date} at ${time} ET`;
+}
+
+/** "Mon, Sep 28, 11:59 PM ET" for compact date lists. */
+export function formatEasternShort(at: string | Date): string {
+  const d = new Date(at);
+  return `${new Intl.DateTimeFormat("en-US", { timeZone: EASTERN, weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(d)} ET`;
+}
+
+const BACKSLASH = String.fromCharCode(92);
+
+/** RFC 5545 text escaping: backslash, semicolon, comma and newlines. */
+export function escapeIcsText(text: string): string {
+  return text
+    .split(BACKSLASH).join(BACKSLASH + BACKSLASH)
+    .split(";").join(BACKSLASH + ";")
+    .split(",").join(BACKSLASH + ",")
+    .replace(/\r?\n/g, BACKSLASH + "n");
+}
+
+/** Fold a content line at 75 octets, continuation lines starting with a
+ *  space, never splitting a multi-byte character. */
+export function foldIcsLine(line: string): string {
+  const encoder = new TextEncoder();
+  if (encoder.encode(line).length <= 75) return line;
+  const out: string[] = [];
+  let current = "";
+  let bytes = 0;
+  for (const ch of line) {
+    const size = encoder.encode(ch).length;
+    const limit = out.length === 0 ? 75 : 74;
+    if (bytes + size > limit) { out.push(current); current = ""; bytes = 0; }
+    current += ch;
+    bytes += size;
+  }
+  out.push(current);
+  return out.join("\r\n ");
+}
+
+function icsStamp(d: Date): string {
+  return d.toISOString().replace(/\.\d{3}Z$/, "Z").replace(/[-:]/g, "");
+}
+
+export type IcsEvent = {
+  uid: string;
+  start: Date;
+  durationMinutes: number;
+  summary: string;
+  description: string;
+  url: string;
+  /** Adds a reminder this many minutes before the start. */
+  alarmMinutesBefore?: number;
+};
+
+/** A one-event calendar file (the "Add to calendar" links, spec 4.2). */
+export function buildIcsEvent(ev: IcsEvent, now: Date = new Date()): string {
+  const end = new Date(ev.start.getTime() + ev.durationMinutes * 60000);
+  const lines = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//NewChums//MTG Prediction Challenge//EN",
+    "CALSCALE:GREGORIAN",
+    "METHOD:PUBLISH",
+    "BEGIN:VEVENT",
+    `UID:${ev.uid}`,
+    `DTSTAMP:${icsStamp(now)}`,
+    `DTSTART:${icsStamp(ev.start)}`,
+    `DTEND:${icsStamp(end)}`,
+    `SUMMARY:${escapeIcsText(ev.summary)}`,
+    `DESCRIPTION:${escapeIcsText(ev.description)}`,
+    `URL:${ev.url}`,
+  ];
+  if (ev.alarmMinutesBefore && ev.alarmMinutesBefore > 0) {
+    lines.push("BEGIN:VALARM", "ACTION:DISPLAY", `DESCRIPTION:${escapeIcsText(ev.summary)}`, `TRIGGER:-PT${Math.round(ev.alarmMinutesBefore)}M`, "END:VALARM");
+  }
+  lines.push("END:VEVENT", "END:VCALENDAR");
+  return lines.map(foldIcsLine).join("\r\n") + "\r\n";
+}

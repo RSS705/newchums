@@ -1,0 +1,34 @@
+{{heading}}
+
+{{greeting}}
+
+{{bodyText}}
+{{#hasEntry}}
+You already have {{picked}} of 20 picks, and they count in this group too.
+{{/hasEntry}}{{#inviteUrl}}
+Your invite link. {{inviteHelp}}
+{{.}}
+{{/inviteUrl}}
+---
+
+Key dates
+{{#keyDates}}
+{{label}}: {{when}}
+{{/keyDates}}
+
+---
+
+{{ctaText}}: {{ctaUrl}}
+
+{{ctaHelperText}}
+
+How scoring works: {{scoringUrl}}
+Add the lock to your calendar: {{lockCalendarUrl}}
+
+---
+
+You're receiving this because you joined an MTG Prediction Challenge group on NewChums.
+{{#unsubscribeUrl}}Turn off MTG Prediction Challenge emails: {{.}}{{/unsubscribeUrl}}
+
+MTG Prediction Challenge is unofficial Fan Content permitted under the Fan Content Policy. Not approved/endorsed by Wizards.
+© {{year}} {{productName}}

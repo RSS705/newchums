@@ -46,6 +46,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.8,
     },
     {
+      // Public MTG Prediction Challenge explainer (spec 10.9).
+      url: `${base}/mtg/how-scoring-works`,
+      lastModified: now,
+      changeFrequency: "monthly",
+      priority: 0.5,
+    },
+    {
       url: `${base}/safety-center`,
       lastModified: now,
       changeFrequency: "monthly",

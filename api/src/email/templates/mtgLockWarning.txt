@@ -1,0 +1,31 @@
+{{heading}}
+
+{{greeting}}
+
+{{bodyText}}
+
+{{progressLine}}
+{{#hasGroups}}
+---
+
+Your groups
+{{#groups}}
+{{name}}: {{finishedLine}} ({{url}})
+{{/groups}}
+{{/hasGroups}}
+---
+
+{{ctaText}}: {{ctaUrl}}
+
+{{ctaHelperText}}
+
+How scoring works: {{scoringUrl}}
+Add the lock to your calendar: {{lockCalendarUrl}}
+
+---
+
+You're receiving this because you're playing the MTG Prediction Challenge on NewChums.
+{{#unsubscribeUrl}}Turn off MTG Prediction Challenge emails: {{.}}{{/unsubscribeUrl}}
+
+MTG Prediction Challenge is unofficial Fan Content permitted under the Fan Content Policy. Not approved/endorsed by Wizards.
+© {{year}} {{productName}}

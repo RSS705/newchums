@@ -36,6 +36,8 @@ import {
   sendPlanAutoCancelledEmail,
   sendPlanRemovedByAdminEmail,
   sendPlanWrapUpEmail,
+  sendMtgWelcomeEmail,
+  sendMtgLockWarningEmail,
   sendRunItAgainEmail,
   sendPlanReminderEmail,
   sendKudosReceivedEmail,
@@ -64,7 +66,7 @@ import {
   hardDeleteUser,
 } from "./lib/adminHardDelete";
 import { KUDOS_TAGS, KUDOS_MAX_PER_PLAN, KUDOS_WINDOW_MS, isKudosTag, kudosTagInfo } from "./lib/kudos";
-import { MTG_SPECIALIZATION, MTG_RARITIES, MTG_SLOTS_PER_RARITY, type MtgRarity, type MtgSetRow, type ValidatedPick, easternHour, mtgPhase, mtgPicksOpen, mtgTimeline, syncScryfallSet, validateEntryPicks } from "./lib/mtg";
+import { MTG_SPECIALIZATION, MTG_RARITIES, MTG_SLOTS_PER_RARITY, type MtgRarity, type MtgSetRow, type ValidatedPick, buildIcsEvent, easternDateKey, easternHour, formatEasternLong, formatEasternShort, mtgLockWarningAt, mtgPhase, mtgPicksOpen, mtgTimeline, syncScryfallSet, validateEntryPicks } from "./lib/mtg";
 import { checkDbRateLimit, isDbRateLimited, recordDbRateEvent } from "./lib/dbRateLimit";
 import {
   generateOtpCode,
@@ -1079,6 +1081,8 @@ app.get("/mtg/sets/:code", async (c) => {
   }
 });
 
+const MTG_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /** Card fields the pick screens use, shared by the pool and entry routes. */
 function mapMtgCard(r: Record<string, unknown>) {
   return {
@@ -1173,9 +1177,15 @@ app.post("/mtg/sets/:code/reviewed", async (c) => {
  * completed_at records when the entry most recently became complete: kept
  * while it stays at twenty, cleared when it drops below.
  */
-async function writeMtgPicks(sql: ReturnType<typeof getSql>, entryId: string, picks: ValidatedPick[], playerChange: boolean) {
+async function writeMtgPicks(sql: ReturnType<typeof getSql>, entryId: string, picks: ValidatedPick[], playerChange: boolean, setId: string) {
   const complete = picks.length === MTG_RARITIES.length * MTG_SLOTS_PER_RARITY;
-  const queries = [sql`DELETE FROM newchums.mtg_picks WHERE entry_id = ${entryId}`];
+  const queries = [
+    // The lock, checked inside the transaction so a save that started just
+    // before lock_at cannot commit after it. Dividing by zero is the simplest
+    // way to abort a non-interactive transaction; callers map it to 423.
+    sql`SELECT 1 / (CASE WHEN now() < s.lock_at AND s.status = 'active' THEN 1 ELSE 0 END) FROM newchums.mtg_sets s WHERE s.id = ${setId}`,
+    sql`DELETE FROM newchums.mtg_picks WHERE entry_id = ${entryId}`,
+  ];
   if (picks.length > 0) {
     queries.push(sql`
       INSERT INTO newchums.mtg_picks (entry_id, rarity, slot, card_id, note)
@@ -1221,7 +1231,7 @@ app.get("/mtg/sets/:code/entry", async (c) => {
     if (!entry) return c.json({ ok: true, set: setOut, entry: null });
 
     const rows = (await sql`
-      SELECT p.rarity AS pick_rarity, p.slot, p.note, (c.in_pool AND NOT c.voided) AS valid,
+      SELECT p.rarity AS pick_rarity, p.slot, p.note, (c.in_pool AND NOT c.voided AND c.rarity = p.rarity) AS valid,
              c.id, c.scryfall_id, c.arena_id, c.name, c.rarity, c.collector_number, c.layout, c.colors, c.mana_cost, c.mana_value,
              c.type_line, c.oracle_text, c.image_normal, c.image_large, c.image_back_normal, c.image_back_large, c.image_status,
              c.previewed_at, c.preview_source, c.preview_source_uri, c.first_seen_at
@@ -1244,7 +1254,7 @@ app.get("/mtg/sets/:code/entry", async (c) => {
           renumbered.push({ rarity, slot: i + 1, cardId: String(r.id), note: (r.note as string | null) ?? null });
         });
       }
-      await writeMtgPicks(sql, entry.id, renumbered, false);
+      await writeMtgPicks(sql, entry.id, renumbered, false, set.id);
     }
 
     const picks: Record<string, Array<{ slot: number; note: string | null; card: ReturnType<typeof mapMtgCard> }>> = { common: [], uncommon: [], rare: [], mythic: [] };
@@ -1285,25 +1295,106 @@ app.put("/mtg/sets/:code/entry", async (c) => {
     if (!mtgPicksOpen(set, now))
       return c.json({ ok: false, error: "NOT_OPEN", message: "Picks aren't open yet" }, 409);
 
-    const poolRows = (await sql`
-      SELECT id, rarity FROM newchums.mtg_cards WHERE set_id = ${set.id} AND in_pool = true AND voided = false
-    `) as { id: string; rarity: MtgRarity }[];
-    const validation = validateEntryPicks(body.picks, new Map(poolRows.map((r) => [r.id, r.rarity])));
-    if (!validation.ok) return c.json({ ok: false, error: "VALIDATION", message: validation.message }, 400);
-
     const userId = await ensureAppUserId(sql, payload.email, (payload as { name?: string | null }).name);
-    const entryRows = (await sql`
+    // Spec 10.3: an entry belongs to a player, and a player is someone in an
+    // active challenge group. Super admins may hold one for testing.
+    const playerRows = (await sql`
+      SELECT u.role = 'super_admin' AS admin,
+             EXISTS (
+               SELECT 1 FROM newchums.community_members cm
+               JOIN newchums.communities cc ON cc.id = cm.community_id
+               WHERE cm.user_id = u.id AND cm.status = 'active'
+                 AND cc.specialization = ${MTG_SPECIALIZATION} AND COALESCE(cc.status, 'active') = 'active'
+             ) AS member
+      FROM newchums.users u WHERE u.id = ${userId}
+    `) as { admin: boolean | null; member: boolean }[];
+    if (!playerRows[0]?.admin && !playerRows[0]?.member)
+      return c.json({ ok: false, error: "NOT_A_PLAYER", message: "Join a challenge group to make picks" }, 403);
+
+    // A card that has left the pool, or whose rarity Scryfall has corrected,
+    // is dropped from the save and named in the response rather than failing
+    // the whole entry: the player could not fix it from the grid anyway.
+    // Unknown card ids still fail validation below.
+    const full = MTG_RARITIES.length * MTG_SLOTS_PER_RARITY;
+    const dropped: { name: string; rarity: MtgRarity }[] = [];
+    const pool = new Map<string, MtgRarity>();
+    let candidate: unknown = body.picks;
+    if (body.picks && typeof body.picks === "object" && !Array.isArray(body.picks)) {
+      const incoming = body.picks as Record<string, unknown>;
+      const ids = new Set<string>();
+      for (const list of Object.values(incoming)) {
+        if (!Array.isArray(list)) continue;
+        for (const item of list) {
+          const id = (item as { cardId?: unknown } | null)?.cardId;
+          if (typeof id === "string" && MTG_UUID_RE.test(id)) ids.add(id);
+        }
+      }
+      const known = ids.size === 0 ? [] : ((await sql`
+        SELECT id, name, rarity, (in_pool AND NOT voided) AS live
+        FROM newchums.mtg_cards WHERE set_id = ${set.id} AND id = ANY(${[...ids]}::uuid[])
+      `) as { id: string; name: string; rarity: MtgRarity; live: boolean }[]);
+      const byId = new Map(known.map((k) => [k.id, k]));
+      for (const k of known) if (k.live) pool.set(k.id, k.rarity);
+      const cleaned: Record<string, unknown> = {};
+      for (const [listRarity, list] of Object.entries(incoming)) {
+        if (!Array.isArray(list)) { cleaned[listRarity] = list; continue; }
+        const kept = list.filter((item) => {
+          const card = byId.get(String((item as { cardId?: unknown } | null)?.cardId));
+          if (card && (!card.live || card.rarity !== listRarity)) {
+            dropped.push({ name: card.name, rarity: listRarity as MtgRarity });
+            return false;
+          }
+          return true;
+        });
+        cleaned[listRarity] = kept.length === list.length
+          ? list
+          : [...kept]
+              .sort((x, y) => Number((x as { slot?: unknown })?.slot) - Number((y as { slot?: unknown })?.slot))
+              .map((item, i) => ({ ...(item as object), slot: i + 1 }));
+      }
+      candidate = cleaned;
+    }
+    const validation = validateEntryPicks(candidate, pool);
+    if (!validation.ok) return c.json({ ok: false, error: "VALIDATION", message: validation.message }, 400);
+    const picked = validation.picks.length;
+
+    // A save that changes nothing does not touch the entry, so it cannot move
+    // the tie-break time.
+    const existing = (await sql`
+      SELECT id, updated_at, completed_at FROM newchums.mtg_entries WHERE user_id = ${userId} AND set_id = ${set.id} LIMIT 1
+    `) as { id: string; updated_at: string; completed_at: string | null }[];
+    const signature = (rows: { rarity: string; slot: number; cardId: string; note: string | null }[]) =>
+      rows.map((r) => `${r.rarity}|${r.slot}|${r.cardId}|${r.note ?? ""}`).sort().join("\n");
+    if (existing[0]) {
+      const current = (await sql`
+        SELECT rarity, slot, card_id, note FROM newchums.mtg_picks WHERE entry_id = ${existing[0].id}
+      `) as { rarity: string; slot: number; card_id: string; note: string | null }[];
+      if (signature(current.map((r) => ({ rarity: r.rarity, slot: Number(r.slot), cardId: r.card_id, note: r.note }))) === signature(validation.picks)) {
+        return c.json({
+          ok: true,
+          unchanged: true,
+          dropped,
+          entry: { updatedAt: existing[0].updated_at, completedAt: existing[0].completed_at, picked, complete: picked === full },
+        });
+      }
+    }
+    const entryId = existing[0]?.id ?? ((await sql`
       INSERT INTO newchums.mtg_entries (user_id, set_id) VALUES (${userId}, ${set.id})
       ON CONFLICT (user_id, set_id) DO UPDATE SET user_id = EXCLUDED.user_id
       RETURNING id
-    `) as { id: string }[];
-    const entryId = entryRows[0].id;
-    await writeMtgPicks(sql, entryId, validation.picks, true);
+    `) as { id: string }[])[0].id;
+    try {
+      await writeMtgPicks(sql, entryId, validation.picks, true, set.id);
+    } catch (err) {
+      if (err instanceof Error && /division by zero/i.test(err.message))
+        return c.json({ ok: false, error: "LOCKED", message: "Picks are locked" }, 423);
+      throw err;
+    }
     const after = (await sql`SELECT updated_at, completed_at FROM newchums.mtg_entries WHERE id = ${entryId}`) as { updated_at: string; completed_at: string | null }[];
-    const picked = validation.picks.length;
     return c.json({
       ok: true,
-      entry: { updatedAt: after[0]?.updated_at, completedAt: after[0]?.completed_at ?? null, picked, complete: picked === MTG_RARITIES.length * MTG_SLOTS_PER_RARITY },
+      dropped,
+      entry: { updatedAt: after[0]?.updated_at, completedAt: after[0]?.completed_at ?? null, picked, complete: picked === full },
     });
   } catch (err) {
     console.error("[PUT /mtg/sets/:code/entry]", err);
@@ -1369,6 +1460,271 @@ app.get("/mtg/communities/:id/progress", async (c) => {
     return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
   }
 });
+
+/** GET /mtg/sets/:code/calendar/:file (lock.ics or final.ics), the "Add to
+ *  calendar" files for the lock and the final day (spec 4.2). Public, like
+ *  the timeline that links to them. The web app proxies this same-origin so
+ *  emails and pages can share one link. */
+app.get("/mtg/sets/:code/calendar/:file", async (c) => {
+  const key = c.req.param("file").replace(/\.ics$/, "");
+  if (key !== "lock" && key !== "final") return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+  const sql = getSql(c.env);
+  try {
+    const set = await loadMtgSet(sql, c.req.param("code"));
+    if (!set) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    const web = c.env.WEB_BASE_URL;
+    const isLock = key === "lock";
+    const ics = buildIcsEvent({
+      uid: `mtg-${set.code}-${key}@newchums.com`,
+      start: new Date(isLock ? set.lock_at : set.final_at),
+      durationMinutes: 30,
+      summary: isLock ? `${set.name} picks lock` : `${set.name} final standings`,
+      description: isLock
+        ? `MTG Prediction Challenge picks for ${set.name} lock now. Change anything until then. How scoring works: ${web}/mtg/how-scoring-works`
+        : `The ${set.name} season of the MTG Prediction Challenge ends. The standings this morning are final and badges are awarded.`,
+      url: `${web}/mtg/how-scoring-works`,
+      alarmMinutesBefore: isLock ? 180 : 60,
+    });
+    return new Response(ics, {
+      headers: {
+        "Content-Type": "text/calendar; charset=utf-8",
+        "Content-Disposition": `attachment; filename="${set.code}-${key}.ics"`,
+        "Cache-Control": "public, max-age=3600",
+      },
+    });
+  } catch (err) {
+    console.error("[GET /mtg/sets/:code/calendar/:file]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** Links every MTG email shares. */
+function mtgEmailLinks(env: Bindings, setCode: string) {
+  return {
+    scoringUrl: `${env.WEB_BASE_URL}/mtg/how-scoring-works`,
+    lockCalendarUrl: `${env.WEB_BASE_URL}/mtg/calendar/${setCode}/lock.ics`,
+  };
+}
+
+/**
+ * Send the MTG welcome to a player who has just become an active member of a
+ * challenge community, if this is their first group for the current set
+ * (spec section 8, email 1). mtg_email_log is the guarantee: joining a
+ * second group is confirmed in the app only. Nothing is sent after the lock,
+ * when there is nothing left to pick. Returns true when the welcome went
+ * out, so a caller can drop a generic email that would say the same thing.
+ */
+async function sendMtgWelcomeIfFirst(
+  sql: ReturnType<typeof getSql>,
+  env: Bindings,
+  // Hono's execution context and the Workers one differ in type only; all
+  // this needs is waitUntil.
+  ctx: { waitUntil(promise: Promise<unknown>): void },
+  userId: string,
+  communityId: string,
+): Promise<boolean> {
+  try {
+    const communityRows = (await sql`
+      SELECT id, name, slug, specialization, join_mode, invite_code, owner_user_id
+      FROM newchums.communities
+      WHERE id = ${communityId} AND COALESCE(status, 'active') = 'active'
+      LIMIT 1
+    `) as { id: string; name: string; slug: string; specialization: string | null; join_mode: string; invite_code: string | null; owner_user_id: string }[];
+    const community = communityRows[0];
+    if (!community || community.specialization !== MTG_SPECIALIZATION) return false;
+    const set = await loadMtgSet(sql, null);
+    if (!set || set.status !== "active") return false;
+    const now = new Date();
+    if (now.getTime() >= new Date(set.lock_at).getTime()) return false;
+
+    const userRows = (await sql`
+      SELECT u.email, u.name, up.notification_prefs
+      FROM newchums.users u LEFT JOIN newchums.user_profile up ON up.user_id = u.id
+      WHERE u.id = ${userId} LIMIT 1
+    `) as { email: string | null; name: string | null; notification_prefs: unknown }[];
+    const user = userRows[0];
+    if (!user?.email) return false;
+    if (normalizeNotificationPrefs(user.notification_prefs).items.mtg_challenge?.enabled === false) return false;
+
+    const logged = (await sql`
+      INSERT INTO newchums.mtg_email_log (user_id, set_id, email_type) VALUES (${userId}, ${set.id}, 'welcome')
+      ON CONFLICT DO NOTHING
+      RETURNING user_id
+    `) as unknown[];
+    if (logged.length === 0) return false;
+
+    const pickedRows = (await sql`
+      SELECT COUNT(*)::int AS n FROM newchums.mtg_picks p
+      JOIN newchums.mtg_entries e ON e.id = p.entry_id
+      WHERE e.user_id = ${userId} AND e.set_id = ${set.id}
+    `) as { n: number }[];
+    const web = env.WEB_BASE_URL;
+    const isCreator = community.owner_user_id === userId;
+    const timeline = mtgTimeline(set, now);
+    const keyDates = ["lock", "arena", "first_standings", "final"]
+      .map((k) => timeline.find((t) => t.key === k))
+      .filter((t): t is NonNullable<typeof t> => !!t)
+      .map((t) => ({ label: t.label, when: formatEasternShort(t.at) }));
+    const inviteUrl = !isCreator
+      ? null
+      : community.join_mode === "invite_only" && community.invite_code
+        ? `${web}/communities/${community.slug}?invite=${community.invite_code}`
+        : `${web}/communities/${community.slug}`;
+    const inviteHelp = community.join_mode === "invite_only"
+      ? "Anyone with it joins straight away. You can reset it any time from Edit."
+      : community.join_mode === "approval_required"
+        ? "People who open it can ask to join, and you approve each one."
+        : "Anyone with it can join the group.";
+    let unsubscribeUrl = "";
+    try {
+      if (env.NEXTAUTH_SECRET) {
+        const token = await createUnsubscribeToken(env.NEXTAUTH_SECRET, userId, "mtg_challenge");
+        unsubscribeUrl = `${web}/unsubscribe?token=${encodeURIComponent(token)}`;
+      }
+    } catch { /* send without the link rather than not at all */ }
+
+    const sending = sendMtgWelcomeEmail(env, {
+        to: user.email,
+        recipientName: user.name?.trim() || "there",
+        communityName: community.name,
+        isCreator,
+        inviteUrl,
+        inviteHelp,
+        setName: set.name,
+        lockAtLabel: formatEasternLong(set.lock_at),
+        keyDates,
+        picked: pickedRows[0]?.n ?? 0,
+        picksUrl: `${web}/communities/${community.slug}/picks`,
+        ...mtgEmailLinks(env, set.code),
+        unsubscribeUrl,
+        idempotencyKey: `mtg_welcome:${set.id}:${userId}`,
+      });
+    // Wait briefly for the provider. A refused send releases the log row, so a
+    // later join can try again and an approval falls back to its usual email.
+    const outcome = await Promise.race([
+      sending.then(() => "sent" as const, () => "failed" as const),
+      new Promise<"slow">((resolve) => setTimeout(() => resolve("slow"), 8000)),
+    ]);
+    if (outcome === "failed") {
+      await sql`DELETE FROM newchums.mtg_email_log WHERE user_id = ${userId} AND set_id = ${set.id} AND email_type = 'welcome' AND period = ''`;
+      console.error("[mtg-welcome] send refused; log row released");
+      return false;
+    }
+    if (outcome === "slow") ctx.waitUntil(sending.then(() => undefined, (err) => console.error("[mtg-welcome] send failed", err)));
+    return true;
+  } catch (err) {
+    console.error("[mtg-welcome]", err);
+    return false;
+  }
+}
+
+/**
+ * MTG lock warning (spec section 8, email 2). From 10 AM ET on the day
+ * before the lock until the lock itself, queue one email per player who has
+ * an entry or belongs to a challenge group, in a single statement: log rows
+ * for everyone, outbox rows for those who want the email. A player welcomed
+ * in the last 12 hours is logged but not emailed, since the welcome already
+ * gave them the lock time. The email log lets a missed hour catch up without
+ * repeating anyone. Progress numbers are filled in at delivery, not here.
+ */
+async function processMtgLockWarnings(sql: ReturnType<typeof getSql>, env: Bindings) {
+  const set = await loadMtgSet(sql, null);
+  if (!set || set.status !== "active") return;
+  const now = Date.now();
+  if (now < mtgLockWarningAt(set.lock_at).getTime() || now >= new Date(set.lock_at).getTime()) return;
+
+  const payload = JSON.stringify({
+    setName: set.name,
+    lockAt: new Date(set.lock_at).toISOString(),
+    lockAtLabel: formatEasternLong(set.lock_at),
+    ...mtgEmailLinks(env, set.code),
+  });
+  const groupKey = `mtg:${set.code}:lock_warning`;
+  const counts = (await sql`
+    WITH players AS (
+      SELECT e.user_id FROM newchums.mtg_entries e WHERE e.set_id = ${set.id}
+      UNION
+      SELECT cm.user_id FROM newchums.community_members cm
+      JOIN newchums.communities c ON c.id = cm.community_id
+      WHERE cm.status = 'active' AND c.specialization = ${MTG_SPECIALIZATION} AND COALESCE(c.status, 'active') = 'active'
+    ),
+    candidates AS (
+      SELECT p.user_id,
+             COALESCE(up.notification_prefs->'items'->'mtg_challenge'->>'enabled', 'true') <> 'false' AS wants_email,
+             EXISTS (
+               SELECT 1 FROM newchums.mtg_email_log w
+               WHERE w.user_id = p.user_id AND w.set_id = ${set.id} AND w.email_type = 'welcome'
+                 AND w.sent_at > now() - interval '12 hours'
+             ) AS just_welcomed
+      FROM players p
+      JOIN newchums.users u ON u.id = p.user_id
+      LEFT JOIN newchums.user_profile up ON up.user_id = p.user_id
+      WHERE NOT EXISTS (
+        SELECT 1 FROM newchums.mtg_email_log l
+        WHERE l.user_id = p.user_id AND l.set_id = ${set.id} AND l.email_type = 'lock_warning' AND l.period = ''
+      )
+      LIMIT 2000
+    ),
+    logged AS (
+      INSERT INTO newchums.mtg_email_log (user_id, set_id, email_type)
+      SELECT user_id, ${set.id}, 'lock_warning' FROM candidates
+      ON CONFLICT DO NOTHING
+      RETURNING user_id
+    ),
+    queued AS (
+      INSERT INTO newchums.email_outbox (kind, set_id, user_id, payload, group_key)
+      SELECT 'mtg_lock_warning', ${set.id}, l.user_id, ${payload}::jsonb, ${groupKey}
+      FROM logged l JOIN candidates cd ON cd.user_id = l.user_id
+      WHERE cd.wants_email AND NOT cd.just_welcomed
+      ON CONFLICT DO NOTHING
+      RETURNING user_id
+    )
+    SELECT (SELECT COUNT(*)::int FROM candidates) AS candidates,
+           (SELECT COUNT(*)::int FROM logged) AS logged,
+           (SELECT COUNT(*)::int FROM queued) AS queued
+  `) as { candidates: number; logged: number; queued: number }[];
+  const r = counts[0];
+  if (r && r.candidates > 0) console.log(`[mtg-lock-warning] ${set.code}: candidates=${r.candidates} logged=${r.logged} queued=${r.queued}`);
+}
+
+/** Live numbers for one lock warning, read at delivery: the player's picks,
+ *  and each of their challenge groups with how many members have finished. */
+async function mtgLockWarningDetails(sql: ReturnType<typeof getSql>, env: Bindings, setId: string, userId: string) {
+  const full = MTG_RARITIES.length * MTG_SLOTS_PER_RARITY;
+  const pickedRows = (await sql`
+    SELECT COUNT(p.card_id)::int AS n
+    FROM newchums.mtg_entries e LEFT JOIN newchums.mtg_picks p ON p.entry_id = e.id
+    WHERE e.user_id = ${userId} AND e.set_id = ${setId}
+  `) as { n: number }[];
+  const groups = (await sql`
+    WITH mine AS (
+      SELECT c.id, c.name, c.slug FROM newchums.communities c
+      JOIN newchums.community_members cm ON cm.community_id = c.id AND cm.user_id = ${userId} AND cm.status = 'active'
+      WHERE c.specialization = ${MTG_SPECIALIZATION} AND COALESCE(c.status, 'active') = 'active'
+    ),
+    counts AS (
+      SELECT e.user_id, COUNT(p.card_id)::int AS n
+      FROM newchums.mtg_entries e LEFT JOIN newchums.mtg_picks p ON p.entry_id = e.id
+      WHERE e.set_id = ${setId}
+      GROUP BY e.user_id
+    )
+    SELECT m.name, m.slug,
+           COUNT(cm.user_id)::int AS members,
+           COUNT(cm.user_id) FILTER (WHERE COALESCE(ct.n, 0) >= ${full})::int AS finished
+    FROM mine m
+    JOIN newchums.community_members cm ON cm.community_id = m.id AND cm.status = 'active'
+    LEFT JOIN counts ct ON ct.user_id = cm.user_id
+    GROUP BY m.id, m.name, m.slug
+    ORDER BY LOWER(m.name)
+  `) as { name: string; slug: string; members: number; finished: number }[];
+  const web = env.WEB_BASE_URL;
+  return {
+    picked: pickedRows[0]?.n ?? 0,
+    total: full,
+    groups: groups.map((g) => ({ name: g.name, url: `${web}/communities/${g.slug}`, finished: g.finished, members: g.members })),
+    picksUrl: groups[0] ? `${web}/communities/${groups[0].slug}/picks` : `${web}/communities`,
+  };
+}
 
 /** GET /admin/mtg/sets, every season with its sync history (super admins). */
 app.get("/admin/mtg/sets", async (c) => {
@@ -9973,6 +10329,7 @@ app.post("/communities", async (c) => {
     const community = rows[0];
 
     await sql`INSERT INTO newchums.community_members (community_id, user_id, role, status) VALUES (${community.id}, ${userId}, 'owner', 'active')`;
+    if (specialization) await sendMtgWelcomeIfFirst(sql, c.env, c.executionCtx, userId, community.id);
 
     // Link hobbies/interests
     if (interestItems.length > 0) {
@@ -11067,6 +11424,7 @@ app.post("/communities/:id/join", async (c) => {
       INSERT INTO newchums.community_members (community_id, user_id, role, status) VALUES (${communityId}, ${userId}, 'member', 'active')
       ON CONFLICT (community_id, user_id) DO UPDATE SET status = 'active', role = 'member'
     `;
+    await sendMtgWelcomeIfFirst(sql, c.env, c.executionCtx, userId, communityId);
     return c.json({ ok: true, status: "joined" });
   } catch (err) {
     console.error("[POST /communities/:id/join]", err);
@@ -11339,7 +11697,12 @@ app.put("/communities/:id/join-requests/:requestId", async (c) => {
     // Email notification to requester
     const requesterRows = (await sql`SELECT email, name FROM newchums.users WHERE id = ${reqRows[0].user_id} LIMIT 1`) as { email: string; name: string | null }[];
     if (requesterRows[0]) {
-      if (action === "approve") {
+      // Challenge groups: the MTG welcome already says "you're in" and much
+      // more, so it replaces the approval email (one email per event).
+      const welcomed = action === "approve"
+        ? await sendMtgWelcomeIfFirst(sql, c.env, c.executionCtx, reqRows[0].user_id, communityId)
+        : false;
+      if (action === "approve" && !welcomed) {
         c.executionCtx.waitUntil(sendCommunityJoinApprovedEmail(c.env, {
           to: requesterRows[0].email,
           userName: requesterRows[0].name || "there",
@@ -20124,19 +20487,22 @@ async function processEmailOutbox(
   sql: ReturnType<typeof getSql>,
   env: Bindings,
   _ctx: ExecutionContext,
+  // "mtg" delivers only season emails, with a larger batch, so a lock warning
+  // wave neither waits behind plan email nor holds it up.
+  scope: "all" | "mtg" = "all",
 ) {
   const rows = (await sql`
-    SELECT o.id, o.kind, o.event_id, o.user_id, o.payload, o.attempts,
+    SELECT o.id, o.kind, o.event_id, o.set_id, o.group_key, o.user_id, o.payload, o.attempts,
            e.title, e.starts_at, e.timezone,
            e.location_type, e.location_name, e.location_address, e.location_visibility, e.location_area, e.online_link,
            u.email AS to_email, u.name AS to_name
     FROM newchums.email_outbox o
-    JOIN newchums.events e ON e.id = o.event_id
+    LEFT JOIN newchums.events e ON e.id = o.event_id
     JOIN newchums.users u ON u.id = o.user_id
-    WHERE o.status = 'pending'
+    WHERE o.status = 'pending' AND (${scope === "all"} OR left(o.kind, 4) = 'mtg_')
     ORDER BY o.created_at ASC
-    LIMIT 40
-  `) as { id: number; kind: string; event_id: string; user_id: string; payload: { role?: string; isHost?: boolean; deadline?: string; confirmedCount?: number; minRequired?: number; reason?: string; count?: number; senderName?: string; message?: string | null; planTitle?: string | null; recipientHandle?: string | null; tags?: Array<{ emoji: string; label: string; count: number }>; planTitles?: string[] } | null; attempts: number; title: string; starts_at: string; timezone: string | null; location_type: string; location_name: string | null; location_address: string | null; location_visibility: string | null; location_area: string | null; online_link: string | null; to_email: string; to_name: string | null }[];
+    LIMIT ${scope === "mtg" ? 200 : 40}
+  `) as { id: number; kind: string; event_id: string; user_id: string; payload: { role?: string; isHost?: boolean; deadline?: string; confirmedCount?: number; minRequired?: number; reason?: string; count?: number; senderName?: string; message?: string | null; planTitle?: string | null; recipientHandle?: string | null; tags?: Array<{ emoji: string; label: string; count: number }>; planTitles?: string[] } | null; attempts: number; set_id: string | null; group_key: string | null; title: string; starts_at: string; timezone: string | null; location_type: string; location_name: string | null; location_address: string | null; location_visibility: string | null; location_area: string | null; online_link: string | null; to_email: string; to_name: string | null }[];
 
   if (rows.length === 0) return;
 
@@ -20148,8 +20514,16 @@ async function processEmailOutbox(
   for (const row of rows) {
     const recipientName = row.to_name?.trim() || "there";
     const tz = row.timezone || "UTC";
+    // A plan row whose plan is gone, or a kind this code does not know how
+    // to send without a plan, must never fall through to the wrap-up email.
+    if (!row.event_id && !row.kind.startsWith("mtg_")) {
+      await sql`UPDATE newchums.email_outbox SET status = 'gave_up', last_error = 'no plan for a plan email' WHERE id = ${row.id}`;
+      gaveUp++;
+      continue;
+    }
     const prefKey =
-      row.kind === "kudos_received" ? "kudos_received"
+      row.kind.startsWith("mtg_") ? "mtg_challenge"
+      : row.kind === "kudos_received" ? "kudos_received"
       : row.kind === "run_it_again" ? "run_it_again"
       : row.kind === "plan_reminder" ? "plan_reminder"
       : row.kind === "plan_auto_cancelled" ? "event_changed_canceled"
@@ -20165,10 +20539,37 @@ async function processEmailOutbox(
 
     // Stable per-logical-send key: kind + event + user. Attempt-independent
     // on purpose, so provider-side dedup can catch ambiguous repeats.
-    const idempotencyKey = `${row.kind}:${row.event_id}:${row.user_id}`;
+    const idempotencyKey = row.kind.startsWith("mtg_")
+      ? `${row.kind}:${row.set_id}:${row.user_id}`
+      : `${row.kind}:${row.event_id}:${row.user_id}`;
 
     try {
-      if (row.kind === "kudos_received") {
+      if (row.kind === "mtg_lock_warning") {
+        const p = (row.payload ?? {}) as unknown as { setName?: string; lockAt?: string; lockAtLabel?: string; scoringUrl?: string; lockCalendarUrl?: string };
+        // A warning that could not go out before the lock is pointless now.
+        if (!row.set_id || !p.lockAt || Date.now() >= new Date(p.lockAt).getTime()) {
+          await sql`UPDATE newchums.email_outbox SET status = 'gave_up', last_error = 'expired: the lock has passed' WHERE id = ${row.id}`;
+          gaveUp++;
+          continue;
+        }
+        const details = await mtgLockWarningDetails(sql, env, row.set_id, row.user_id);
+        await sendMtgLockWarningEmail(env, {
+          to: row.to_email,
+          recipientName,
+          setName: p.setName ?? "the new set",
+          lockAtLabel: p.lockAtLabel ?? "",
+          // Decided at delivery, so a late catch-up never says "tomorrow".
+          lockTonight: easternDateKey(p.lockAt) === easternDateKey(new Date()),
+          picked: details.picked,
+          total: details.total,
+          groups: details.groups,
+          picksUrl: details.picksUrl,
+          scoringUrl: p.scoringUrl ?? `${env.WEB_BASE_URL}/mtg/how-scoring-works`,
+          lockCalendarUrl: p.lockCalendarUrl ?? "",
+          unsubscribeUrl,
+          idempotencyKey,
+        });
+      } else if (row.kind === "kudos_received") {
         const handle = row.payload?.recipientHandle;
         await sendKudosReceivedEmail(env, {
           to: row.to_email,
@@ -20254,7 +20655,7 @@ async function processEmailOutbox(
           unsubscribeUrl,
           idempotencyKey,
         });
-      } else {
+      } else if (row.kind === "plan_wrapup") {
         const role = row.payload?.role === "host" ? "host" : "attendee";
         await sendPlanWrapUpEmail(env, {
           to: row.to_email,
@@ -20267,6 +20668,13 @@ async function processEmailOutbox(
           unsubscribeUrl,
           idempotencyKey,
         });
+      } else {
+        // A kind this build cannot send (for example a later batch's email
+        // queued before its sender ships) must never fall back to another
+        // email's template.
+        await sql`UPDATE newchums.email_outbox SET status = 'gave_up', last_error = ${`no sender for kind ${row.kind}`} WHERE id = ${row.id}`;
+        gaveUp++;
+        continue;
       }
       await sql`
         UPDATE newchums.email_outbox
@@ -20555,6 +20963,15 @@ async function handleScheduled(
   }
 
   // Deliver whatever the jobs above enqueued (plus any retries)
+  // MTG Prediction Challenge: lock warning, queued before the outbox runs so
+  // it goes out in the same pass.
+  try {
+    await processMtgLockWarnings(sql, env);
+    await processEmailOutbox(sql, env, ctx, "mtg");
+  } catch (err) {
+    console.error("[scheduled] mtg lock warning error:", err);
+  }
+
   try {
     await processEmailOutbox(sql, env, ctx);
   } catch (err) {

@@ -72,6 +72,12 @@ export const NOTIFICATION_TYPES: NotificationTypeConfig[] = [
       "When tags you received are added to your profile. Sent once a day, covering anything new since yesterday. Nobody is told who gave what.",
   },
   {
+    key: "mtg_challenge",
+    title: "MTG Prediction Challenge",
+    description:
+      "Only if you play: a welcome when you join your first challenge group for a set, and a reminder the day before picks lock.",
+  },
+  {
     key: "plan_reminder",
     title: "Day-before plan reminder",
     description:

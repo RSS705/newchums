@@ -106,10 +106,10 @@ function ViewerBody({ card, position, hasPrev, hasNext, onPrev, onNext, onClose,
   return (
     <Box sx={{ position: "relative", display: "flex", flexDirection: "column", minHeight: 0, height: { xs: "100%", sm: "auto" } }}>
       <Stack direction="row" alignItems="center" spacing={1} sx={{ px: { xs: 1, sm: 2 }, py: 1, borderBottom: "1px solid", borderColor: "divider" }}>
-        <IconButton onClick={onClose} aria-label="Close" size="small"><CloseRoundedIcon /></IconButton>
+        <IconButton onClick={onClose} aria-label="Close" sx={{ width: 44, height: 44 }}><CloseRoundedIcon /></IconButton>
         <Typography variant="body2" color="text.secondary" sx={{ flex: 1, textAlign: "center", fontWeight: 600 }}>{position}</Typography>
-        <IconButton onClick={onPrev} disabled={!hasPrev} aria-label="Previous card" size="small"><ChevronLeftRoundedIcon /></IconButton>
-        <IconButton onClick={onNext} disabled={!hasNext} aria-label="Next card" size="small"><ChevronRightRoundedIcon /></IconButton>
+        <IconButton onClick={onPrev} disabled={!hasPrev} aria-label="Previous card" sx={{ width: 44, height: 44 }}><ChevronLeftRoundedIcon /></IconButton>
+        <IconButton onClick={onNext} disabled={!hasNext} aria-label="Next card" sx={{ width: 44, height: 44 }}><ChevronRightRoundedIcon /></IconButton>
       </Stack>
 
       <Box sx={{ flex: 1, overflowY: "auto", px: { xs: 2, sm: 3 }, py: { xs: 2, sm: 3 } }}>

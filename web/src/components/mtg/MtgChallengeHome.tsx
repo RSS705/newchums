@@ -19,7 +19,7 @@ import { apiFetch, getAvatarBaseUrl } from "@/lib/apiClient";
 import SeasonTimeline from "./SeasonTimeline";
 import {
   MTG_ATTRIBUTION, MTG_RARITIES, MTG_TOTAL_PICKS, RARITY_LABEL,
-  type MtgCard, type MtgEntryPayload, type MtgProgressMember, type MtgRarity, type MtgSetPayload, countdown, formatWhen,
+  type MtgCard, type MtgProgressMember, type MtgRarity, type MtgSetPayload, countdown, formatWhen,
 } from "./mtgTypes";
 
 type Props = {
@@ -51,7 +51,6 @@ export default function MtgChallengeHome({ communityId, slug, isMember, isAuthen
   const [rarity, setRarity] = useState<MtgRarity>("common");
   const [cards, setCards] = useState<Record<string, MtgCard[]>>({});
   const [nowMs, setNowMs] = useState(() => Date.now());
-  const [myPicked, setMyPicked] = useState<number | null>(null);
   const [progress, setProgress] = useState<MtgProgressMember[] | null>(null);
 
   useEffect(() => {
@@ -70,26 +69,25 @@ export default function MtgChallengeHome({ communityId, slug, isMember, isAuthen
     return () => clearInterval(t);
   }, []);
 
-  // The viewer's own progress, for the button label, and the group's.
+  // The group's progress, which also carries the viewer's own count for the
+  // button label. Deliberately not the entry route: that one tidies picks
+  // whose card left the pool and reports it once, and the wizard should be
+  // the one to tell the player.
   const setCode = set?.code ?? null;
   useEffect(() => {
     if (!setCode || !isMember || !isAuthenticated) return;
     let cancelled = false;
     (async () => {
       try {
-        const [eRes, pRes] = await Promise.all([
-          apiFetch(`/mtg/sets/${setCode}/entry`, { auth: true }),
-          apiFetch(`/mtg/communities/${communityId}/progress`, { auth: true }),
-        ]);
-        const eData = (await eRes.json()) as { ok?: boolean } & MtgEntryPayload;
+        const pRes = await apiFetch(`/mtg/communities/${communityId}/progress`, { auth: true });
         const pData = (await pRes.json()) as { ok?: boolean; members?: MtgProgressMember[] };
         if (cancelled) return;
-        if (eData.ok) setMyPicked(eData.entry ? MTG_RARITIES.reduce((n, r) => n + (eData.entry?.picks[r]?.length ?? 0), 0) : 0);
         if (pData.ok && Array.isArray(pData.members)) setProgress(pData.members);
       } catch { /* the page still works without progress */ }
     })();
     return () => { cancelled = true; };
   }, [setCode, communityId, isMember, isAuthenticated]);
+  const myPicked = progress?.find((m) => m.isViewer)?.picked ?? null;
 
   useEffect(() => {
     if (!set || cards[rarity]) return;
@@ -155,6 +153,9 @@ export default function MtgChallengeHome({ communityId, slug, isMember, isAuthen
             </Stack>
             <Typography component="h2" sx={{ fontWeight: 700, fontSize: { xs: "1.25rem", sm: "1.375rem" }, lineHeight: 1.2 }}>{copy.title}</Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, lineHeight: 1.55 }}>{copy.body}</Typography>
+            <Typography component={Link} href="/mtg/how-scoring-works" variant="body2" sx={{ display: "inline-block", mt: 0.75, fontWeight: 700, color: "primary.main", textDecoration: "none", "&:hover": { textDecoration: "underline" } }}>
+              How scoring works
+            </Typography>
           </Box>
           {!afterLock && set.phase !== "final" && (
             <Box
@@ -293,7 +294,7 @@ export default function MtgChallengeHome({ communityId, slug, isMember, isAuthen
         )}
       </AppCard>
 
-      <SeasonTimeline entries={set.timeline} setName={set.name} />
+      <SeasonTimeline entries={set.timeline} setName={set.name} setCode={set.code} />
 
       <Typography variant="caption" color="text.disabled" sx={{ display: "block", lineHeight: 1.5, px: 0.5 }}>
         {MTG_ATTRIBUTION}

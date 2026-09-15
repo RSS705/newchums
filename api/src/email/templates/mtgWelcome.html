@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <title>{{heading}}</title>
+  <!--[if mso]>
+  <noscript>
+    <xml>
+      <o:OfficeDocumentSettings>
+        <o:PixelsPerInch>96</o:PixelsPerInch>
+      </o:OfficeDocumentSettings>
+    </xml>
+  </noscript>
+  <![endif]-->
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Gabarito:wght@400;600;700&display=swap');
+  </style>
+</head>
+<body style="margin: 0; padding: 0; background-color: #F9FAFB; -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%;">
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color: #F9FAFB;">
+    <tr>
+      <td align="center" style="padding: 40px 16px 32px 16px;">
+
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="560" style="max-width: 560px; width: 100%; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.06);">
+
+          <!-- Header band -->
+          <tr>
+            <td style="background-color: #E65B13; padding: 28px 32px 24px 32px;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+                <tr>
+                  <td style="vertical-align: middle;">
+                    <a href="https://newchums.com" style="text-decoration: none; display: inline-block;">
+                      <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                        <tr>
+                          <td style="vertical-align: middle; padding-right: 10px;">
+                            <img src="https://newchums.com/images/Icon-White-64.png" alt="" width="32" height="32" style="display: block; width: 32px; height: 32px; border: 0;" />
+                          </td>
+                          <td style="vertical-align: middle;">
+                            <span style="font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 22px; font-weight: 700; color: #ffffff; letter-spacing: -0.3px;">NewChums</span>
+                          </td>
+                        </tr>
+                      </table>
+                    </a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+                    <!-- Body -->
+          <tr>
+            <td style="padding: 36px 32px 12px 32px;">
+              <p style="margin: 0 0 14px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 24px; font-weight: 700; color: #1F2937; line-height: 1.25;">
+                {{heading}}
+              </p>
+              <p style="margin: 0 0 10px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 15px; color: #1F2937; line-height: 1.55;">
+                {{greeting}}
+              </p>
+              <p style="margin: 0 0 20px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 15px; color: #4B5563; line-height: 1.6;">
+                {{bodyText}}
+              </p>
+              {{#hasEntry}}
+              <p style="margin: 0 0 20px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 14px; color: #1F2937; line-height: 1.6; background-color: #F3F4F6; border-radius: 10px; padding: 12px 14px;">
+                You already have {{picked}} of 20 picks, and they count in this group too. One entry plays in every group you're in.
+              </p>
+              {{/hasEntry}}
+              {{#inviteUrl}}
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-bottom: 22px; border: 1px solid #F3C9AF; border-radius: 10px; background-color: #FFF7F2;">
+                <tr>
+                  <td style="padding: 14px 16px;">
+                    <p style="margin: 0 0 4px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 13px; font-weight: 700; color: #9A3A0A;">Your invite link</p>
+                    <p style="margin: 0 0 6px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 13px; color: #4B5563; line-height: 1.5;">{{inviteHelp}}</p>
+                    <a href="{{.}}" style="font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 13px; color: #E65B13; word-break: break-all; text-decoration: underline;">{{.}}</a>
+                  </td>
+                </tr>
+              </table>
+              {{/inviteUrl}}
+              <p style="margin: 0 0 8px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 13px; font-weight: 700; color: #1F2937; text-transform: uppercase; letter-spacing: 0.04em;">Key dates</p>
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-bottom: 24px; border-left: 3px solid #E65B13;">
+                {{#keyDates}}
+                <tr>
+                  <td style="padding: 3px 0 3px 14px; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 14px; color: #1F2937; font-weight: 600; line-height: 1.45; vertical-align: top; width: 42%;">{{label}}</td>
+                  <td style="padding: 3px 0 3px 8px; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 14px; color: #4B5563; line-height: 1.45; vertical-align: top;">{{when}}</td>
+                </tr>
+                {{/keyDates}}
+              </table>
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-bottom: 10px;">
+                <tr>
+                  <td align="center">
+                    <!--[if mso]>
+                    <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="{{ctaUrl}}" style="height:44px;v-text-anchor:middle;width:240px;" arcsize="18%" strokecolor="#C44D10" fillcolor="#E65B13">
+                      <w:anchorlock/>
+                      <center style="color:#ffffff;font-family:'Segoe UI',sans-serif;font-size:14px;font-weight:bold;">{{ctaText}}</center>
+                    </v:roundrect>
+                    <![endif]-->
+                    <!--[if !mso]><!-->
+                    <a href="{{ctaUrl}}" style="display: inline-block; background-color: #E65B13; color: #ffffff; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 14px; font-weight: 700; text-decoration: none; padding: 14px 36px; border-radius: 8px; line-height: 1; text-align: center;">
+                      {{ctaText}}
+                    </a>
+                    <!--<![endif]-->
+                  </td>
+                </tr>
+              </table>
+              <p style="margin: 0 0 18px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 12px; color: #9CA3AF; line-height: 1.5; text-align: center;">
+                {{ctaHelperText}}
+              </p>
+              <p style="margin: 0 0 22px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 13px; color: #6B7280; line-height: 1.6; text-align: center;">
+                <a href="{{scoringUrl}}" style="color: #E65B13; text-decoration: none; font-weight: 600;">How scoring works</a>
+                &ensp;&middot;&ensp;
+                <a href="{{lockCalendarUrl}}" style="color: #E65B13; text-decoration: none; font-weight: 600;">Add to calendar</a>
+              </p>
+            </td>
+          </tr>
+
+          <tr><td style="height: 12px;"></td></tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="padding: 20px 32px; border-top: 1px solid #E5E7EB;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+                <tr>
+                  <td style="font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 12px; color: #9CA3AF; line-height: 1.5;">
+                    You&rsquo;re receiving this because you joined an MTG Prediction Challenge group on <a href="https://newchums.com" style="color: #E65B13; text-decoration: none;">NewChums</a>.
+                    {{#unsubscribeUrl}}&ensp;&middot;&ensp;<a href="{{.}}" style="color: #9CA3AF; text-decoration: underline; font-size: 12px;">Turn off MTG Prediction Challenge emails</a>{{/unsubscribeUrl}}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding-top: 8px; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 11px; color: #C4C9D0; line-height: 1.5;">
+                    MTG Prediction Challenge is unofficial Fan Content permitted under the Fan Content Policy. Not approved/endorsed by Wizards. &copy; {{year}} {{productName}}
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+        </table>
+
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

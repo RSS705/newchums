@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Chip from "@mui/material/Chip";
+import Snackbar from "@mui/material/Snackbar";
 import Stack from "@mui/material/Stack";
 import Tab from "@mui/material/Tab";
 import Tabs from "@mui/material/Tabs";
@@ -24,7 +25,7 @@ import CardViewer from "./CardViewer";
 import PickTray, { SaveStatus, type SaveState } from "./PickTray";
 import ReviewStep from "./ReviewStep";
 import {
-  EMPTY_FILTERS, type CardFilters, type PickState, applyFilters, clampNote, emptyPickState, moveItem, toPutBody, totalPicked,
+  EMPTY_FILTERS, type CardFilters, type PickSlot, type PickState, applyFilters, clampNote, emptyPickState, moveItem, toPutBody, totalPicked,
 } from "./pickUtils";
 
 type Step = MtgRarity | "review";
@@ -39,6 +40,23 @@ type Load =
 
 type SetInfo = MtgEntryPayload["set"];
 type Viewer = { rarity: MtgRarity; list: MtgCardWithNew[]; index: number };
+type Dropped = { name: string; rarity: MtgRarity };
+type PutResponse = { ok?: boolean; error?: string; message?: string; dropped?: Dropped[]; unchanged?: boolean };
+
+const LIVE_TEXT: Record<SaveState, string> = {
+  idle: "",
+  saving: "Saving your picks",
+  saved: "Picks saved",
+  error: "Your latest change isn't saved yet. Retrying.",
+  locked: "Picks are locked",
+  signedOut: "You've been signed out, so changes can't be saved",
+};
+
+/** Screen-reader-only styles for the single save status announcement. */
+const VISUALLY_HIDDEN = {
+  position: "absolute" as const, width: "1px", height: "1px", margin: "-1px", padding: 0,
+  overflow: "hidden", clip: "rect(0 0 0 0)", whiteSpace: "nowrap" as const, border: 0,
+};
 
 function pickStateFromEntry(entry: MtgEntryPayload["entry"]): PickState {
   const state = emptyPickState();
@@ -51,39 +69,52 @@ function pickStateFromEntry(entry: MtgEntryPayload["entry"]): PickState {
 
 /**
  * The pick wizard (spec 10.3): Commons, Uncommons, Rares, Mythics, then a
- * review with Receipts. Every change saves on its own a moment later as a
- * full replace of the entry, one request at a time, so a slow save can never
- * land after a newer one. The server is the lock: after it, saves come back
- * 423 and the page turns read-only.
+ * review with Receipts.
+ *
+ * Saving: every change bumps a counter and saves the whole entry about 0.7 s
+ * later. Saves run strictly one after another on a promise chain, so an older
+ * save can never land after a newer one. Leaving the wizard (Done, the back
+ * link, another page in the app, hiding the tab, closing it) flushes a
+ * pending change straight away, with keepalive when the page is going away.
+ * The server is the lock: a 423 turns the page read-only.
  */
 export default function PickWizard() {
   const params = useParams<{ slug: string }>();
   const slug = params?.slug ?? "";
+  const router = useRouter();
   const toast = useToast();
 
   const [load, setLoad] = useState<Load>({ kind: "loading" });
   const [communityName, setCommunityName] = useState("");
   const [setInfo, setSetInfo] = useState<SetInfo | null>(null);
   const [picks, setPicks] = useState<PickState>(emptyPickState);
-  const [dropped, setDropped] = useState<{ name: string; rarity: MtgRarity }[]>([]);
+  const [dropped, setDropped] = useState<Dropped[]>([]);
   const [step, setStep] = useState(0);
   const [cards, setCards] = useState<Partial<Record<MtgRarity, MtgCardWithNew[]>>>({});
   const [filters, setFilters] = useState<CardFilters>(EMPTY_FILTERS);
   const [viewer, setViewer] = useState<Viewer | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const [undo, setUndo] = useState<{ rarity: MtgRarity; index: number; slot: PickSlot } | null>(null);
 
-  // Autosave bookkeeping: `dirty` counts local changes, `saved` is the change
-  // count the server has confirmed. They differ while anything is unsaved.
+  // `dirty` counts local changes; `saved` is the count the server confirmed.
   const [dirty, setDirty] = useState(0);
   const [saved, setSaved] = useState(0);
-  const [retryTick, setRetryTick] = useState(0);
   const [saveState, setSaveState] = useState<SaveState>("idle");
+  const [signedOut, setSignedOut] = useState(false);
+
   const picksRef = useRef(picks);
-  const dirtyRef = useRef(dirty);
-  const savingRef = useRef(false);
+  const dirtyRef = useRef(0);
+  const savedRef = useRef(0);
+  const setCodeRef = useRef<string | null>(null);
+  const readOnlyRef = useRef(true);
+  const blockedRef = useRef(false);
+  const chainRef = useRef<Promise<void>>(Promise.resolve());
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveOnceRef = useRef<(keepalive: boolean) => Promise<void>>(async () => {});
+  const resyncRef = useRef<() => Promise<void>>(async () => {});
 
   useEffect(() => { picksRef.current = picks; }, [picks]);
-  useEffect(() => { dirtyRef.current = dirty; }, [dirty]);
 
   useEffect(() => {
     const t = setInterval(() => setNowMs(Date.now()), 30000);
@@ -132,8 +163,11 @@ export default function PickWizard() {
   const rarity: MtgRarity | null = stepKey === "review" ? null : stepKey;
   const lockMs = setInfo ? new Date(setInfo.lockAt).getTime() : 0;
   const pastLock = !!setInfo && nowMs >= lockMs;
-  const readOnly = !setInfo || setInfo.locked || !setInfo.picksOpen || pastLock;
+  const readOnly = !setInfo || setInfo.locked || !setInfo.picksOpen || pastLock || signedOut;
   const lockCountdown = setInfo && !readOnly ? countdown(setInfo.lockAt, nowMs) : null;
+
+  useEffect(() => { setCodeRef.current = setCode; }, [setCode]);
+  useEffect(() => { readOnlyRef.current = readOnly; }, [readOnly]);
 
   // Cards for the open step, fetched once per rarity. Opening a rarity also
   // stamps the visit, so NEW ribbons stay for this visit and clear next time.
@@ -160,78 +194,140 @@ export default function PickWizard() {
     return () => { cancelled = true; };
   }, [setCode, rarity, rarityLoaded]);
 
-  /** Pull the entry again after the server refused a change, so the screen
-   *  shows what is actually saved. */
+  /** Show what is really saved after the server changed or refused a save. */
   const resync = useCallback(async () => {
-    if (!setCode) return;
+    const code = setCodeRef.current;
+    if (!code) return;
     try {
-      const res = await apiFetch(`/mtg/sets/${setCode}/entry`, { auth: true });
+      const res = await apiFetch(`/mtg/sets/${code}/entry`, { auth: true });
       const data = (await res.json()) as { ok?: boolean } & MtgEntryPayload;
       if (!data.ok) return;
       setSetInfo(data.set);
-      setPicks(pickStateFromEntry(data.entry));
-      setDropped(data.entry?.dropped ?? []);
+      const next = pickStateFromEntry(data.entry);
+      picksRef.current = next;
+      setPicks(next);
+      if (data.entry?.dropped?.length) setDropped(data.entry.dropped);
     } catch { /* keep what is on screen */ }
-  }, [setCode]);
+  }, []);
 
-  // Autosave: a short pause after the last change, one request at a time.
+  /** Queue a save behind any save already running. Resolves when it is done. */
+  const queueSave = useCallback((keepalive = false): Promise<void> => {
+    if (debounceRef.current) { clearTimeout(debounceRef.current); debounceRef.current = null; }
+    chainRef.current = chainRef.current.then(() => saveOnceRef.current(keepalive)).catch(() => {});
+    return chainRef.current;
+  }, []);
+
+  const saveOnce = useCallback(async (keepalive: boolean) => {
+    const code = setCodeRef.current;
+    const version = dirtyRef.current;
+    if (!code || blockedRef.current || version === savedRef.current) return;
+    setSaveState("saving");
+    const markSaved = () => { savedRef.current = Math.max(savedRef.current, version); setSaved(savedRef.current); };
+    try {
+      const res = await apiFetch(`/mtg/sets/${code}/entry`, {
+        auth: true,
+        method: "PUT",
+        keepalive,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(toPutBody(picksRef.current)),
+      });
+      const data = (await res.json().catch(() => ({}))) as PutResponse;
+      if (res.ok && data.ok) {
+        markSaved();
+        if (data.dropped && data.dropped.length > 0) {
+          setDropped(data.dropped);
+          // Only replace the screen if nothing newer was typed meanwhile; a
+          // newer save will drop the same cards on its own.
+          if (dirtyRef.current === version) await resyncRef.current();
+        }
+        setSaveState(dirtyRef.current === savedRef.current ? "saved" : "saving");
+        return;
+      }
+      if (res.status === 401) {
+        blockedRef.current = true;
+        setSignedOut(true);
+        setSaveState("signedOut");
+        return;
+      }
+      if (res.status === 423) {
+        blockedRef.current = true;
+        markSaved();
+        setSaveState("locked");
+        setSetInfo((s) => (s ? { ...s, locked: true, picksOpen: false } : s));
+        toast.info("Picks are locked. Your last saved entry stands.");
+        await resyncRef.current();
+        return;
+      }
+      if (res.status === 400 || res.status === 403 || res.status === 404 || res.status === 409) {
+        // A change the server will not take: stop retrying and show what is saved.
+        markSaved();
+        setSaveState("error");
+        toast.error(data.message || "That change couldn't be saved.");
+        await resyncRef.current();
+        return;
+      }
+      throw new Error(`HTTP ${res.status}`);
+    } catch {
+      setSaveState("error");
+      if (retryRef.current) clearTimeout(retryRef.current);
+      retryRef.current = setTimeout(() => { retryRef.current = null; void queueSave(); }, 4000);
+    }
+  }, [toast, queueSave]);
+
+  useEffect(() => { saveOnceRef.current = saveOnce; }, [saveOnce]);
+  useEffect(() => { resyncRef.current = resync; }, [resync]);
+
+  // Debounced autosave after the last change.
   useEffect(() => {
     if (!setCode || dirty === saved) return;
-    const version = dirty;
-    const timer = setTimeout(async () => {
-      if (savingRef.current) { setRetryTick((t) => t + 1); return; }
-      savingRef.current = true;
-      setSaveState("saving");
-      try {
-        const res = await apiFetch(`/mtg/sets/${setCode}/entry`, {
-          auth: true,
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(toPutBody(picksRef.current)),
-        });
-        const data = await res.json().catch(() => ({} as { ok?: boolean; message?: string }));
-        if (res.status === 423) {
-          setSaved(version);
-          setSaveState("locked");
-          setSetInfo((s) => (s ? { ...s, locked: true, picksOpen: false } : s));
-          toast.info("Picks are locked. Your last saved entry stands.");
-          resync();
-        } else if (res.ok && data.ok) {
-          setSaved(version);
-          // Only say Saved when nothing newer is queued behind this save.
-          setSaveState(dirtyRef.current === version ? "saved" : "saving");
-        } else if (res.status === 400 || res.status === 409) {
-          // A change the server will never accept: stop retrying and show
-          // what is really saved.
-          setSaved(version);
-          setSaveState("error");
-          toast.error(data.message || "That change couldn't be saved.");
-          resync();
-        } else {
-          setSaveState("error");
-          setTimeout(() => setRetryTick((t) => t + 1), 4000);
-        }
-      } catch {
-        setSaveState("error");
-        setTimeout(() => setRetryTick((t) => t + 1), 4000);
-      } finally {
-        savingRef.current = false;
-      }
-    }, 700);
-    return () => clearTimeout(timer);
-  }, [setCode, dirty, saved, retryTick, toast, resync]);
+    debounceRef.current = setTimeout(() => { debounceRef.current = null; void queueSave(); }, 700);
+    return () => {
+      if (debounceRef.current) { clearTimeout(debounceRef.current); debounceRef.current = null; }
+    };
+  }, [setCode, dirty, saved, queueSave]);
 
-  // Warn before leaving with a change still unsaved.
+  // Flush when the tab is hidden, when the page goes away, and when the
+  // wizard unmounts because the player moved elsewhere in the app.
   useEffect(() => {
-    if (dirty === saved) return;
+    const unsaved = () => dirtyRef.current !== savedRef.current && !blockedRef.current;
+    const sendNow = () => { if (unsaved()) void saveOnceRef.current(true); };
+    const onVisibility = () => { if (document.visibilityState === "hidden" && unsaved()) void queueSave(true); };
+    window.addEventListener("pagehide", sendNow);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("pagehide", sendNow);
+      document.removeEventListener("visibilitychange", onVisibility);
+      if (retryRef.current) clearTimeout(retryRef.current);
+      sendNow();
+    };
+  }, [queueSave]);
+
+  // Warn before a reload or close with a change still unsaved.
+  useEffect(() => {
+    if (dirty === saved || signedOut) return;
     const onBeforeUnload = (e: BeforeUnloadEvent) => { e.preventDefault(); };
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [dirty, saved]);
+  }, [dirty, saved, signedOut]);
 
+  /** Leave for another page after the pending change is saved (up to 4 s). */
+  const leaveTo = useCallback((href: string) => (e: React.MouseEvent) => {
+    if (dirtyRef.current === savedRef.current || blockedRef.current) return;
+    e.preventDefault();
+    void Promise.race([queueSave(), new Promise((resolve) => setTimeout(resolve, 4000))]).then(() => router.push(href));
+  }, [queueSave, router]);
+
+  /** Apply a change. A change that returns the same state is not a change,
+   *  so it neither saves nor moves the tie-break time. */
   const mutate = useCallback((fn: (p: PickState) => PickState) => {
-    setPicks((prev) => fn(prev));
-    setDirty((d) => d + 1);
+    if (readOnlyRef.current) return;
+    const prev = picksRef.current;
+    const next = fn(prev);
+    if (next === prev) return;
+    picksRef.current = next;
+    setPicks(next);
+    dirtyRef.current += 1;
+    setDirty(dirtyRef.current);
   }, []);
 
   const addPick = useCallback((card: MtgCard) => {
@@ -243,8 +339,24 @@ export default function PickWizard() {
   }, [mutate]);
 
   const removePick = useCallback((r: MtgRarity, cardId: string) => {
+    const index = picksRef.current[r].findIndex((s) => s.card.id === cardId);
+    if (index < 0 || readOnlyRef.current) return;
+    const slot = picksRef.current[r][index];
     mutate((p) => ({ ...p, [r]: p[r].filter((s) => s.card.id !== cardId) }));
+    setUndo({ rarity: r, index, slot });
   }, [mutate]);
+
+  const undoRemove = useCallback(() => {
+    if (!undo) return;
+    const { rarity: r, index, slot } = undo;
+    mutate((p) => {
+      if (p[r].length >= MTG_SLOTS_PER_RARITY || p[r].some((s) => s.card.id === slot.card.id)) return p;
+      const next = p[r].slice();
+      next.splice(Math.min(index, next.length), 0, slot);
+      return { ...p, [r]: next };
+    });
+    setUndo(null);
+  }, [undo, mutate]);
 
   const replacePick = useCallback((card: MtgCard, slotIndex: number) => {
     mutate((p) => {
@@ -257,14 +369,20 @@ export default function PickWizard() {
   }, [mutate]);
 
   const reorder = useCallback((r: MtgRarity, from: number, to: number) => {
-    mutate((p) => ({ ...p, [r]: moveItem(p[r], from, to) }));
+    mutate((p) => {
+      const moved = moveItem(p[r], from, to);
+      return moved === p[r] ? p : { ...p, [r]: moved };
+    });
   }, [mutate]);
 
   const setNote = useCallback((r: MtgRarity, index: number, note: string) => {
     mutate((p) => {
-      if (!p[r][index]) return p;
+      const current = p[r][index];
+      if (!current) return p;
+      const clamped = clampNote(note);
+      if (clamped === current.note) return p;
       const next = p[r].slice();
-      next[index] = { ...next[index], note: clampNote(note) };
+      next[index] = { ...current, note: clamped };
       return { ...p, [r]: next };
     });
   }, [mutate]);
@@ -323,18 +441,24 @@ export default function PickWizard() {
 
   const total = totalPicked(picks);
   const inPreviews = setInfo.phase === "previews" || setInfo.phase === "upcoming";
+  const communityHref = `/communities/${slug}`;
 
   return (
     <Stack spacing={{ xs: 2, sm: 2.5 }} sx={{ pb: { xs: rarity && !readOnly ? 11 : 2, md: 2 } }}>
+      <Box role="status" aria-live="polite" sx={VISUALLY_HIDDEN}>{LIVE_TEXT[saveState]}</Box>
+
       <Box>
-        <Button component={Link} href={`/communities/${slug}`} variant="text" size="small" startIcon={<ArrowBackRoundedIcon />} sx={{ textTransform: "none", fontWeight: 600, color: "text.secondary", ml: -1, mb: 0.5, boxShadow: "none", "&:hover": { bgcolor: "action.hover", boxShadow: "none" } }}>
+        <Button component={Link} href={communityHref} onClick={leaveTo(communityHref)} variant="text" size="small" startIcon={<ArrowBackRoundedIcon />} sx={{ textTransform: "none", fontWeight: 600, color: "text.secondary", ml: -1, mb: 0.5, minHeight: 40, boxShadow: "none", "&:hover": { bgcolor: "action.hover", boxShadow: "none" } }}>
           {communityName || "Back"}
         </Button>
         <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} justifyContent="space-between" alignItems={{ xs: "flex-start", sm: "flex-end" }}>
           <Box sx={{ minWidth: 0 }}>
             <Typography component="h1" sx={{ fontWeight: 800, fontSize: { xs: "1.625rem", sm: "2rem" }, lineHeight: 1.15 }}>Your picks</Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-              {setInfo.name}. One entry counts in every group you&apos;re in.
+              {setInfo.name}. One entry counts in every group you&apos;re in.{" "}
+              <Typography component={Link} href="/mtg/how-scoring-works" onClick={leaveTo("/mtg/how-scoring-works")} variant="body2" sx={{ fontWeight: 700, color: "primary.main", textDecoration: "none", "&:hover": { textDecoration: "underline" } }}>
+                How scoring works
+              </Typography>
             </Typography>
           </Box>
           <Stack direction="row" spacing={1.25} alignItems="center" useFlexGap flexWrap="wrap">
@@ -350,7 +474,20 @@ export default function PickWizard() {
         </Stack>
       </Box>
 
-      {readOnly && (
+      {signedOut && (
+        <Alert
+          severity="warning"
+          sx={{ borderRadius: 2.5 }}
+          action={
+            <Button component={Link} href={`/login?next=${encodeURIComponent(`/communities/${slug}/picks`)}`} color="inherit" size="small" sx={{ textTransform: "none", fontWeight: 700 }}>
+              Sign in
+            </Button>
+          }
+        >
+          You&apos;ve been signed out, so your latest change isn&apos;t saved. Sign in and make it again.
+        </Alert>
+      )}
+      {readOnly && !signedOut && (
         <Alert severity="info" sx={{ borderRadius: 2.5 }}>
           {setInfo.locked || pastLock
             ? `Picks locked ${formatWhen(setInfo.lockAt)}. This is your final entry.`
@@ -359,7 +496,7 @@ export default function PickWizard() {
       )}
       {dropped.length > 0 && (
         <Alert severity="warning" onClose={() => setDropped([])} sx={{ borderRadius: 2.5 }}>
-          {dropped.map((d) => d.name).join(", ")} left the card pool, so {dropped.length === 1 ? "it was" : "they were"} taken off your picks.
+          {dropped.map((d) => d.name).join(", ")} {dropped.length === 1 ? "is" : "are"} no longer in the card pool at that rarity, so {dropped.length === 1 ? "it was" : "they were"} taken off your picks.
         </Alert>
       )}
 
@@ -429,15 +566,15 @@ export default function PickWizard() {
       )}
 
       <Stack direction="row" spacing={1.5} justifyContent="space-between">
-        <Button variant="outlined" disabled={step === 0} onClick={() => goToStep(step - 1)} sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, minWidth: 110 }}>
+        <Button variant="outlined" disabled={step === 0} onClick={() => goToStep(step - 1)} sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, minWidth: 110, minHeight: 44 }}>
           Back
         </Button>
         {step < STEPS.length - 1 ? (
-          <Button variant="contained" onClick={() => goToStep(step + 1)} sx={{ textTransform: "none", fontWeight: 700, borderRadius: 2.5, boxShadow: "none", minWidth: 110 }}>
+          <Button variant="contained" onClick={() => goToStep(step + 1)} sx={{ textTransform: "none", fontWeight: 700, borderRadius: 2.5, boxShadow: "none", minWidth: 110, minHeight: 44 }}>
             Next: {STEPS[step + 1] === "review" ? "Review" : RARITY_LABEL[STEPS[step + 1] as MtgRarity]}
           </Button>
         ) : (
-          <Button component={Link} href={`/communities/${slug}`} variant="contained" sx={{ textTransform: "none", fontWeight: 700, borderRadius: 2.5, boxShadow: "none", minWidth: 110 }}>
+          <Button component={Link} href={communityHref} onClick={leaveTo(communityHref)} variant="contained" sx={{ textTransform: "none", fontWeight: 700, borderRadius: 2.5, boxShadow: "none", minWidth: 110, minHeight: 44 }}>
             Done
           </Button>
         )}
@@ -459,6 +596,24 @@ export default function PickWizard() {
           onReplace={replacePick}
         />
       )}
+
+      <Snackbar
+        open={!!undo}
+        autoHideDuration={6000}
+        onClose={(_, reason) => { if (reason !== "clickaway") setUndo(null); }}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+        sx={{ bottom: { xs: rarity && !readOnly ? 88 : 16, md: 24 } }}
+      >
+        <Alert
+          severity="info"
+          variant="filled"
+          onClose={() => setUndo(null)}
+          action={<Button color="inherit" size="small" onClick={undoRemove} sx={{ textTransform: "none", fontWeight: 800, minHeight: 36 }}>Undo</Button>}
+          sx={{ alignItems: "center", borderRadius: 2.5 }}
+        >
+          Removed {undo?.slot.card.name}
+        </Alert>
+      </Snackbar>
     </Stack>
   );
 }
