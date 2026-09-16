@@ -323,3 +323,30 @@ export function rankStandings<T extends StandingInput>(rows: T[]): Array<T & { r
     return { ...r, rank };
   });
 }
+
+export type GroupMemberStanding = {
+  id: string;
+  entry_id: string | null;
+  completed_at: string | Date | null;
+  updated_at: string | Date | null;
+  joined_at: string | Date;
+};
+
+/**
+ * One day of a group's standings, ranked the way the leaderboard shows them:
+ * the members with points that day. With `joinedBy`, members who joined the
+ * group after that moment are left out, so an earlier day is ranked as the
+ * group was then and a newcomer is never slotted into it after the fact
+ * (which would push everyone below them down a place and invent movement).
+ */
+export function rankGroupDay<M extends GroupMemberStanding, S extends { total: string | number; slot1_points: string | number }>(
+  members: M[],
+  scores: Map<string, S>,
+  joinedBy: number | null = null,
+) {
+  const eligible = members.filter((m) => m.entry_id !== null && scores.has(m.entry_id) && (joinedBy === null || new Date(m.joined_at).getTime() <= joinedBy));
+  return rankStandings(eligible.map((m) => {
+    const score = scores.get(m.entry_id as string) as S;
+    return { key: m.id, member: m, score, total: Number(score.total), slot1: Number(score.slot1_points), completedAt: m.completed_at, updatedAt: m.updated_at };
+  }));
+}

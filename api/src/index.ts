@@ -69,8 +69,10 @@ import {
 } from "./lib/adminHardDelete";
 import { KUDOS_TAGS, KUDOS_MAX_PER_PLAN, KUDOS_WINDOW_MS, isKudosTag, kudosTagInfo } from "./lib/kudos";
 import { MTG_USER_AGENT, MTG_SPECIALIZATION, MTG_RARITIES, MTG_SLOTS_PER_RARITY, type MtgRarity, type MtgSetRow, type ValidatedPick, MTG_BADGES, badgeDescription, badgeLabel, buildIcsEvent, compareBadges, computeEntryBadges, computeGroupMind, earlyBirdWinners, easternDateKey, easternHour, formatEasternDate, formatEasternLong, formatEasternShort, mtgLockWarningAt, mtgMorningAfter, mtgPhase, mtgPicksOpen, mtgRevealedEmailAt, mtgTimeline, revealFunFact, syncScryfallSet, validateEntryPicks } from "./lib/mtg";
-import { checkSnapshot, computeCardScores, isDateKey, matchFeed, mtgIngestSlot, mtgIngestDateAllowed,
-  mtgIngestWindow, mtgStandingsDay, parseCardDataFeed, rankStandings, scoreEntry, type FeedRecord, type PoolCard } from "./lib/mtgScoring";
+import { MTG_SLOT_WEIGHTS,
+  checkSnapshot, computeCardScores, isDateKey, matchFeed, mtgIngestSlot, mtgIngestDateAllowed,
+  mtgIngestWindow, mtgStandingsDay, parseCardDataFeed, rankGroupDay,
+  rankStandings, scoreEntry, type FeedRecord, type PoolCard } from "./lib/mtgScoring";
 import { checkDbRateLimit, isDbRateLimited, recordDbRateEvent } from "./lib/dbRateLimit";
 import {
   generateOtpCode,
@@ -2803,6 +2805,50 @@ app.put("/admin/mtg/cards/:id/voided", async (c) => {
   }
 });
 
+type MtgGroupAccess =
+  | { ok: true; viewer: { id: string; role: string | null }; community: { id: string; name: string; slug: string }; isMember: boolean }
+  | { ok: false; status: 401 | 403 | 404; error: string };
+
+/** The signed-in viewer and a live challenge group they may look inside: an
+ *  active member, or a super admin. */
+async function mtgGroupAccess(sql: ReturnType<typeof getSql>, email: string, communityId: string): Promise<MtgGroupAccess> {
+  const viewer = ((await sql`SELECT id, role FROM newchums.users WHERE email = ${email} LIMIT 1`) as { id: string; role: string | null }[])[0];
+  if (!viewer) return { ok: false, status: 401, error: "UNAUTHORIZED" };
+  const community = ((await sql`
+    SELECT id, name, slug, specialization, COALESCE(status, 'active') AS status FROM newchums.communities WHERE id = ${communityId} LIMIT 1
+  `) as { id: string; name: string; slug: string; specialization: string | null; status: string }[])[0];
+  if (!community || community.specialization !== MTG_SPECIALIZATION || community.status !== "active") return { ok: false, status: 404, error: "NOT_FOUND" };
+  const isMember = ((await sql`
+    SELECT 1 FROM newchums.community_members WHERE community_id = ${communityId} AND user_id = ${viewer.id} AND status = 'active' LIMIT 1
+  `) as unknown[]).length > 0;
+  if (!isMember && viewer.role !== "super_admin") return { ok: false, status: 403, error: "FORBIDDEN" };
+  return { ok: true, viewer, community: { id: community.id, name: community.name, slug: community.slug }, isMember };
+}
+
+type MtgGroupMember = {
+  id: string;
+  name: string | null;
+  username: string | null;
+  avatar_key: string | null;
+  avatar_updated_at: string | null;
+  entry_id: string | null;
+  completed_at: string | null;
+  updated_at: string | null;
+  joined_at: string | Date;
+};
+
+/** A challenge group's active members, each with their entry for the season if they made one. */
+async function loadMtgGroupMembers(sql: ReturnType<typeof getSql>, setId: string, communityId: string): Promise<MtgGroupMember[]> {
+  return (await sql`
+    SELECT u.id, u.name, u.username, u.avatar_key, u.avatar_updated_at, e.id AS entry_id, e.completed_at, e.updated_at, cm.created_at AS joined_at
+    FROM newchums.community_members cm
+    JOIN newchums.users u ON u.id = cm.user_id
+    LEFT JOIN newchums.mtg_entries e ON e.user_id = cm.user_id AND e.set_id = ${setId}
+    WHERE cm.community_id = ${communityId} AND cm.status = 'active'
+    ORDER BY LOWER(COALESCE(u.name, u.username, ''))
+  `) as MtgGroupMember[];
+}
+
 /**
  * GET /mtg/communities/:id/leaderboard?date=YYYY-MM-DD (spec 10.5): the
  * group's standings on the latest published day, or the given one. Members
@@ -2850,14 +2896,7 @@ app.get("/mtg/communities/:id/leaderboard", async (c) => {
     const previous = snaps[at + 1] ?? null;
     const snapIds = previous ? [current.id, previous.id] : [current.id];
 
-    const members = (await sql`
-      SELECT u.id, u.name, u.username, u.avatar_key, u.avatar_updated_at, e.id AS entry_id, e.completed_at, e.updated_at, cm.created_at AS joined_at
-      FROM newchums.community_members cm
-      JOIN newchums.users u ON u.id = cm.user_id
-      LEFT JOIN newchums.mtg_entries e ON e.user_id = cm.user_id AND e.set_id = ${set.id}
-      WHERE cm.community_id = ${communityId} AND cm.status = 'active'
-      ORDER BY LOWER(COALESCE(u.name, u.username, ''))
-    `) as { id: string; name: string | null; username: string | null; avatar_key: string | null; avatar_updated_at: string | null; entry_id: string | null; completed_at: string | null; updated_at: string | null; joined_at: string | Date }[];
+    const members = await loadMtgGroupMembers(sql, set.id, communityId);
     const entryIds = members.map((m) => m.entry_id).filter((x): x is string => !!x);
     const scoreRows = entryIds.length === 0 ? [] : ((await sql`
       SELECT snapshot_id, entry_id, total, common, uncommon, rare, mythic, slot1_points
@@ -2866,19 +2905,11 @@ app.get("/mtg/communities/:id/leaderboard", async (c) => {
     const scoresFor = (snapId: string | undefined) => new Map(scoreRows.filter((r) => r.snapshot_id === snapId).map((r) => [r.entry_id, r]));
     const cur = scoresFor(current.id);
     const prev = scoresFor(previous?.id);
-    const standing = (m: (typeof members)[number], s: (typeof scoreRows)[number]) => ({
-      key: m.id, member: m, score: s, total: Number(s.total), slot1: Number(s.slot1_points), completedAt: m.completed_at, updatedAt: m.updated_at,
-    });
     const scored = members.filter((m) => m.entry_id && cur.has(m.entry_id));
-    const ranked = rankStandings(scored.map((m) => standing(m, cur.get(m.entry_id as string)!)));
-    // Yesterday's ranking is yesterday's group. Someone who joined since would
-    // otherwise be slotted into it after the fact, pushing everyone below them
-    // down a place and showing arrows for players who never moved.
-    const previousTakenMs = previous ? new Date(previous.taken_at).getTime() : 0;
-    const wasHere = (m: (typeof members)[number]) => new Date(m.joined_at).getTime() <= previousTakenMs;
-    const prevRank = new Map(
-      rankStandings(scored.filter((m) => wasHere(m) && prev.has(m.entry_id as string)).map((m) => standing(m, prev.get(m.entry_id as string)!))).map((r) => [r.key, r]),
-    );
+    const ranked = rankGroupDay(members, cur);
+    // Yesterday's ranking is yesterday's group, so members who joined since are
+    // left out of it (rankGroupDay). The player page ranks the same way.
+    const prevRank = new Map(rankGroupDay(members, prev, previous ? new Date(previous.taken_at).getTime() : 0).map((r) => [r.key, r]));
     const leader = ranked[0]?.total ?? 0;
     const round = (n: number) => Math.round(n * 10000) / 10000;
 
@@ -2964,6 +2995,355 @@ app.get("/mtg/communities/:id/leaderboard", async (c) => {
     });
   } catch (err) {
     console.error("[GET /mtg/communities/:id/leaderboard]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+const mtgNumber = (v: unknown) => (v === null || v === undefined ? null : Number(v));
+const mtgRound4 = (n: number) => Math.round(n * 10000) / 10000;
+/** Rows on the Everyone board; the viewer's own row is added when it falls below. */
+const MTG_EVERYONE_ROWS = 100;
+
+/**
+ * GET /mtg/communities/:id/players/:userId (spec 10.6): one player's page in a
+ * group. Their standing and points over time, every pick with its card's
+ * numbers on the latest day, the actual top five at each rarity, their badges,
+ * and the viewer's own picks to compare. Members and super admins; another
+ * player's page opens at the lock (spec 12.6), your own before it.
+ */
+app.get("/mtg/communities/:id/players/:userId", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email) return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  const communityId = c.req.param("id");
+  const userId = c.req.param("userId");
+  if (!MTG_UUID_RE.test(communityId) || !MTG_UUID_RE.test(userId)) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+  const sql = getSql(c.env);
+  try {
+    const access = await mtgGroupAccess(sql, payload.email, communityId);
+    if (!access.ok) return c.json({ ok: false, error: access.error }, access.status);
+    const { viewer, community } = access;
+    const set = await loadMtgSet(sql, null);
+    if (!set) return c.json({ ok: false, error: "NO_SEASON" }, 404);
+    const locked = Date.now() >= new Date(set.lock_at).getTime();
+    const isViewer = viewer.id === userId;
+    if (!locked && !isViewer) return c.json({ ok: false, error: "SEALED", message: "Picks are sealed until the lock", lockAt: set.lock_at }, 403);
+
+    const members = await loadMtgGroupMembers(sql, set.id, communityId);
+    const player = members.find((m) => m.id === userId);
+    if (!player) return c.json({ ok: false, error: "NOT_FOUND", message: "That player isn't in this group" }, 404);
+    // The viewer's own picks to compare with, once everyone's picks are out.
+    const compareEntry = !isViewer && locked ? members.find((m) => m.id === viewer.id)?.entry_id ?? null : null;
+
+    const entryIds = [player.entry_id, compareEntry].filter((x): x is string => !!x);
+    const pickRows = entryIds.length === 0 ? [] : ((await sql`
+      SELECT p.entry_id, p.rarity AS pick_rarity, p.slot, p.note, c.id, c.scryfall_id, c.arena_id, c.name, c.rarity, c.collector_number, c.layout, c.colors, c.mana_cost, c.mana_value, c.type_line, c.oracle_text, c.image_normal, c.image_large, c.image_back_normal, c.image_back_large, c.image_status, c.previewed_at, c.preview_source, c.preview_source_uri, c.first_seen_at
+      FROM newchums.mtg_picks p JOIN newchums.mtg_cards c ON c.id = p.card_id
+      WHERE p.entry_id = ANY(${entryIds}::uuid[])
+      ORDER BY p.slot
+    `) as Record<string, unknown>[]);
+
+    const snaps = !locked ? [] : ((await sql`
+      SELECT id, snapshot_date::text AS snapshot_date, taken_at, is_final FROM newchums.mtg_snapshots
+      WHERE set_id = ${set.id} ORDER BY snapshot_date ASC
+    `) as { id: string; snapshot_date: string; taken_at: string | Date; is_final: boolean }[]);
+    const current = snaps[snaps.length - 1] ?? null;
+    const previous = snaps.length > 1 ? snaps[snaps.length - 2] : null;
+
+    const groupEntries = members.map((m) => m.entry_id).filter((x): x is string => !!x);
+    const scoreRows = !current || groupEntries.length === 0 ? [] : ((await sql`
+      SELECT snapshot_id, entry_id, total, common, uncommon, rare, mythic, slot1_points FROM newchums.mtg_entry_scores
+      WHERE entry_id = ANY(${groupEntries}::uuid[]) AND snapshot_id = ANY(${snaps.map((x) => x.id)}::uuid[])
+    `) as { snapshot_id: string; entry_id: string; total: string; common: string; uncommon: string; rare: string; mythic: string; slot1_points: string }[]);
+    const scoresOn = (snapId: string) => new Map(scoreRows.filter((r) => r.snapshot_id === snapId).map((r) => [r.entry_id, r]));
+
+    // Ranked exactly as the leaderboard ranks the same day.
+    let standing: Record<string, unknown> | null = null;
+    if (current && player.entry_id) {
+      const ranked = rankGroupDay(members, scoresOn(current.id));
+      const me = ranked.find((r) => r.key === player.id);
+      if (me) {
+        const before = previous ? rankGroupDay(members, scoresOn(previous.id), new Date(previous.taken_at).getTime()).find((r) => r.key === player.id) : undefined;
+        const day = mtgStandingsDay(current.snapshot_date, set.arena_release_at, set.final_at);
+        standing = {
+          date: current.snapshot_date,
+          previousDate: previous?.snapshot_date ?? null,
+          takenAt: current.taken_at,
+          isFinal: current.is_final,
+          day: day?.day ?? null,
+          totalDays: day?.totalDays ?? null,
+          rank: me.rank,
+          previousRank: before?.rank ?? null,
+          players: ranked.length,
+          total: me.total,
+          change: before ? mtgRound4(me.total - before.total) : null,
+          behind: mtgRound4((ranked[0]?.total ?? 0) - me.total),
+          subtotals: { common: Number(me.score.common), uncommon: Number(me.score.uncommon), rare: Number(me.score.rare), mythic: Number(me.score.mythic) },
+        };
+      }
+    }
+
+    // Points day by day, each day ranked as the group was then.
+    const history = !player.entry_id ? [] : snaps.flatMap((snap, i) => {
+      const scores = scoresOn(snap.id);
+      const own = scores.get(player.entry_id as string);
+      if (!own) return [];
+      const joinedBy = i === snaps.length - 1 ? null : new Date(snap.taken_at).getTime();
+      return [{ date: snap.snapshot_date, total: Number(own.total), rank: rankGroupDay(members, scores, joinedBy).find((r) => r.key === player.id)?.rank ?? null }];
+    });
+
+    const cardIds = [...new Set(pickRows.map((r) => String(r.id)))];
+    const statRows = !current || cardIds.length === 0 ? [] : ((await sql`
+      SELECT snapshot_id, card_id, gih_games, gih_wr, rarity_rank, ranked, card_score, alsa, ata FROM newchums.mtg_card_stats
+      WHERE snapshot_id = ANY(${previous ? [current.id, previous.id] : [current.id]}::uuid[]) AND card_id = ANY(${cardIds}::uuid[])
+    `) as Record<string, unknown>[]);
+    const statOf = new Map(statRows.map((r) => [`${r.snapshot_id}|${r.card_id}`, r]));
+    const pickJson = (r: Record<string, unknown>) => {
+      const slot = Number(r.slot);
+      const multiplier = MTG_SLOT_WEIGHTS[slot - 1] ?? 0;
+      const today = current ? statOf.get(`${current.id}|${r.id}`) : undefined;
+      const before = previous ? statOf.get(`${previous.id}|${r.id}`) : undefined;
+      // No stats row (a voided card, or one out of the pool): a neutral 50, as scoreEntry scores it.
+      const cardScore = current ? (today ? Number(today.card_score) : 50) : null;
+      return {
+        slot,
+        multiplier,
+        note: (r.note as string | null) ?? null,
+        card: mapMtgCard(r),
+        stats: today ? {
+          gihWr: mtgNumber(today.gih_wr), gihGames: mtgNumber(today.gih_games), rank: mtgNumber(today.rarity_rank),
+          rankedCount: mtgNumber(today.ranked), alsa: mtgNumber(today.alsa), ata: mtgNumber(today.ata),
+        } : null,
+        cardScore,
+        points: cardScore === null ? null : mtgRound4(cardScore * multiplier),
+        trend: today && before ? mtgRound4(Number(today.card_score) - Number(before.card_score)) : null,
+      };
+    };
+    const picksOf = (entryId: string) => {
+      const out: Record<MtgRarity, ReturnType<typeof pickJson>[]> = { common: [], uncommon: [], rare: [], mythic: [] };
+      for (const r of pickRows) if (r.entry_id === entryId) out[r.pick_rarity as MtgRarity]?.push(pickJson(r));
+      return out;
+    };
+
+    const topRows = !current ? [] : ((await sql`
+      SELECT cs.rarity_rank, cs.ranked, cs.card_score, cs.gih_wr, cs.gih_games, c.id, c.scryfall_id, c.arena_id, c.name, c.rarity, c.collector_number, c.layout, c.colors, c.mana_cost, c.mana_value, c.type_line, c.oracle_text, c.image_normal, c.image_large, c.image_back_normal, c.image_back_large, c.image_status, c.previewed_at, c.preview_source, c.preview_source_uri, c.first_seen_at
+      FROM newchums.mtg_card_stats cs JOIN newchums.mtg_cards c ON c.id = cs.card_id
+      WHERE cs.snapshot_id = ${current.id} AND cs.rarity_rank IS NOT NULL AND cs.rarity_rank <= 5
+      ORDER BY cs.rarity_rank
+    `) as Record<string, unknown>[]);
+    const top: Record<MtgRarity, Array<{ rank: number; rankedCount: number | null; cardScore: number; gihWr: number | null; gihGames: number | null; card: ReturnType<typeof mapMtgCard> }>> = { common: [], uncommon: [], rare: [], mythic: [] };
+    for (const r of topRows) {
+      top[r.rarity as MtgRarity]?.push({ rank: Number(r.rarity_rank), rankedCount: mtgNumber(r.ranked), cardScore: Number(r.card_score), gihWr: mtgNumber(r.gih_wr), gihGames: mtgNumber(r.gih_games), card: mapMtgCard(r) });
+    }
+
+    const badgeRows = !locked ? [] : ((await sql`
+      SELECT badge_code, detail, community_id FROM newchums.mtg_badge_awards
+      WHERE set_id = ${set.id} AND user_id = ${player.id} AND status = 'awarded' AND (community_id IS NULL OR community_id = ${communityId})
+    `) as { badge_code: string; detail: Record<string, unknown> | null; community_id: string | null }[]);
+
+    const picks = player.entry_id ? picksOf(player.entry_id) : { common: [], uncommon: [], rare: [], mythic: [] };
+    return c.json({
+      ok: true,
+      set: { code: set.code, name: set.name, phase: mtgPhase(set), lockAt: set.lock_at, arenaReleaseAt: set.arena_release_at },
+      community,
+      player: {
+        userId: player.id,
+        name: player.name,
+        username: player.username,
+        avatarUrl: buildAvatarUrl(player.id, player.avatar_key, player.avatar_updated_at, c.env.MEDIA_BUCKET),
+        isViewer,
+        hasEntry: !!player.entry_id,
+        pickCount: MTG_RARITIES.reduce((n, r) => n + picks[r].length, 0),
+      },
+      standing,
+      history,
+      picks,
+      top,
+      compare: compareEntry ? picksOf(compareEntry) : null,
+      badges: badgeRows.sort((a, b) => compareBadges(a.badge_code, b.badge_code)).map((b) => ({
+        code: b.badge_code,
+        name: badgeLabel(b.badge_code, b.detail),
+        tier: MTG_BADGES[b.badge_code]?.tier ?? "common",
+        description: badgeDescription(b.badge_code, b.detail),
+        groupHonor: b.community_id !== null,
+      })),
+    });
+  } catch (err) {
+    console.error("[GET /mtg/communities/:id/players/:userId]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/**
+ * GET /mtg/communities/:id/cards/:cardId (spec 10.7): one card of the season,
+ * with its latest 17Lands numbers, Card Score and rank, its rank on every
+ * published day, and which of the group's members picked it, from the lock
+ * on. Members and super admins.
+ */
+app.get("/mtg/communities/:id/cards/:cardId", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email) return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  const communityId = c.req.param("id");
+  const cardId = c.req.param("cardId");
+  if (!MTG_UUID_RE.test(communityId) || !MTG_UUID_RE.test(cardId)) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+  const sql = getSql(c.env);
+  try {
+    const access = await mtgGroupAccess(sql, payload.email, communityId);
+    if (!access.ok) return c.json({ ok: false, error: access.error }, access.status);
+    const { viewer, community } = access;
+    const set = await loadMtgSet(sql, null);
+    if (!set) return c.json({ ok: false, error: "NO_SEASON" }, 404);
+    const card = ((await sql`
+      SELECT c.in_pool, c.voided, c.id, c.scryfall_id, c.arena_id, c.name, c.rarity, c.collector_number, c.layout, c.colors, c.mana_cost, c.mana_value, c.type_line, c.oracle_text, c.image_normal, c.image_large, c.image_back_normal, c.image_back_large, c.image_status, c.previewed_at, c.preview_source, c.preview_source_uri, c.first_seen_at FROM newchums.mtg_cards c WHERE c.id = ${cardId} AND c.set_id = ${set.id} LIMIT 1
+    `) as Record<string, unknown>[])[0];
+    if (!card) return c.json({ ok: false, error: "NOT_FOUND", message: "That card isn't in this season" }, 404);
+
+    const history = (await sql`
+      SELECT s.snapshot_date::text AS snapshot_date, cs.gih_games, cs.gih_wr, cs.rarity_rank, cs.ranked, cs.card_score, cs.alsa, cs.ata, cs.iwd
+      FROM newchums.mtg_card_stats cs JOIN newchums.mtg_snapshots s ON s.id = cs.snapshot_id
+      WHERE cs.card_id = ${cardId} AND s.set_id = ${set.id}
+      ORDER BY s.snapshot_date ASC
+    `) as Record<string, unknown>[];
+    const latestDate = ((await sql`
+      SELECT snapshot_date::text AS d FROM newchums.mtg_snapshots WHERE set_id = ${set.id} ORDER BY snapshot_date DESC LIMIT 1
+    `) as { d: string }[])[0]?.d ?? null;
+    // A card voided later has no row on the latest day, so its numbers stop at its last one.
+    const last = history[history.length - 1];
+    const latest = last && last.snapshot_date === latestDate ? {
+      date: String(last.snapshot_date),
+      gihWr: mtgNumber(last.gih_wr),
+      gihGames: mtgNumber(last.gih_games),
+      alsa: mtgNumber(last.alsa),
+      ata: mtgNumber(last.ata),
+      iwd: mtgNumber(last.iwd),
+      cardScore: Number(last.card_score),
+      rank: mtgNumber(last.rarity_rank),
+      rankedCount: mtgNumber(last.ranked),
+    } : null;
+
+    // Other players' picks stay sealed until the lock (spec 12.6).
+    const locked = Date.now() >= new Date(set.lock_at).getTime();
+    const pickers = !locked ? [] : ((await sql`
+      SELECT u.id, u.name, u.username, u.avatar_key, u.avatar_updated_at, p.slot, p.note
+      FROM newchums.mtg_picks p
+      JOIN newchums.mtg_entries e ON e.id = p.entry_id AND e.set_id = ${set.id}
+      JOIN newchums.community_members cm ON cm.user_id = e.user_id AND cm.community_id = ${communityId} AND cm.status = 'active'
+      JOIN newchums.users u ON u.id = e.user_id
+      WHERE p.card_id = ${cardId}
+      ORDER BY p.slot, LOWER(COALESCE(u.name, u.username, ''))
+    `) as { id: string; name: string | null; username: string | null; avatar_key: string | null; avatar_updated_at: string | null; slot: number; note: string | null }[]);
+
+    return c.json({
+      ok: true,
+      set: { code: set.code, name: set.name, phase: mtgPhase(set), lockAt: set.lock_at, arenaReleaseAt: set.arena_release_at },
+      community,
+      card: { ...mapMtgCard(card), inPool: card.in_pool === true, voided: card.voided === true },
+      latestDate,
+      latest,
+      history: history.map((r) => ({
+        date: String(r.snapshot_date), rank: mtgNumber(r.rarity_rank), rankedCount: mtgNumber(r.ranked),
+        cardScore: Number(r.card_score), gihWr: mtgNumber(r.gih_wr), gihGames: mtgNumber(r.gih_games),
+      })),
+      pickedBy: !locked ? null : pickers.map((u) => ({
+        userId: u.id,
+        name: u.name,
+        username: u.username,
+        avatarUrl: buildAvatarUrl(u.id, u.avatar_key, u.avatar_updated_at, c.env.MEDIA_BUCKET),
+        isViewer: u.id === viewer.id,
+        slot: Number(u.slot),
+        note: u.note,
+      })),
+      links: {
+        scryfall: `https://scryfall.com/card/${encodeURIComponent(set.code)}/${encodeURIComponent(String(card.collector_number))}`,
+        seventeenLands: `https://www.17lands.com/card_data?expansion=${encodeURIComponent(set.code.toUpperCase())}&format=PremierDraft`,
+      },
+    });
+  } catch (err) {
+    console.error("[GET /mtg/communities/:id/cards/:cardId]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/**
+ * GET /mtg/sets/:code/everyone (spec 10.5 and 11): every entry for the season
+ * on the latest day, by handle, rank and points only, leaving out players who
+ * hide themselves. Signed-in players. The top 100, the viewer's own row when
+ * it falls below them, and whether the viewer has an entry and is shown.
+ */
+app.get("/mtg/sets/:code/everyone", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email) return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  const sql = getSql(c.env);
+  try {
+    const set = await loadMtgSet(sql, c.req.param("code"));
+    if (!set) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    const mine = ((await sql`
+      SELECT e.user_id, e.hide_from_everyone_board FROM newchums.mtg_entries e JOIN newchums.users u ON u.id = e.user_id
+      WHERE u.email = ${payload.email} AND e.set_id = ${set.id} LIMIT 1
+    `) as { user_id: string; hide_from_everyone_board: boolean }[])[0];
+    const viewer = { hasEntry: !!mine, hidden: mine?.hide_from_everyone_board === true };
+    const snap = ((await sql`
+      SELECT id, snapshot_date::text AS snapshot_date, taken_at, is_final FROM newchums.mtg_snapshots
+      WHERE set_id = ${set.id} ORDER BY snapshot_date DESC LIMIT 1
+    `) as { id: string; snapshot_date: string; taken_at: string | Date; is_final: boolean }[])[0];
+    if (!snap) return c.json({ ok: true, set: { code: set.code, name: set.name }, viewer, standings: null });
+
+    const rows = (await sql`
+      SELECT e.user_id, e.completed_at, e.updated_at, u.username, s.total, s.slot1_points
+      FROM newchums.mtg_entry_scores s
+      JOIN newchums.mtg_entries e ON e.id = s.entry_id
+      JOIN newchums.users u ON u.id = e.user_id
+      WHERE s.snapshot_id = ${snap.id} AND e.hide_from_everyone_board = false
+    `) as { user_id: string; completed_at: string | null; updated_at: string | null; username: string | null; total: string; slot1_points: string }[];
+    const ranked = rankStandings(rows.map((r) => ({
+      key: r.user_id, total: Number(r.total), slot1: Number(r.slot1_points), completedAt: r.completed_at, updatedAt: r.updated_at, handle: r.username,
+    })));
+    const rowJson = (r: (typeof ranked)[number]) => ({ rank: r.rank, handle: r.handle, total: r.total, isViewer: r.key === mine?.user_id });
+    const own = mine ? ranked.findIndex((r) => r.key === mine.user_id) : -1;
+    const day = mtgStandingsDay(snap.snapshot_date, set.arena_release_at, set.final_at);
+    return c.json({
+      ok: true,
+      set: { code: set.code, name: set.name },
+      viewer,
+      standings: {
+        date: snap.snapshot_date,
+        takenAt: snap.taken_at,
+        isFinal: snap.is_final,
+        day: day?.day ?? null,
+        totalDays: day?.totalDays ?? null,
+        players: ranked.length,
+        rows: ranked.slice(0, MTG_EVERYONE_ROWS).map(rowJson),
+        viewerRow: own >= MTG_EVERYONE_ROWS ? rowJson(ranked[own]) : null,
+      },
+    });
+  } catch (err) {
+    console.error("[GET /mtg/sets/:code/everyone]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
+/** PUT /mtg/sets/:code/entry/everyone { hidden }: show or hide your entry on the
+ *  Everyone board. Allowed any time, before or after the lock: it isn't a pick,
+ *  so it leaves `updated_at`, a standings tie-break, alone. */
+app.put("/mtg/sets/:code/entry/everyone", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email) return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  let body: Record<string, unknown>;
+  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
+  if (typeof body.hidden !== "boolean") return c.json({ ok: false, error: "VALIDATION", message: "Send hidden as true or false" }, 400);
+  const sql = getSql(c.env);
+  try {
+    const set = await loadMtgSet(sql, c.req.param("code"));
+    if (!set) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    const rows = (await sql`
+      UPDATE newchums.mtg_entries e SET hide_from_everyone_board = ${body.hidden}
+      FROM newchums.users u
+      WHERE u.email = ${payload.email} AND e.user_id = u.id AND e.set_id = ${set.id}
+      RETURNING e.hide_from_everyone_board
+    `) as { hide_from_everyone_board: boolean }[];
+    if (rows.length === 0) return c.json({ ok: false, error: "NO_ENTRY", message: "Make your picks first" }, 404);
+    return c.json({ ok: true, hidden: rows[0].hide_from_everyone_board });
+  } catch (err) {
+    console.error("[PUT /mtg/sets/:code/entry/everyone]", err);
     return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
   }
 });

@@ -240,3 +240,111 @@ export type MtgLeaderboardPayload = {
     randomPicks: number;
   };
 };
+
+// ── Player and card pages, the Everyone board (Batch 6) ──────────────────────
+
+/** A card's 17Lands numbers and rank within its rarity on one day. */
+export type MtgCardNumbers = {
+  gihWr: number | null;
+  gihGames: number | null;
+  rank: number | null;
+  rankedCount: number | null;
+  alsa: number | null;
+  ata: number | null;
+};
+
+export type MtgPlayerPick = {
+  slot: number;
+  multiplier: number;
+  note: string | null;
+  card: MtgCard;
+  /** The card's numbers on the latest day; null before the first standings or for a voided card. */
+  stats: MtgCardNumbers | null;
+  /** Null before the first standings; a neutral 50 for a card without numbers. */
+  cardScore: number | null;
+  points: number | null;
+  /** Card Score change since the day before. */
+  trend: number | null;
+};
+
+export type MtgTopCard = { rank: number; rankedCount: number | null; cardScore: number; gihWr: number | null; gihGames: number | null; card: MtgCard };
+
+type MtgPageSet = { code: string; name: string; phase: MtgPhase; lockAt: string; arenaReleaseAt: string | null };
+
+/** GET /mtg/communities/:id/players/:userId */
+export type MtgPlayerPayload = {
+  set: MtgPageSet;
+  community: { id: string; name: string; slug: string };
+  player: { userId: string; name: string | null; username: string | null; avatarUrl: string | null; isViewer: boolean; hasEntry: boolean; pickCount: number };
+  standing: null | {
+    date: string;
+    previousDate: string | null;
+    takenAt: string;
+    isFinal: boolean;
+    day: number | null;
+    totalDays: number | null;
+    rank: number;
+    previousRank: number | null;
+    /** Players ranked in the group that day. */
+    players: number;
+    total: number;
+    change: number | null;
+    behind: number;
+    subtotals: Record<MtgRarity, number>;
+  };
+  history: Array<{ date: string; total: number; rank: number | null }>;
+  picks: Record<MtgRarity, MtgPlayerPick[]>;
+  top: Record<MtgRarity, MtgTopCard[]>;
+  /** The viewer's own picks, when looking at someone else's page after the lock. */
+  compare: Record<MtgRarity, MtgPlayerPick[]> | null;
+  badges: MtgBadge[];
+};
+
+/** GET /mtg/communities/:id/cards/:cardId */
+export type MtgCardPagePayload = {
+  set: MtgPageSet;
+  community: { id: string; name: string; slug: string };
+  card: MtgCard & { inPool: boolean; voided: boolean };
+  latestDate: string | null;
+  latest: null | { date: string; gihWr: number | null; gihGames: number | null; alsa: number | null; ata: number | null; iwd: number | null; cardScore: number; rank: number | null; rankedCount: number | null };
+  history: Array<{ date: string; rank: number | null; rankedCount: number | null; cardScore: number; gihWr: number | null; gihGames: number | null }>;
+  /** Null until the lock. */
+  pickedBy: null | Array<{ userId: string; name: string | null; username: string | null; avatarUrl: string | null; isViewer: boolean; slot: number; note: string | null }>;
+  links: { scryfall: string; seventeenLands: string };
+};
+
+export type MtgEveryoneRow = { rank: number; handle: string | null; total: number; isViewer: boolean };
+
+/** GET /mtg/sets/:code/everyone */
+export type MtgEveryonePayload = {
+  set: { code: string; name: string };
+  viewer: { hasEntry: boolean; hidden: boolean };
+  standings: null | {
+    date: string;
+    takenAt: string;
+    isFinal: boolean;
+    day: number | null;
+    totalDays: number | null;
+    players: number;
+    rows: MtgEveryoneRow[];
+    /** The viewer's row when it falls below the rows shown. */
+    viewerRow: MtgEveryoneRow | null;
+  };
+};
+
+/** "1st", "2nd", "3rd", "11th", "22nd". */
+export function ordinal(n: number): string {
+  const tens = n % 100;
+  if (tens >= 11 && tens <= 13) return `${n}th`;
+  return `${n}${["th", "st", "nd", "rd"][n % 10] ?? "th"}`;
+}
+
+/** 0.5823 → "58.2%". */
+export const formatWinRate = (wr: number | null) => (wr === null ? "–" : `${(wr * 100).toFixed(1)}%`);
+
+/** 12345.6 → "12,346". */
+export const formatCount = (n: number | null) => (n === null ? "–" : Math.round(n).toLocaleString("en-US"));
+
+/** A YYYY-MM-DD day as "Oct 1". */
+export const formatDayKey = (key: string) =>
+  new Intl.DateTimeFormat("en-US", { timeZone: "UTC", month: "short", day: "numeric" }).format(new Date(`${key}T12:00:00Z`));

@@ -196,7 +196,7 @@ export default function MtgChallengeHome({ communityId, slug, isMember, isAuthen
 
       {/* From the Arena launch the standings lead (waiting for the first day at
           first), and the Reveal sits one tap below. */}
-      {isMember && (set.standings || set.phase === "live" || set.phase === "final") && <Leaderboard communityId={communityId} nowMs={nowMs} />}
+      {isMember && (set.standings || set.phase === "live" || set.phase === "final") && <Leaderboard communityId={communityId} slug={slug} setCode={set.code} nowMs={nowMs} />}
       {revealOpen && isMember && <RevealSummary communityId={communityId} slug={slug} />}
 
       {/* Who has finished. Counts only: nobody's cards leave the server

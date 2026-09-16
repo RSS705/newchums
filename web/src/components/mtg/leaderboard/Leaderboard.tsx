@@ -1,20 +1,25 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import NextLink from "next/link";
 import Avatar from "@mui/material/Avatar";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import ButtonBase from "@mui/material/ButtonBase";
 import Collapse from "@mui/material/Collapse";
 import Stack from "@mui/material/Stack";
+import Tab from "@mui/material/Tab";
+import Tabs from "@mui/material/Tabs";
 import Typography from "@mui/material/Typography";
 import ArrowDropDownRoundedIcon from "@mui/icons-material/ArrowDropDownRounded";
 import ArrowDropUpRoundedIcon from "@mui/icons-material/ArrowDropUpRounded";
+import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
 import LeaderboardRoundedIcon from "@mui/icons-material/LeaderboardRounded";
 import PsychologyAltRoundedIcon from "@mui/icons-material/PsychologyAltRounded";
 import { AppCard } from "@/components/ui";
 import { apiFetch, getAvatarBaseUrl } from "@/lib/apiClient";
 import BadgeChip from "../reveal/BadgeChip";
+import EveryoneBoard from "./EveryoneBoard";
 import { BADGE_TIER_STYLE, MTG_RARITIES, RARITY_LABEL, type MtgLeaderboardPayload, type MtgLeaderboardRow } from "../mtgTypes";
 
 type Standings = NonNullable<MtgLeaderboardPayload["standings"]>;
@@ -87,8 +92,9 @@ function BadgeHints({ row }: { row: MtgLeaderboardRow }) {
   );
 }
 
-function PlayerRow({ row, open, onToggle, sinceLabel }: { row: MtgLeaderboardRow; open: boolean; onToggle: () => void; sinceLabel: string }) {
+function PlayerRow({ row, open, onToggle, sinceLabel, href }: { row: MtgLeaderboardRow; open: boolean; onToggle: () => void; sinceLabel: string; href: string }) {
   const name = displayName(row);
+  const whose = row.isViewer ? "your" : row.name ? `${row.name.trim().split(/\s+/)[0]}'s` : row.username ? `@${row.username}'s` : "their";
   const moved = row.previousRank === null ? 0 : row.previousRank - row.rank;
   const label = [
     `${row.rank}. ${name}`,
@@ -160,6 +166,9 @@ function PlayerRow({ row, open, onToggle, sinceLabel }: { row: MtgLeaderboardRow
               )}
             </Stack>
           )}
+          <Button component={NextLink} href={href} variant="text" size="small" endIcon={<ChevronRightRoundedIcon />} sx={{ textTransform: "none", fontWeight: 700, mt: 0.75, ml: -1, minHeight: 40 }}>
+            See {whose} picks and stats
+          </Button>
         </Box>
       </Collapse>
     </Box>
@@ -223,13 +232,15 @@ type Item = { kind: "player"; row: MtgLeaderboardRow } | { kind: "mind" } | { ki
  * The group's standings (spec 10.5): rank and movement, points and change,
  * points behind the leader and the top badges, with the Group Mind and a
  * random-picks line placed where their points fall. A row opens to its points
- * by rarity and its badges. The board refreshes when the tab comes back into
- * view, and every half hour while it stays open.
+ * by rarity and its badges, with a link to the player's page. The Everyone tab
+ * ranks the whole season by handle. The board refreshes when the tab comes
+ * back into view, and every half hour while it stays open.
  */
-export default function Leaderboard({ communityId, nowMs }: { communityId: string; nowMs: number }) {
+export default function Leaderboard({ communityId, slug, setCode, nowMs }: { communityId: string; slug: string; setCode: string; nowMs: number }) {
   const [data, setData] = useState<MtgLeaderboardPayload | null>(null);
   const [failed, setFailed] = useState(false);
   const [openRow, setOpenRow] = useState<string | null>(null);
+  const [tab, setTab] = useState<"group" | "everyone">("group");
   const lastFetch = useRef(0);
 
   const load = useCallback(async () => {
@@ -289,6 +300,18 @@ export default function Leaderboard({ communityId, nowMs }: { communityId: strin
     </Stack>
   );
 
+  const tabs = (
+    <Tabs
+      value={tab}
+      onChange={(_, v) => setTab(v as "group" | "everyone")}
+      aria-label="Which standings"
+      sx={{ minHeight: 40, mb: 1.5, borderBottom: "1px solid", borderColor: "divider", "& .MuiTab-root": { textTransform: "none", fontWeight: 700, minHeight: 40, px: 1.5 } }}
+    >
+      <Tab value="group" label="This group" />
+      <Tab value="everyone" label="Everyone" />
+    </Tabs>
+  );
+
   if (!data) {
     return (
       <AppCard>
@@ -308,7 +331,10 @@ export default function Leaderboard({ communityId, nowMs }: { communityId: strin
     return (
       <AppCard>
         {header}
-        <Typography variant="body2" color="text.secondary">The first standings arrive the morning after the Arena launch, around 9 AM ET.</Typography>
+        {tabs}
+        {tab === "everyone" ? <EveryoneBoard setCode={setCode} /> : (
+          <Typography variant="body2" color="text.secondary">The first standings arrive the morning after the Arena launch, around 9 AM ET.</Typography>
+        )}
       </AppCard>
     );
   }
@@ -320,36 +346,41 @@ export default function Leaderboard({ communityId, nowMs }: { communityId: strin
   return (
     <AppCard>
       {header}
-      {failed && (
-        <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
-          <Typography variant="caption" sx={{ color: DOWN }}>Couldn&apos;t refresh the standings.</Typography>
-          <Button variant="text" size="small" onClick={() => load()} sx={{ textTransform: "none", fontWeight: 700, minHeight: 32 }}>Try again</Button>
-        </Stack>
-      )}
-      {best && best.change !== null && (
-        <Typography variant="body2" sx={{ mb: 1.25 }}>
-          {displayName(best)} {sinceLabel === "today" ? "had the best day" : `gained the most ${sinceLabel}`},{" "}
-          <Box component="span" sx={{ color: UP, fontWeight: 800 }}>{signed(best.change)}</Box>.
-        </Typography>
-      )}
-      <Stack component="ol" spacing={0.75} aria-label="Standings" sx={{ m: 0, p: 0 }}>
-        {items.map((item, i) =>
-          item.kind === "player" ? (
-            <PlayerRow key={item.row.userId} row={item.row} sinceLabel={sinceLabel} open={openRow === item.row.userId} onToggle={() => setOpenRow((cur) => (cur === item.row.userId ? null : item.row.userId))} />
-          ) : item.kind === "mind" && s.groupMind ? (
-            <GroupMindRow key="mind" mind={s.groupMind} sinceLabel={sinceLabel} />
-          ) : item.kind === "random" ? (
-            <RandomPicksLine key={`random-${i}`} value={s.randomPicks} />
-          ) : null,
+      {tabs}
+      {tab === "everyone" ? <EveryoneBoard setCode={setCode} /> : (
+        <>
+        {failed && (
+          <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
+            <Typography variant="caption" sx={{ color: DOWN }}>Couldn&apos;t refresh the standings.</Typography>
+            <Button variant="text" size="small" onClick={() => load()} sx={{ textTransform: "none", fontWeight: 700, minHeight: 32 }}>Try again</Button>
+          </Stack>
         )}
-      </Stack>
-      {s.rows.length === 0 && (
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>Nobody in this group locked in picks.</Typography>
-      )}
-      {noEntry.length > 0 && (
-        <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1.5 }}>
-          {joinNames(noEntry.map((p) => displayName(p)))} {noEntry.length === 1 && !noEntry[0].isViewer ? "is" : "are"} following along.
-        </Typography>
+        {best && best.change !== null && (
+          <Typography variant="body2" sx={{ mb: 1.25 }}>
+            {displayName(best)} {sinceLabel === "today" ? "had the best day" : `gained the most ${sinceLabel}`},{" "}
+            <Box component="span" sx={{ color: UP, fontWeight: 800 }}>{signed(best.change)}</Box>.
+          </Typography>
+        )}
+        <Stack component="ol" spacing={0.75} aria-label="Standings" sx={{ m: 0, p: 0 }}>
+          {items.map((item, i) =>
+            item.kind === "player" ? (
+              <PlayerRow key={item.row.userId} row={item.row} sinceLabel={sinceLabel} href={`/communities/${slug}/players/${item.row.userId}`} open={openRow === item.row.userId} onToggle={() => setOpenRow((cur) => (cur === item.row.userId ? null : item.row.userId))} />
+            ) : item.kind === "mind" && s.groupMind ? (
+              <GroupMindRow key="mind" mind={s.groupMind} sinceLabel={sinceLabel} />
+            ) : item.kind === "random" ? (
+              <RandomPicksLine key={`random-${i}`} value={s.randomPicks} />
+            ) : null,
+          )}
+        </Stack>
+        {s.rows.length === 0 && (
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>Nobody in this group locked in picks.</Typography>
+        )}
+        {noEntry.length > 0 && (
+          <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1.5 }}>
+            {joinNames(noEntry.map((p) => displayName(p)))} {noEntry.length === 1 && !noEntry[0].isViewer ? "is" : "are"} following along.
+          </Typography>
+        )}
+        </>
       )}
     </AppCard>
   );
