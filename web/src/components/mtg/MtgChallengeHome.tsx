@@ -38,7 +38,7 @@ const PHASE_COPY: Record<MtgSetPayload["phase"], { title: string; body: string }
   open: { title: "Picks are open", body: "Pick the five cards you think will post the highest win rate at each rarity, in order. Everything saves as you go." },
   locked: { title: "Picks are locked", body: "Entries are sealed and everyone's picks are revealed to the group. Standings start the morning after the Arena launch." },
   live: { title: "The season is live", body: "Standings update every morning from 17Lands Premier Draft data." },
-  final: { title: "Season complete", body: "The final standings are in and badges have been awarded." },
+  final: { title: "Season complete", body: "The last standings of the season are in." },
 };
 
 /**

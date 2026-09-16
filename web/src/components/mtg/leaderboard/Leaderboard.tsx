@@ -64,12 +64,12 @@ function Movement({ row }: { row: MtgLeaderboardRow }) {
   );
 }
 
-/** Badge names on wide screens, tier dots on tablets; hidden on phones, where the open row shows them. */
+/** Badge names on wide screens, tier dots elsewhere, and a count for the rest. */
 function BadgeHints({ row }: { row: MtgLeaderboardRow }) {
   if (row.badges.length === 0) return null;
   const extra = row.badgeCount - row.badges.length;
   return (
-    <Stack direction="row" spacing={0.5} alignItems="center" aria-hidden sx={{ flexShrink: 0, display: { xs: "none", sm: "flex" } }}>
+    <Stack direction="row" spacing={0.5} alignItems="center" aria-hidden sx={{ flexShrink: 0 }}>
       {row.badges.map((b) => {
         const style = BADGE_TIER_STYLE[b.tier] ?? BADGE_TIER_STYLE.common;
         const dashed = b.tier === "shame" ? "dashed" : "solid";
@@ -87,13 +87,13 @@ function BadgeHints({ row }: { row: MtgLeaderboardRow }) {
   );
 }
 
-function PlayerRow({ row, open, onToggle, window }: { row: MtgLeaderboardRow; open: boolean; onToggle: () => void; window: string }) {
+function PlayerRow({ row, open, onToggle, sinceLabel }: { row: MtgLeaderboardRow; open: boolean; onToggle: () => void; sinceLabel: string }) {
   const name = displayName(row);
   const moved = row.previousRank === null ? 0 : row.previousRank - row.rank;
   const label = [
     `${row.rank}. ${name}`,
     `${points(row.total)} points`,
-    row.change !== null ? `${signed(row.change)} ${window}` : null,
+    row.change !== null ? `${signed(row.change)} ${sinceLabel}` : null,
     moved > 0 ? `up ${moved}` : moved < 0 ? `down ${-moved}` : null,
     row.rank > 1 ? `${points(row.behind)} behind the leader` : "in the lead",
     row.badgeCount > 0 ? `${row.badgeCount} ${row.badgeCount === 1 ? "badge" : "badges"}` : null,
@@ -121,7 +121,7 @@ function PlayerRow({ row, open, onToggle, window }: { row: MtgLeaderboardRow; op
             {row.change === null ? "First standings" : (
               <>
                 <Box component="span" sx={{ color: changeColor, fontWeight: 700 }}>{signed(row.change)}</Box>
-                <Box component="span" sx={{ display: { xs: "none", sm: "inline" } }}> {window}</Box>
+                <Box component="span" sx={{ display: { xs: "none", sm: "inline" } }}> {sinceLabel}</Box>
               </>
             )}
             {row.rank > 1 && (
@@ -166,8 +166,9 @@ function PlayerRow({ row, open, onToggle, window }: { row: MtgLeaderboardRow; op
   );
 }
 
-function GroupMindRow({ mind, window }: { mind: NonNullable<Standings["groupMind"]>; window: string }) {
-  const label = `Group Mind, the group's consensus picks, ${points(mind.total)} points${mind.change !== null ? `, ${signed(mind.change)} ${window}` : ""}`;
+function GroupMindRow({ mind, sinceLabel }: { mind: NonNullable<Standings["groupMind"]>; sinceLabel: string }) {
+  const label = `Group Mind, the group's consensus picks, ${points(mind.total)} points${mind.change !== null ? `, ${signed(mind.change)} ${sinceLabel}` : ""}`;
+  const changeColor = mind.change === null ? "text.secondary" : Math.round(mind.change) > 0 ? UP : Math.round(mind.change) < 0 ? DOWN : "text.secondary";
   return (
     <Box component="li" aria-label={label} sx={{ listStyle: "none", display: "flex", alignItems: "center", gap: { xs: 1, sm: 1.5 }, px: { xs: 1, sm: 1.5 }, py: 1, borderRadius: 2, border: "1px dashed", borderColor: "text.disabled", minHeight: 56 }}>
       <Box aria-hidden sx={{ width: 28, flexShrink: 0 }} />
@@ -177,7 +178,9 @@ function GroupMindRow({ mind, window }: { mind: NonNullable<Standings["groupMind
       <Box aria-hidden sx={{ minWidth: 0, flex: 1 }}>
         <Typography variant="body2" fontWeight={700} noWrap>Group Mind</Typography>
         <Typography variant="caption" color="text.secondary" noWrap sx={{ display: "block" }}>
-          {mind.change !== null ? `${signed(mind.change)} ${window} · ` : ""}the group&apos;s consensus
+          {mind.change !== null && <Box component="span" sx={{ color: changeColor, fontWeight: 700 }}>{signed(mind.change)}</Box>}
+          <Box component="span" sx={{ display: { xs: "inline", sm: "none" } }}>{mind.change !== null ? " · " : ""}consensus</Box>
+          <Box component="span" sx={{ display: { xs: "none", sm: "inline" } }}>{mind.change !== null ? ` ${sinceLabel} · ` : ""}the group&apos;s consensus</Box>
         </Typography>
       </Box>
       <Typography aria-hidden sx={{ fontWeight: 800, fontSize: { xs: "1rem", sm: "1.125rem" }, color: "text.secondary", flexShrink: 0, minWidth: 40, textAlign: "right" }}>{points(mind.total)}</Typography>
@@ -202,7 +205,7 @@ function RandomPicksLine({ value }: { value: number }) {
 function UpdatedLine({ standings, nowMs }: { standings: Standings; nowMs: number }) {
   const today = easternNow(nowMs);
   const seasonOver = standings.isFinal || (standings.day !== null && standings.totalDays !== null && standings.day >= standings.totalDays);
-  const stale = !seasonOver && (standings.date < shiftDay(today.date, -1) || (standings.date < today.date && today.hour >= 9));
+  const stale = !seasonOver && (standings.date < shiftDay(today.date, -1) || (standings.date < today.date && today.hour >= 10));
   const when = stale
     ? `Last updated ${new Intl.DateTimeFormat("en-US", { timeZone: "UTC", weekday: "short", month: "short", day: "numeric" }).format(new Date(`${standings.date}T12:00:00Z`))}`
     : `Updated ${new Intl.DateTimeFormat("en-US", { timeZone: EASTERN, weekday: "short", hour: "numeric", minute: "2-digit" }).format(new Date(standings.takenAt)).replace(",", "")} ET`;
@@ -261,7 +264,7 @@ export default function Leaderboard({ communityId, nowMs }: { communityId: strin
 
   const s = data?.standings ?? null;
   const items = useMemo<Item[]>(() => {
-    if (!s) return [];
+    if (!s || s.rows.length === 0) return [];
     const ghosts: Array<{ item: Item; total: number }> = [{ item: { kind: "random" }, total: s.randomPicks }];
     if (s.groupMind) ghosts.push({ item: { kind: "mind" }, total: s.groupMind.total });
     ghosts.sort((a, b) => b.total - a.total);
@@ -310,25 +313,31 @@ export default function Leaderboard({ communityId, nowMs }: { communityId: strin
     );
   }
 
-  const window = changeWindow(s);
+  const sinceLabel = changeWindow(s);
   const best = s.rows.filter((r) => r.change !== null && Math.round(r.change) > 0).sort((a, b) => (b.change ?? 0) - (a.change ?? 0))[0];
   const noEntry = [...s.noEntry].sort((a, b) => Number(b.isViewer) - Number(a.isViewer));
 
   return (
     <AppCard>
       {header}
+      {failed && (
+        <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
+          <Typography variant="caption" sx={{ color: DOWN }}>Couldn&apos;t refresh the standings.</Typography>
+          <Button variant="text" size="small" onClick={() => load()} sx={{ textTransform: "none", fontWeight: 700, minHeight: 32 }}>Try again</Button>
+        </Stack>
+      )}
       {best && best.change !== null && (
         <Typography variant="body2" sx={{ mb: 1.25 }}>
-          {displayName(best)} {window === "today" ? "had the best day" : `gained the most ${window}`},{" "}
+          {displayName(best)} {sinceLabel === "today" ? "had the best day" : `gained the most ${sinceLabel}`},{" "}
           <Box component="span" sx={{ color: UP, fontWeight: 800 }}>{signed(best.change)}</Box>.
         </Typography>
       )}
       <Stack component="ol" spacing={0.75} aria-label="Standings" sx={{ m: 0, p: 0 }}>
         {items.map((item, i) =>
           item.kind === "player" ? (
-            <PlayerRow key={item.row.userId} row={item.row} window={window} open={openRow === item.row.userId} onToggle={() => setOpenRow((cur) => (cur === item.row.userId ? null : item.row.userId))} />
+            <PlayerRow key={item.row.userId} row={item.row} sinceLabel={sinceLabel} open={openRow === item.row.userId} onToggle={() => setOpenRow((cur) => (cur === item.row.userId ? null : item.row.userId))} />
           ) : item.kind === "mind" && s.groupMind ? (
-            <GroupMindRow key="mind" mind={s.groupMind} window={window} />
+            <GroupMindRow key="mind" mind={s.groupMind} sinceLabel={sinceLabel} />
           ) : item.kind === "random" ? (
             <RandomPicksLine key={`random-${i}`} value={s.randomPicks} />
           ) : null,

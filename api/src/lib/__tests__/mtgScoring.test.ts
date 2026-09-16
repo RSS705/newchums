@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  MTG_SLOT_WEIGHTS, checkSnapshot, computeCardScores, isDateKey, matchFeed, mtgIngestSlot, mtgIngestWindow, mtgStandingsDay,
+  MTG_SLOT_WEIGHTS, checkSnapshot, computeCardScores, isDateKey, matchFeed, mtgIngestDateAllowed, mtgIngestSlot, mtgIngestWindow, mtgStandingsDay,
   normalizeCardName, parseCardDataFeed, rankStandings, scoreEntry, type FeedRecord, type PoolCard,
 } from "../mtgScoring";
 
@@ -175,6 +175,16 @@ describe("season window and dates", () => {
     expect(mtgIngestWindow(set, new Date("2026-09-30T02:00:00Z")).open).toBe(false);
     expect(mtgIngestWindow(set, new Date("2026-09-30T05:00:00Z"))).toEqual({ date: "2026-09-30", open: true });
     expect(mtgIngestWindow(set, new Date("2026-10-28T05:00:00Z")).open).toBe(false);
+  });
+  it("lets an admin name any day of the season, including one that has ended", () => {
+    // The window closes when the day does; naming a day doesn't, so the final
+    // day can still be retried in November (spec 9.1).
+    expect(mtgIngestDateAllowed(set, "2026-09-30")).toBe(true);
+    expect(mtgIngestDateAllowed(set, "2026-10-27")).toBe(true);
+    expect(mtgIngestDateAllowed(set, "2026-09-29")).toBe(false);
+    expect(mtgIngestDateAllowed(set, "2026-10-28")).toBe(false);
+    expect(mtgIngestDateAllowed(set, "2026-02-31")).toBe(false);
+    expect(mtgIngestDateAllowed({ ...set, arena_release_at: null }, "2026-10-01")).toBe(false);
   });
   it("accepts only real calendar dates", () => {
     expect(isDateKey("2026-09-30")).toBe(true);

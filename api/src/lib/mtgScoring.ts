@@ -279,6 +279,15 @@ export function mtgIngestWindow(set: { arena_release_at: string | Date | null; f
   return { date, open: !!set.arena_release_at && date > easternDateKey(set.arena_release_at) && date <= easternDateKey(set.final_at) };
 }
 
+/** Whether an admin may publish standings for `date`: a real date from the
+ *  day after the Arena launch through the final day. Unlike `mtgIngestWindow`
+ *  this doesn't ask what day it is now, so the final day can still be retried
+ *  once it has ended — spec 9.1 promises it can be retried until it succeeds. */
+export function mtgIngestDateAllowed(set: { arena_release_at: string | Date | null; final_at: string | Date }, date: string): boolean {
+  if (!isDateKey(date) || !set.arena_release_at) return false;
+  return date > easternDateKey(set.arena_release_at) && date <= easternDateKey(set.final_at);
+}
+
 /** A real calendar date written YYYY-MM-DD. */
 export function isDateKey(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;

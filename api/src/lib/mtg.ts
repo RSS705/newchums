@@ -109,13 +109,13 @@ export function mtgTimeline(set: MtgSetRow, now: Date = new Date()): TimelineEnt
       const tue = new Date(d.getTime() + week * 7 * 86400000);
       if (tue.getTime() >= finalMs - 6 * 86400000) break;
       const tenAm = new Date(tue.toISOString().slice(0, 10) + "T14:00:00Z"); // 10 AM EDT
-      entries.push({ key: `weekly_${week + 1}`, label: `Weekly standings`, at: tenAm.toISOString(), detail: "Standings email with your rank, movement and best and worst picks so far." });
+      entries.push({ key: `weekly_${week + 1}`, label: `Week ${week + 1}`, at: tenAm.toISOString(), detail: "Another week of games is in. See how your picks are holding up." });
     }
   }
   if (set.tabletop_release_at) {
     entries.push({ key: "paper", label: "Paper release", at: set.tabletop_release_at, detail: "The set arrives in stores." });
   }
-  entries.push({ key: "final", label: "Final day", at: set.final_at, detail: "The morning's standings are final. Badges are awarded and the season results go out.", calendar: true });
+  entries.push({ key: "final", label: "Final day", at: set.final_at, detail: "The morning's standings are the last of the season.", calendar: true });
   entries.sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
   return entries.map((e) => {
     const start = new Date(e.at).getTime();
@@ -185,7 +185,14 @@ export async function syncScryfallSet(
   const all: ScryfallCard[] = [];
   const stamp = now.toISOString().replace(/[:.]/g, "-");
   while (url) {
-    const res = await fetch(url, { headers });
+    let res = await fetch(url, { headers });
+    // Scryfall rate-limits in bursts. Giving up throws away the whole run and
+    // freezes the pool until the next sync hours later, so wait and try again.
+    for (let tries = 0; (res.status === 429 || res.status >= 500) && tries < 2; tries++) {
+      await sleep(1500 + tries * 2000);
+      res = await fetch(url, { headers });
+      if (res.ok) summary.notes.push(`Scryfall was busy, retried page ${summary.pages + 1}`);
+    }
     if (res.status === 404) { summary.notes.push("Scryfall returned no cards for this set yet"); break; }
     if (!res.ok) throw new Error(`Scryfall ${res.status}`);
     const text = await res.text();
@@ -247,6 +254,18 @@ export async function syncScryfallSet(
     `) as { inserted: boolean }[];
     summary.kept += 1;
     if (rows[0]?.inserted) summary.inserted += 1; else summary.updated += 1;
+  }
+
+  // Retractions and renumbered previews: a card the complete sync didn't see
+  // leaves the pool, so it can't be picked or counted against the ingest's
+  // match check. Only before the lock, when the pool is still allowed to move.
+  if (byOracle.size > 0 && now.getTime() < new Date(set.lock_at).getTime()) {
+    const dropped = (await sql`
+      UPDATE newchums.mtg_cards SET in_pool = false, updated_at = now()
+      WHERE set_id = ${set.id} AND in_pool = true AND oracle_id::text <> ALL(${Array.from(byOracle.keys())}::text[])
+      RETURNING id
+    `) as { id: string }[];
+    if (dropped.length > 0) summary.notes.push(`${dropped.length} card${dropped.length === 1 ? "" : "s"} Scryfall no longer lists left the pool`);
   }
   return summary;
 }
