@@ -155,9 +155,15 @@ export type MtgBadge = {
   code: string;
   name: string;
   tier: MtgBadgeTier;
+  /** Why it was earned, or for an on-track badge why it would be. */
   description: string;
-  /** True for group honors such as Early Bird. */
+  /** True for badges that belong to the group, such as Early Bird. */
   groupHonor: boolean;
+  /** True for a badge the latest standings put the player on track for,
+   *  which is awarded only if it still holds on the final day. */
+  onTrack?: boolean;
+  /** How many times it stacks, as in Called It at two rarities. */
+  count?: number;
 };
 
 /** Badge tier colors, after Magic's rarity symbols (spec 7.1). */

@@ -18,9 +18,10 @@ import LeaderboardRoundedIcon from "@mui/icons-material/LeaderboardRounded";
 import PsychologyAltRoundedIcon from "@mui/icons-material/PsychologyAltRounded";
 import { AppCard } from "@/components/ui";
 import { apiFetch, getAvatarBaseUrl } from "@/lib/apiClient";
+import { BadgeIcon } from "../badgeIcons";
 import BadgeChip from "../reveal/BadgeChip";
 import EveryoneBoard from "./EveryoneBoard";
-import { BADGE_TIER_STYLE, MTG_RARITIES, RARITY_LABEL, type MtgLeaderboardPayload, type MtgLeaderboardRow } from "../mtgTypes";
+import { MTG_RARITIES, RARITY_LABEL, type MtgLeaderboardPayload, type MtgLeaderboardRow } from "../mtgTypes";
 
 type Standings = NonNullable<MtgLeaderboardPayload["standings"]>;
 
@@ -69,25 +70,30 @@ function Movement({ row }: { row: MtgLeaderboardRow }) {
   );
 }
 
-/** Badge names on wide screens, tier dots elsewhere, and a count for the rest. */
+/** The row's three best badges as icons in their tier colors, and a count for
+ *  the rest (spec 10.5). On phones the icons overlap, best on top, so a name
+ *  keeps the room it had beside the old tier dots. */
 function BadgeHints({ row }: { row: MtgLeaderboardRow }) {
   if (row.badges.length === 0) return null;
   const extra = row.badgeCount - row.badges.length;
   return (
-    <Stack direction="row" spacing={0.5} alignItems="center" aria-hidden sx={{ flexShrink: 0 }}>
-      {row.badges.map((b) => {
-        const style = BADGE_TIER_STYLE[b.tier] ?? BADGE_TIER_STYLE.common;
-        const dashed = b.tier === "shame" ? "dashed" : "solid";
-        return (
-          <Box key={`${b.code}-${b.name}`}>
-            <Box sx={{ display: { xs: "block", md: "none" }, width: 12, height: 12, borderRadius: "50%", bgcolor: style.bg, border: "2px solid", borderColor: style.fg, borderStyle: dashed }} />
-            <Box sx={{ display: { xs: "none", md: "block" }, px: 0.75, py: "1px", borderRadius: 10, fontSize: "0.625rem", fontWeight: 700, whiteSpace: "nowrap", bgcolor: style.bg, color: style.fg, border: "1px solid", borderColor: style.border, borderStyle: dashed }}>
-              {b.name}
-            </Box>
-          </Box>
-        );
-      })}
-      {extra > 0 && <Typography component="span" sx={{ fontSize: "0.6875rem", fontWeight: 700, color: "text.secondary" }}>+{extra}</Typography>}
+    <Stack direction="row" alignItems="center" aria-hidden sx={{ flexShrink: 0, gap: { xs: 0, sm: "4px" } }}>
+      {row.badges.map((b, i) => (
+        <Box
+          key={`${b.code}-${b.name}`}
+          sx={(theme) => ({
+            position: "relative",
+            zIndex: row.badges.length - i,
+            borderRadius: "50%",
+            ml: i === 0 ? 0 : "-5px",
+            boxShadow: `0 0 0 1.5px ${theme.palette.background.paper}`,
+            [theme.breakpoints.up("sm")]: { ml: 0, boxShadow: "none" },
+          })}
+        >
+          <BadgeIcon badge={b} size={{ xs: 20, sm: 24 }} />
+        </Box>
+      ))}
+      {extra > 0 && <Typography component="span" sx={{ fontSize: "0.6875rem", fontWeight: 700, color: "text.secondary", ml: "3px" }}>+{extra}</Typography>}
     </Stack>
   );
 }

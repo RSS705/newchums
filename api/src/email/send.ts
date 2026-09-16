@@ -1287,6 +1287,61 @@ export const sendMtgRevealedEmail = async (
     { subjectKey: "mtgRevealed", idempotencyKey: p.idempotencyKey },
   );
 
+/** MTG weekly standings (spec section 8, email 4): where the player stands
+ *  in each group, their best and worst pick, and the badges they're on track
+ *  for, with the countdown to the final day. */
+export const sendMtgWeeklyEmail = async (
+  env: Bindings,
+  p: {
+    to: string;
+    recipientName: string;
+    setName: string;
+    /** "day 7 of 45" */
+    dayLabel: string | null;
+    /** The standings' date when they're older than the email's Tuesday. */
+    staleDateLabel: string | null;
+    points: string;
+    best: { name: string; line: string } | null;
+    worst: { name: string; line: string } | null;
+    groups: Array<{ name: string; url: string; standingLine: string; top: Array<{ rank: number; name: string; points: string; isViewer: boolean }> }>;
+    onTrack: Array<{ name: string; description: string }>;
+    finalDateLabel: string;
+    daysLeft: number;
+    standingsUrl: string;
+    scoringUrl: string;
+    finalCalendarUrl: string;
+    unsubscribeUrl: string;
+    idempotencyKey?: string;
+  },
+) =>
+  dispatch(
+    env,
+    p.to,
+    "mtgWeekly",
+    {
+      heading: "This week's standings",
+      greeting: `Hi ${p.recipientName},`,
+      setName: p.setName,
+      bodyText: `Here's where you stand in ${p.setName}${p.dayLabel ? ` after ${p.dayLabel}` : ""}.${p.staleDateLabel ? ` Today's standings weren't in yet, so these are from ${p.staleDateLabel}.` : ""}`,
+      pointsLine: `You have ${p.points} points.`,
+      best: p.best,
+      worst: p.worst,
+      groups: p.groups,
+      hasOnTrack: p.onTrack.length > 0,
+      onTrack: p.onTrack,
+      countdownLine: p.daysLeft > 1
+        ? `The final standings arrive ${p.finalDateLabel}, ${p.daysLeft} days from now.`
+        : p.daysLeft === 1 ? `The final standings arrive tomorrow, ${p.finalDateLabel}.` : "The final standings arrive today.",
+      ctaText: "See the standings",
+      ctaUrl: p.standingsUrl,
+      ctaHelperText: "Standings update every morning with the latest 17Lands data.",
+      scoringUrl: p.scoringUrl,
+      finalCalendarUrl: hasContent(p.finalCalendarUrl) ? p.finalCalendarUrl : null,
+      unsubscribeUrl: hasContent(p.unsubscribeUrl) ? p.unsubscribeUrl : null,
+    },
+    { subjectKey: "mtgWeekly", idempotencyKey: p.idempotencyKey },
+  );
+
 /** MTG stats ingest alert (spec 9.1): to the admin inbox when a day's 17Lands
  *  data fails its checks, or the day ends without new standings. */
 export const sendMtgIngestAlertEmail = async (

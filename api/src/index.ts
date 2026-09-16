@@ -39,6 +39,7 @@ import {
   sendMtgWelcomeEmail,
   sendMtgLockWarningEmail,
   sendMtgRevealedEmail,
+  sendMtgWeeklyEmail,
   sendMtgIngestAlertEmail,
   sendRunItAgainEmail,
   sendPlanReminderEmail,
@@ -68,11 +69,12 @@ import {
   hardDeleteUser,
 } from "./lib/adminHardDelete";
 import { KUDOS_TAGS, KUDOS_MAX_PER_PLAN, KUDOS_WINDOW_MS, isKudosTag, kudosTagInfo } from "./lib/kudos";
-import { MTG_USER_AGENT, MTG_SPECIALIZATION, MTG_RARITIES, MTG_SLOTS_PER_RARITY, type MtgRarity, type MtgSetRow, type ValidatedPick, MTG_BADGES, badgeDescription, badgeLabel, buildIcsEvent, compareBadges, computeEntryBadges, computeGroupMind, earlyBirdWinners, easternDateKey, easternHour, formatEasternDate, formatEasternLong, formatEasternShort, mtgLockWarningAt, mtgMorningAfter, mtgPhase, mtgPicksOpen, mtgRevealedEmailAt, mtgTimeline, revealFunFact, syncScryfallSet, validateEntryPicks } from "./lib/mtg";
+import { MTG_USER_AGENT, MTG_SPECIALIZATION, MTG_RARITIES, MTG_SLOTS_PER_RARITY, type MtgRarity, type MtgSetRow, type ValidatedPick, MTG_BADGES, badgeDescription, badgeLabel, buildIcsEvent, compareBadges, computeEntryBadges, computeGroupMind, earlyBirdWinners, easternDateKey, easternHour, formatEasternDate, formatEasternLong, formatEasternShort, mtgLockWarningAt, mtgMorningAfter, mtgPhase, mtgPicksOpen, mtgRevealedEmailAt, mtgTimeline, mtgWeeklyStandingsDue, ordinal, revealFunFact, syncScryfallSet, validateEntryPicks } from "./lib/mtg";
 import { MTG_SLOT_WEIGHTS,
   checkSnapshot, computeCardScores, isDateKey, matchFeed, mtgIngestSlot, mtgIngestDateAllowed,
   mtgIngestWindow, mtgStandingsDay, parseCardDataFeed, rankGroupDay,
   rankStandings, scoreEntry, type FeedRecord, type PoolCard } from "./lib/mtgScoring";
+import { computeSeasonBadges, type SeasonEntry, type SeasonGroup, type SeasonPick } from "./lib/mtgBadges";
 import { checkDbRateLimit, isDbRateLimited, recordDbRateEvent } from "./lib/dbRateLimit";
 import {
   generateOtpCode,
@@ -2235,6 +2237,252 @@ async function mtgRevealedDetails(sql: ReturnType<typeof getSql>, env: Bindings,
   };
 }
 
+/**
+ * MTG weekly standings (spec section 8, email 4). On each weekly Tuesday
+ * (`mtgWeeklyStandingsTimes`) from 10:00 AM ET, once that day's standings are
+ * published, or from 8:00 PM ET with the latest there are, queue one email per
+ * player: a member of a challenge group whose entry has points on the latest
+ * day. Members following along without picks get none. The email log keys
+ * each week by its Tuesday, so a week's email goes out once however often the
+ * job runs. `now` lets a super admin rehearse a Tuesday outside production.
+ */
+async function processMtgWeeklyEmails(sql: ReturnType<typeof getSql>, env: Bindings, opts: { now?: Date; set?: MtgSetRow } = {}) {
+  const set = opts.set ?? (await loadMtgSet(sql, null));
+  if (!set || set.status !== "active") return null;
+  const latest = ((await sql`
+    SELECT id, snapshot_date::text AS snapshot_date FROM newchums.mtg_snapshots
+    WHERE set_id = ${set.id} ORDER BY snapshot_date DESC LIMIT 1
+  `) as { id: string; snapshot_date: string }[])[0];
+  const due = mtgWeeklyStandingsDue(set, latest?.snapshot_date ?? null, opts.now ?? new Date());
+  if (!due || !latest) return null;
+
+  const payload = JSON.stringify({
+    setName: set.name,
+    period: due.period,
+    // A day to deliver it, from when it was queued.
+    sendBy: new Date(Math.max(Date.now(), due.sendAt.getTime()) + 24 * 3600000).toISOString(),
+    scoringUrl: `${env.WEB_BASE_URL}/mtg/how-scoring-works`,
+    finalCalendarUrl: `${env.WEB_BASE_URL}/mtg/calendar/${set.code}/final.ics`,
+  });
+  const groupKey = `mtg:${set.code}:weekly:${due.period}`;
+  const counts = (await sql`
+    WITH players AS (
+      SELECT DISTINCT e.user_id
+      FROM newchums.mtg_entry_scores s
+      JOIN newchums.mtg_entries e ON e.id = s.entry_id
+      JOIN newchums.community_members cm ON cm.user_id = e.user_id AND cm.status = 'active'
+      JOIN newchums.communities c ON c.id = cm.community_id
+      WHERE s.snapshot_id = ${latest.id} AND c.specialization = ${MTG_SPECIALIZATION} AND COALESCE(c.status, 'active') = 'active'
+    ),
+    candidates AS (
+      SELECT p.user_id,
+             COALESCE(up.notification_prefs->'items'->'mtg_challenge'->>'enabled', 'true') <> 'false' AS wants_email
+      FROM players p
+      JOIN newchums.users u ON u.id = p.user_id
+      LEFT JOIN newchums.user_profile up ON up.user_id = p.user_id
+      WHERE NOT EXISTS (
+        SELECT 1 FROM newchums.mtg_email_log l
+        WHERE l.user_id = p.user_id AND l.set_id = ${set.id} AND l.email_type = 'weekly' AND l.period = ${due.period}
+      )
+      LIMIT 2000
+    ),
+    logged AS (
+      INSERT INTO newchums.mtg_email_log (user_id, set_id, email_type, period)
+      SELECT user_id, ${set.id}, 'weekly', ${due.period} FROM candidates
+      ON CONFLICT DO NOTHING
+      RETURNING user_id
+    ),
+    queued AS (
+      INSERT INTO newchums.email_outbox (kind, set_id, user_id, payload, group_key)
+      SELECT 'mtg_weekly', ${set.id}, l.user_id, ${payload}::jsonb, ${groupKey}
+      FROM logged l JOIN candidates cd ON cd.user_id = l.user_id
+      WHERE cd.wants_email
+      ON CONFLICT DO NOTHING
+      RETURNING user_id
+    )
+    SELECT (SELECT COUNT(*)::int FROM candidates) AS candidates,
+           (SELECT COUNT(*)::int FROM logged) AS logged,
+           (SELECT COUNT(*)::int FROM queued) AS queued
+  `) as { candidates: number; logged: number; queued: number }[];
+  const r = counts[0] ?? { candidates: 0, logged: 0, queued: 0 };
+  if (r.candidates > 0) console.log(`[mtg-weekly] ${set.code} ${due.period}: candidates=${r.candidates} logged=${r.logged} queued=${r.queued}`);
+  return { period: due.period, ...r };
+}
+
+type MtgSnapRef = { id: string; snapshot_date: string; taken_at: string | Date };
+
+/** What one outbox pass reads once for every weekly email it sends. */
+type MtgWeeklyCache = {
+  sets: Map<string, MtgSetRow | null>;
+  days: Map<string, { latest: MtgSnapRef; before: MtgSnapRef | null; sinceFirst: boolean } | null>;
+  /** Keyed by set and group. */
+  groups: Map<string, Array<{ userId: string; rank: number; total: number; name: string; before: number | null }>>;
+};
+
+const mtgPlayerName = (m: { name: string | null; username: string | null }) => m.name?.trim() || (m.username ? `@${m.username}` : "A player");
+
+/**
+ * Live content for one weekly standings email (spec section 8, email 4), read
+ * at delivery from the latest published day: the player's points, their best
+ * and worst pick by Card Score, each of their groups with its top three and
+ * the player's rank and movement since the standings a week earlier (or the
+ * first standings, in the first week), and the badges they're on track for.
+ * Null when there's nothing to report: no points on the latest day, or no
+ * challenge group left.
+ */
+async function mtgWeeklyDetails(sql: ReturnType<typeof getSql>, env: Bindings, setId: string, userId: string, period: string | null, cache: MtgWeeklyCache) {
+  const web = env.WEB_BASE_URL;
+  if (!cache.sets.has(setId)) {
+    cache.sets.set(setId, ((await sql`SELECT * FROM newchums.mtg_sets WHERE id = ${setId} LIMIT 1`) as MtgSetRow[])[0] ?? null);
+  }
+  const set = cache.sets.get(setId);
+  if (!set) return null;
+  if (!cache.days.has(setId)) {
+    const latest = ((await sql`
+      SELECT id, snapshot_date::text AS snapshot_date, taken_at FROM newchums.mtg_snapshots WHERE set_id = ${setId} ORDER BY snapshot_date DESC LIMIT 1
+    `) as MtgSnapRef[])[0];
+    let before: MtgSnapRef | null = null;
+    let sinceFirst = false;
+    if (latest) {
+      before = ((await sql`
+        SELECT id, snapshot_date::text AS snapshot_date, taken_at FROM newchums.mtg_snapshots
+        WHERE set_id = ${setId} AND snapshot_date <= ${latest.snapshot_date}::date - 7 ORDER BY snapshot_date DESC LIMIT 1
+      `) as MtgSnapRef[])[0] ?? null;
+      if (!before) {
+        const first = ((await sql`
+          SELECT id, snapshot_date::text AS snapshot_date, taken_at FROM newchums.mtg_snapshots WHERE set_id = ${setId} ORDER BY snapshot_date ASC LIMIT 1
+        `) as MtgSnapRef[])[0];
+        if (first && first.id !== latest.id) {
+          before = first;
+          sinceFirst = true;
+        }
+      }
+    }
+    cache.days.set(setId, latest ? { latest, before, sinceFirst } : null);
+  }
+  const days = cache.days.get(setId);
+  if (!days) return null;
+  const { latest, before, sinceFirst } = days;
+
+  // Everything about the player in one query: a big batch of emails sends from
+  // one run, and every query is a subrequest against the Worker's limit.
+  const mine = ((await sql`
+    SELECT
+      (SELECT s.total FROM newchums.mtg_entry_scores s JOIN newchums.mtg_entries e ON e.id = s.entry_id
+        WHERE e.user_id = ${userId} AND e.set_id = ${setId} AND s.snapshot_id = ${latest.id} LIMIT 1) AS total,
+      (SELECT COALESCE(json_agg(json_build_object('id', c.id, 'name', c.name, 'slug', c.slug) ORDER BY LOWER(c.name)), '[]'::json)
+        FROM newchums.communities c
+        JOIN newchums.community_members cm ON cm.community_id = c.id AND cm.user_id = ${userId} AND cm.status = 'active'
+        WHERE c.specialization = ${MTG_SPECIALIZATION} AND COALESCE(c.status, 'active') = 'active') AS groups,
+      (SELECT COALESCE(json_agg(json_build_object('slot', p.slot, 'rarity', p.rarity, 'name', c.name, 'rank', cs.rarity_rank, 'ranked', cs.ranked, 'score', cs.card_score)), '[]'::json)
+        FROM newchums.mtg_entries e
+        JOIN newchums.mtg_picks p ON p.entry_id = e.id
+        JOIN newchums.mtg_cards c ON c.id = p.card_id
+        JOIN newchums.mtg_card_stats cs ON cs.card_id = p.card_id AND cs.snapshot_id = ${latest.id}
+        WHERE e.user_id = ${userId} AND e.set_id = ${setId} AND cs.rarity_rank IS NOT NULL) AS picks,
+      (SELECT COALESCE(json_agg(json_build_object('badge_code', b.badge_code, 'award_key', b.award_key, 'detail', b.detail, 'community_id', b.community_id, 'status', b.status)), '[]'::json)
+        FROM newchums.mtg_badge_awards b
+        WHERE b.set_id = ${setId} AND b.user_id = ${userId} AND b.status = 'on_track') AS badges
+  `) as { total: string | null; groups: { id: string; name: string; slug: string }[]; picks: { slot: number; rarity: MtgRarity; name: string; rank: number; ranked: number; score: number }[]; badges: MtgBadgeRow[] }[])[0];
+  if (!mine || mine.total === null) return null;
+  const groups = mine.groups;
+  if (groups.length === 0) return null;
+
+  for (const g of groups) {
+    const groupKey = `${setId}|${g.id}`;
+    if (cache.groups.has(groupKey)) continue;
+    const members = await loadMtgGroupMembers(sql, setId, g.id);
+    const entryIds = members.map((m) => m.entry_id).filter((x): x is string => !!x);
+    const scores = entryIds.length === 0 ? [] : ((await sql`
+      SELECT snapshot_id, entry_id, total, slot1_points FROM newchums.mtg_entry_scores
+      WHERE entry_id = ANY(${entryIds}::uuid[]) AND snapshot_id = ANY(${before ? [latest.id, before.id] : [latest.id]}::uuid[])
+    `) as { snapshot_id: string; entry_id: string; total: string; slot1_points: string }[]);
+    const on = (snapId: string) => new Map(scores.filter((x) => x.snapshot_id === snapId).map((x) => [x.entry_id, x]));
+    // Ranked as the leaderboard ranks them, the earlier day as the group was then.
+    const earlier = new Map(before ? rankGroupDay(members, on(before.id), new Date(before.taken_at).getTime()).map((r) => [r.key, r.rank]) : []);
+    cache.groups.set(groupKey, rankGroupDay(members, on(latest.id)).map((r) => ({
+      userId: r.key, rank: r.rank, total: r.total, name: mtgPlayerName(r.member), before: earlier.get(r.key) ?? null,
+    })));
+  }
+  const since = sinceFirst ? "since the first standings" : "since last week";
+  const places = (n: number) => `${n} ${n === 1 ? "place" : "places"}`;
+  const points = (n: number) => Math.round(n).toLocaleString("en-US");
+  const groupsOut = groups.flatMap((g) => {
+    const rows = cache.groups.get(`${setId}|${g.id}`) ?? [];
+    const me = rows.find((r) => r.userId === userId);
+    if (!me) return [];
+    const moved = me.before === null ? null : me.before - me.rank;
+    const movement = moved === null ? "" : moved > 0 ? `, up ${places(moved)} ${since}` : moved < 0 ? `, down ${places(-moved)} ${since}` : `, the same as ${sinceFirst ? "at the first standings" : "last week"}`;
+    return [{
+      name: g.name,
+      url: `${web}/communities/${g.slug}`,
+      players: rows.length,
+      standingLine: `You're ${ordinal(me.rank)} of ${rows.length}${movement}.`,
+      top: rows.slice(0, 3).map((r) => ({ rank: r.rank, name: r.userId === userId ? "You" : r.name, points: points(r.total), isViewer: r.userId === userId })),
+    }];
+  });
+  if (groupsOut.length === 0) return null;
+
+  // Best and worst pick by Card Score, among picks ranked on the latest day.
+  const ranked = mine.picks.map((p) => ({ name: p.name, slot: Number(p.slot), score: Number(p.score), line: `${ordinal(Number(p.rank))} of ${Number(p.ranked)} ${p.rarity}s` }));
+  const best = [...ranked].sort((a, b) => b.score - a.score || a.slot - b.slot)[0] ?? null;
+  const worstPick = [...ranked].sort((a, b) => a.score - b.score || a.slot - b.slot)[0] ?? null;
+  const worst = worstPick && best && worstPick.score < best.score ? worstPick : null;
+
+  const badgeRows = mine.badges;
+  const onTrack = [
+    ...mtgBadgeList(badgeRows.filter((b) => b.community_id === null)).map((b) => ({ ...b, group: null as string | null })),
+    ...groups.flatMap((g) => mtgBadgeList(badgeRows.filter((b) => b.community_id === g.id)).map((b) => ({ ...b, group: g.name }))),
+  ]
+    .sort((a, b) => compareBadges(a.code, b.code) || (a.group ?? "").localeCompare(b.group ?? ""))
+    .map((b) => ({ name: `${b.name}${b.count > 1 ? ` ×${b.count}` : ""}${b.group ? ` in ${b.group}` : ""}`, description: b.description }));
+
+  const day = mtgStandingsDay(latest.snapshot_date, set.arena_release_at, set.final_at);
+  // The main button opens the group with the most players, the first by name when they tie.
+  const primary = [...groupsOut].sort((a, b) => b.players - a.players)[0];
+  return {
+    setName: set.name,
+    dayLabel: day ? `day ${day.day} of ${day.totalDays}` : null,
+    staleDateLabel: period && latest.snapshot_date < period ? formatEasternDate(`${latest.snapshot_date}T16:00:00Z`) : null,
+    points: points(Number(mine.total)),
+    best: best ? { name: best.name, line: best.line } : null,
+    worst: worst ? { name: worst.name, line: worst.line } : null,
+    groups: groupsOut.map(({ name, url, standingLine, top }) => ({ name, url, standingLine, top })),
+    onTrack,
+    finalDateLabel: formatEasternDate(set.final_at),
+    daysLeft: Math.max(0, Math.ceil((new Date(set.final_at).getTime() - Date.now()) / 86400000)),
+    standingsUrl: primary.url,
+  };
+}
+
+/** POST /admin/mtg/sets/:code/weekly-email { now? }: run the weekly standings
+ *  job now and deliver what it queues (super admins), for a Tuesday the hourly
+ *  run missed. It queues only when a week's email is due and hasn't gone out.
+ *  Outside production, `now` rehearses another moment. */
+app.post("/admin/mtg/sets/:code/weekly-email", async (c) => {
+  const admin = await requireSuperAdmin(c);
+  if (!admin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
+  let body: Record<string, unknown> = {};
+  try { body = await c.req.json(); } catch { /* no body: now */ }
+  let now: Date | undefined;
+  if (c.env.APP_ENV !== "production" && typeof body.now === "string") {
+    now = new Date(body.now);
+    if (Number.isNaN(now.getTime())) return c.json({ ok: false, error: "VALIDATION", message: "now should be an ISO date and time" }, 400);
+  }
+  const sql = getSql(c.env);
+  try {
+    const set = await loadMtgSet(sql, c.req.param("code"));
+    if (!set) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+    const result = await processMtgWeeklyEmails(sql, c.env, { set, now });
+    if (!result) return c.json({ ok: true, result: null, message: "No weekly standings email is due" });
+    await processEmailOutbox(sql, c.env, c.executionCtx, "mtg");
+    return c.json({ ok: true, result });
+  } catch (err) {
+    console.error("[POST /admin/mtg/sets/:code/weekly-email]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
 // ── Stats ingest and scoring (Batch 5) ──────────────────────────────────────
 
 type MtgIngestTrigger = "schedule" | "admin" | "paste";
@@ -2459,6 +2707,7 @@ async function runMtgIngest(
     `,
   ]);
   console.log(`[mtg-ingest] ${set.code} ${snapshotDate}: published matched=${check.matched}/${pool.length} games=${check.totalGames}${today[0] ? " (replaced)" : ""}`);
+  await refreshMtgOnTrackBadgesSafely(sql, set);
   return { outcome: "published", reason: null, ...summary, replaced: !!today[0] };
 }
 
@@ -2522,7 +2771,136 @@ async function rescoreAllMtgSnapshots(sql: ReturnType<typeof getSql>, set: MtgSe
     if (r.ok) rescored.push(d);
     else failed.push({ date: d, message: r.message });
   }
+  if (rescored.length > 0) await refreshMtgOnTrackBadgesSafely(sql, set);
   return { days: days.length, rescored, failed };
+}
+
+/**
+ * "On track" badges (spec 7.1): judge the season's latest published day and
+ * replace the set's on-track rows with the verdict. Runs after every publish
+ * and re-score. Each group's days are ranked as the leaderboard ranked them,
+ * a past day leaving out members who joined after it. A season with final
+ * standings is left to the final awards.
+ */
+async function refreshMtgOnTrackBadges(sql: ReturnType<typeof getSql>, set: MtgSetRow): Promise<{ badges: number } | null> {
+  const snaps = (await sql`
+    SELECT id, snapshot_date::text AS snapshot_date, taken_at, is_final FROM newchums.mtg_snapshots
+    WHERE set_id = ${set.id} ORDER BY snapshot_date ASC
+  `) as { id: string; snapshot_date: string; taken_at: string | Date; is_final: boolean }[];
+  const latest = snaps[snaps.length - 1];
+  if (!latest || snaps.some((s) => s.is_final)) return null;
+
+  const cardRows = (await sql`
+    SELECT cs.card_id, c.name, c.rarity, cs.rarity_rank, cs.ranked, cs.card_score, cs.alsa
+    FROM newchums.mtg_card_stats cs JOIN newchums.mtg_cards c ON c.id = cs.card_id
+    WHERE cs.snapshot_id = ${latest.id}
+  `) as { card_id: string; name: string; rarity: MtgRarity; rarity_rank: number | null; ranked: number; card_score: string; alsa: string | null }[];
+  const entryRows = (await sql`
+    SELECT e.id, e.user_id, e.hide_from_everyone_board, e.completed_at, e.updated_at,
+           s.total, s.common, s.uncommon, s.rare, s.mythic, s.slot1_points
+    FROM newchums.mtg_entry_scores s JOIN newchums.mtg_entries e ON e.id = s.entry_id
+    WHERE s.snapshot_id = ${latest.id}
+  `) as { id: string; user_id: string; hide_from_everyone_board: boolean; completed_at: string | Date | null; updated_at: string | Date | null; total: string; common: string; uncommon: string; rare: string; mythic: string; slot1_points: string }[];
+  const pickRows = (await sql`
+    SELECT p.entry_id, e.user_id, p.rarity, p.slot, p.card_id, p.note, c.collector_sort
+    FROM newchums.mtg_picks p
+    JOIN newchums.mtg_entries e ON e.id = p.entry_id
+    JOIN newchums.mtg_cards c ON c.id = p.card_id
+    WHERE e.set_id = ${set.id}
+  `) as { entry_id: string; user_id: string; rarity: MtgRarity; slot: number; card_id: string; note: string | null; collector_sort: number }[];
+  // Challenge groups and their members who have an entry, whatever the group's age.
+  const memberRows = (await sql`
+    SELECT cm.community_id, cm.user_id AS id, e.id AS entry_id, e.completed_at, e.updated_at, cm.created_at AS joined_at
+    FROM newchums.community_members cm
+    JOIN newchums.communities c ON c.id = cm.community_id
+    JOIN newchums.mtg_entries e ON e.user_id = cm.user_id AND e.set_id = ${set.id}
+    WHERE cm.status = 'active' AND c.specialization = ${MTG_SPECIALIZATION} AND COALESCE(c.status, 'active') = 'active'
+  `) as { community_id: string; id: string; entry_id: string; completed_at: string | Date | null; updated_at: string | Date | null; joined_at: string | Date }[];
+  const groupEntryIds = [...new Set(memberRows.map((m) => m.entry_id))];
+  const dayScores = groupEntryIds.length === 0 ? [] : ((await sql`
+    SELECT snapshot_id, entry_id, total, slot1_points FROM newchums.mtg_entry_scores
+    WHERE snapshot_id = ANY(${snaps.map((s) => s.id)}::uuid[]) AND entry_id = ANY(${groupEntryIds}::uuid[])
+  `) as { snapshot_id: string; entry_id: string; total: string; slot1_points: string }[]);
+  const mindRows = (await sql`
+    SELECT community_id, rarity, slot, card_id FROM newchums.mtg_group_minds WHERE set_id = ${set.id}
+  `) as { community_id: string; rarity: MtgRarity; slot: number; card_id: string }[];
+
+  const picksByEntry = new Map<string, SeasonPick[]>();
+  for (const p of pickRows) {
+    const list = picksByEntry.get(p.entry_id) ?? [];
+    list.push({ rarity: p.rarity, slot: Number(p.slot), cardId: p.card_id, note: p.note });
+    picksByEntry.set(p.entry_id, list);
+  }
+  const entries: SeasonEntry[] = entryRows.map((e) => ({
+    userId: e.user_id,
+    hidden: e.hide_from_everyone_board === true,
+    total: Number(e.total),
+    slot1: Number(e.slot1_points),
+    subtotals: { common: Number(e.common), uncommon: Number(e.uncommon), rare: Number(e.rare), mythic: Number(e.mythic) },
+    completedAt: e.completed_at,
+    updatedAt: e.updated_at,
+    picks: picksByEntry.get(e.id) ?? [],
+  }));
+  const scoresBySnap = new Map<string, Map<string, { total: string; slot1_points: string }>>();
+  for (const r of dayScores) {
+    const day = scoresBySnap.get(r.snapshot_id) ?? new Map();
+    day.set(r.entry_id, r);
+    scoresBySnap.set(r.snapshot_id, day);
+  }
+  const collectorOrder = new Map(pickRows.map((p) => [p.card_id, Number(p.collector_sort)]));
+  const membersByGroup = new Map<string, typeof memberRows>();
+  for (const m of memberRows) membersByGroup.set(m.community_id, [...(membersByGroup.get(m.community_id) ?? []), m]);
+  const groups: SeasonGroup[] = [...membersByGroup].map(([communityId, members]) => {
+    const stored = mindRows.filter((r) => r.community_id === communityId).map((r) => ({ rarity: r.rarity, slot: Number(r.slot), cardId: r.card_id }));
+    // The Group Mind stored at the lock, or worked out as the Reveal and leaderboard work it out.
+    const memberPicks = members.flatMap((m) => (picksByEntry.get(m.entry_id) ?? []).map((p) => ({ userId: m.id, rarity: p.rarity, slot: p.slot, cardId: p.cardId })));
+    const mind = stored.length > 0 || new Set(memberPicks.map((p) => p.userId)).size < 2
+      ? stored
+      : computeGroupMind(memberPicks, collectorOrder).map((r) => ({ rarity: r.rarity, slot: r.slot, cardId: r.cardId }));
+    const days = snaps.map((snap, i) => rankGroupDay(members, scoresBySnap.get(snap.id) ?? new Map(), i === snaps.length - 1 ? null : new Date(snap.taken_at).getTime())
+      .map((r) => ({ userId: r.key, rank: r.rank })));
+    return { communityId, days, mind };
+  });
+
+  const cards = cardRows.map((r) => ({
+    cardId: r.card_id,
+    name: r.name,
+    rarity: r.rarity,
+    rank: r.rarity_rank === null ? null : Number(r.rarity_rank),
+    rankedCount: Number(r.ranked),
+    cardScore: Number(r.card_score),
+    alsa: r.alsa === null ? null : Number(r.alsa),
+  }));
+  const badges = computeSeasonBadges({ cards, entries, groups });
+  await sql.transaction([
+    // Two refreshes at once (a publish and an admin's re-score) take turns, so their rows never mix.
+    sql`SELECT pg_advisory_xact_lock(hashtext(${`mtg-on-track:${set.id}`}))`,
+    sql`DELETE FROM newchums.mtg_badge_awards WHERE set_id = ${set.id} AND status = 'on_track'`,
+    sql`
+      INSERT INTO newchums.mtg_badge_awards (set_id, user_id, community_id, badge_code, award_key, detail, status)
+      SELECT ${set.id}::uuid, x.user_id, x.community_id, x.code, x.award_key, x.detail::jsonb, 'on_track'
+      FROM UNNEST(
+        ${badges.map((b) => b.userId)}::uuid[],
+        ${badges.map((b) => b.communityId)}::uuid[],
+        ${badges.map((b) => b.code)}::text[],
+        ${badges.map((b) => b.key)}::text[],
+        ${badges.map((b) => JSON.stringify(b.detail))}::text[]
+      ) AS x(user_id, community_id, code, award_key, detail)
+      ON CONFLICT DO NOTHING
+    `,
+  ]);
+  return { badges: badges.length };
+}
+
+/** The on-track refresh, which must never fail the publish or re-score that ran it. */
+async function refreshMtgOnTrackBadgesSafely(sql: ReturnType<typeof getSql>, set: MtgSetRow) {
+  try {
+    const result = await refreshMtgOnTrackBadges(sql, set);
+    if (result) console.log(`[mtg-badges] ${set.code}: ${result.badges} on track`);
+  } catch (err) {
+    console.error(`[mtg-badges] ${set.code}: on-track refresh failed`, err);
+    Sentry.captureException(err);
+  }
 }
 
 /** Two alerts at most per set per day: the first failed check, and a summary
@@ -2658,6 +3036,7 @@ app.post("/admin/mtg/sets/:code/snapshots/:date/rescore", async (c) => {
     if (!set) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     const result = await rescoreMtgSnapshot(sql, set, date);
     if (!result.ok) return c.json({ ok: false, error: result.error, message: result.message }, result.status);
+    await refreshMtgOnTrackBadgesSafely(sql, set);
     return c.json({ ok: true, result });
   } catch (err) {
     console.error("[POST /admin/mtg/sets/:code/snapshots/:date/rescore]", err);
@@ -2838,6 +3217,39 @@ async function loadMtgGroupMembers(sql: ReturnType<typeof getSql>, setId: string
   `) as MtgGroupMember[];
 }
 
+type MtgBadgeRow = { badge_code: string; award_key?: string; detail: Record<string, unknown> | null; community_id: string | null; status?: string };
+
+/**
+ * Badge rows as players see them: earned before on track, then best first,
+ * with an award that stacks (Called It at two rarities) shown once with a
+ * count and every reason, mythics first. `groupHonor` marks a badge that
+ * belongs to the group, such as Early Bird or Lone Wolf.
+ */
+function mtgBadgeList(rows: MtgBadgeRow[]) {
+  const stacks = new Map<string, MtgBadgeRow[]>();
+  for (const r of rows) {
+    const key = `${r.status === "on_track" ? "on_track" : "awarded"}|${r.community_id ?? ""}|${r.badge_code}`;
+    stacks.set(key, [...(stacks.get(key) ?? []), r]);
+  }
+  const rarityOrder = (key: string | undefined) => MTG_RARITIES.indexOf(key as MtgRarity);
+  return [...stacks.values()]
+    .sort((a, b) => Number(a[0].status === "on_track") - Number(b[0].status === "on_track") || compareBadges(a[0].badge_code, b[0].badge_code))
+    .map((stack) => {
+      const sorted = [...stack].sort((a, b) => rarityOrder(b.award_key) - rarityOrder(a.award_key) || (a.award_key ?? "").localeCompare(b.award_key ?? ""));
+      const { badge_code: code, detail, community_id } = sorted[0];
+      const onTrack = sorted[0].status === "on_track";
+      return {
+        code,
+        name: badgeLabel(code, detail),
+        tier: MTG_BADGES[code]?.tier ?? "common",
+        description: sorted.map((r) => badgeDescription(code, r.detail, onTrack)).join(" "),
+        groupHonor: community_id !== null,
+        onTrack,
+        count: sorted.length,
+      };
+    });
+}
+
 /**
  * GET /mtg/communities/:id/leaderboard?date=YYYY-MM-DD (spec 10.5): the
  * group's standings on the latest published day, or the given one. Members
@@ -2903,10 +3315,10 @@ app.get("/mtg/communities/:id/leaderboard", async (c) => {
     const round = (n: number) => Math.round(n * 10000) / 10000;
 
     const badgeRows = scored.length === 0 ? [] : ((await sql`
-      SELECT user_id, badge_code, detail FROM newchums.mtg_badge_awards
+      SELECT user_id, badge_code, award_key, detail, community_id, status FROM newchums.mtg_badge_awards
       WHERE set_id = ${set.id} AND status = 'awarded' AND user_id = ANY(${scored.map((m) => m.id)}::uuid[])
         AND (community_id IS NULL OR community_id = ${communityId})
-    `) as { user_id: string; badge_code: string; detail: Record<string, unknown> | null }[]);
+    `) as (MtgBadgeRow & { user_id: string })[]);
 
     // The Group Mind ghost: stored at the lock, or worked out from the members' picks.
     const stored = (await sql`
@@ -2950,7 +3362,7 @@ app.get("/mtg/communities/:id/leaderboard", async (c) => {
         totalDays: day?.totalDays ?? null,
         rows: ranked.map((r) => {
           const before = prevRank.get(r.key);
-          const mine = badgeRows.filter((b) => b.user_id === r.key).sort((a, b) => compareBadges(a.badge_code, b.badge_code));
+          const mine = mtgBadgeList(badgeRows.filter((b) => b.user_id === r.key));
           return {
             userId: r.key,
             name: r.member.name,
@@ -2963,13 +3375,7 @@ app.get("/mtg/communities/:id/leaderboard", async (c) => {
             change: before ? round(r.total - before.total) : null,
             behind: round(leader - r.total),
             subtotals: { common: Number(r.score.common), uncommon: Number(r.score.uncommon), rare: Number(r.score.rare), mythic: Number(r.score.mythic) },
-            badges: mine.slice(0, 3).map((b) => ({
-              code: b.badge_code,
-              name: badgeLabel(b.badge_code, b.detail),
-              tier: MTG_BADGES[b.badge_code]?.tier ?? "common",
-              description: badgeDescription(b.badge_code, b.detail),
-              groupHonor: false,
-            })),
+            badges: mine.slice(0, 3),
             badgeCount: mine.length,
           };
         }),
@@ -3124,10 +3530,11 @@ app.get("/mtg/communities/:id/players/:userId", async (c) => {
       top[r.rarity as MtgRarity]?.push({ rank: Number(r.rarity_rank), rankedCount: mtgNumber(r.ranked), cardScore: Number(r.card_score), gihWr: mtgNumber(r.gih_wr), gihGames: mtgNumber(r.gih_games), card: mapMtgCard(r) });
     }
 
+    // Earned badges, and during the season the ones the latest standings put the player on track for.
     const badgeRows = !locked ? [] : ((await sql`
-      SELECT badge_code, detail, community_id FROM newchums.mtg_badge_awards
-      WHERE set_id = ${set.id} AND user_id = ${player.id} AND status = 'awarded' AND (community_id IS NULL OR community_id = ${communityId})
-    `) as { badge_code: string; detail: Record<string, unknown> | null; community_id: string | null }[]);
+      SELECT badge_code, award_key, detail, community_id, status FROM newchums.mtg_badge_awards
+      WHERE set_id = ${set.id} AND user_id = ${player.id} AND status IN ('awarded', 'on_track') AND (community_id IS NULL OR community_id = ${communityId})
+    `) as MtgBadgeRow[]);
 
     const picks = player.entry_id ? picksOf(player.entry_id) : { common: [], uncommon: [], rare: [], mythic: [] };
     return c.json({
@@ -3148,13 +3555,7 @@ app.get("/mtg/communities/:id/players/:userId", async (c) => {
       picks,
       top,
       compare: compareEntry ? picksOf(compareEntry) : null,
-      badges: badgeRows.sort((a, b) => compareBadges(a.badge_code, b.badge_code)).map((b) => ({
-        code: b.badge_code,
-        name: badgeLabel(b.badge_code, b.detail),
-        tier: MTG_BADGES[b.badge_code]?.tier ?? "common",
-        description: badgeDescription(b.badge_code, b.detail),
-        groupHonor: b.community_id !== null,
-      })),
+      badges: mtgBadgeList(badgeRows),
     });
   } catch (err) {
     console.error("[GET /mtg/communities/:id/players/:userId]", err);
@@ -22119,7 +22520,8 @@ const OUTBOX_MAX_ATTEMPTS = 3;
 async function processEmailOutbox(
   sql: ReturnType<typeof getSql>,
   env: Bindings,
-  _ctx: ExecutionContext,
+  // The cron's or a request's execution context, which differ in type only.
+  _ctx: { waitUntil(promise: Promise<unknown>): void },
   // "mtg" delivers only season emails, with a larger batch, so a lock warning
   // wave neither waits behind plan email nor holds it up.
   scope: "all" | "mtg" = "all",
@@ -22146,6 +22548,8 @@ async function processEmailOutbox(
 
   // Fun facts for picks-revealed emails, shared by every member of a group.
   const mtgFacts = new Map<string, MtgGroupFact>();
+  // Standings for weekly emails, read once per set and group.
+  const mtgWeekly: MtgWeeklyCache = { sets: new Map(), days: new Map(), groups: new Map() };
 
   for (const row of rows) {
     const recipientName = row.to_name?.trim() || "there";
@@ -22175,8 +22579,9 @@ async function processEmailOutbox(
 
     // Stable per-logical-send key: kind + event + user. Attempt-independent
     // on purpose, so provider-side dedup can catch ambiguous repeats.
+    // A weekly email names its week too, since every week sends one.
     const idempotencyKey = row.kind.startsWith("mtg_")
-      ? `${row.kind}:${row.set_id}:${row.user_id}`
+      ? `${row.kind}:${row.set_id}:${row.user_id}${row.kind === "mtg_weekly" ? `:${row.group_key}` : ""}`
       : `${row.kind}:${row.event_id}:${row.user_id}`;
 
     try {
@@ -22226,6 +22631,29 @@ async function processEmailOutbox(
           badges: details.badges,
           groups: details.groups,
           revealUrl: details.revealUrl,
+          scoringUrl: p.scoringUrl ?? `${env.WEB_BASE_URL}/mtg/how-scoring-works`,
+          finalCalendarUrl: p.finalCalendarUrl ?? "",
+          unsubscribeUrl,
+          idempotencyKey,
+        });
+      } else if (row.kind === "mtg_weekly") {
+        const p = (row.payload ?? {}) as unknown as { setName?: string; period?: string; sendBy?: string; scoringUrl?: string; finalCalendarUrl?: string };
+        if (!row.set_id || !p.sendBy || Date.now() >= new Date(p.sendBy).getTime()) {
+          await sql`UPDATE newchums.email_outbox SET status = 'gave_up', last_error = 'expired: the weekly standings email window has passed' WHERE id = ${row.id}`;
+          gaveUp++;
+          continue;
+        }
+        const details = await mtgWeeklyDetails(sql, env, row.set_id, row.user_id, p.period ?? null, mtgWeekly);
+        if (!details) {
+          await sql`UPDATE newchums.email_outbox SET status = 'gave_up', last_error = 'nothing to report: no standings or challenge group for this player' WHERE id = ${row.id}`;
+          gaveUp++;
+          continue;
+        }
+        await sendMtgWeeklyEmail(env, {
+          to: row.to_email,
+          recipientName,
+          ...details,
+          setName: p.setName ?? details.setName,
           scoringUrl: p.scoringUrl ?? `${env.WEB_BASE_URL}/mtg/how-scoring-works`,
           finalCalendarUrl: p.finalCalendarUrl ?? "",
           unsubscribeUrl,
@@ -22642,6 +23070,13 @@ async function handleScheduled(
   try {
     await processMtgLockWarnings(sql, env);
     await processMtgRevealedEmails(sql, env);
+    try {
+      await processMtgWeeklyEmails(sql, env);
+    } catch (err) {
+      // Its own catch, so a failed weekly queue never holds up the other season emails.
+      console.error("[scheduled] mtg weekly email error:", err);
+      Sentry.captureException(err);
+    }
     await processEmailOutbox(sql, env, ctx, "mtg");
   } catch (err) {
     console.error("[scheduled] mtg email error:", err);

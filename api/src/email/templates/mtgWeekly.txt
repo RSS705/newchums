@@ -1,0 +1,53 @@
+{{heading}}
+
+{{greeting}}
+
+{{bodyText}}
+
+{{pointsLine}}
+{{#best}}Best pick: {{name}}, {{line}}
+{{/best}}
+{{#worst}}Worst pick: {{name}}, {{line}}
+{{/worst}}
+
+---
+
+Your groups
+{{#groups}}
+
+{{name}} ({{url}})
+{{standingLine}}
+{{#top}}
+{{rank}}. {{name}}: {{points}}
+{{/top}}
+{{/groups}}
+
+{{#hasOnTrack}}
+---
+
+Badges you're on track for
+You earn these on the final day if the standings stay this way.
+{{#onTrack}}
+{{name}}: {{description}}
+{{/onTrack}}
+
+{{/hasOnTrack}}
+---
+
+{{countdownLine}}
+
+{{ctaText}}: {{ctaUrl}}
+
+{{ctaHelperText}}
+
+How scoring works: {{scoringUrl}}
+{{#finalCalendarUrl}}Final day in your calendar: {{.}}
+{{/finalCalendarUrl}}
+
+---
+
+You're receiving this because you're in an MTG Card Evaluation Challenge group on NewChums.
+{{#unsubscribeUrl}}Turn off MTG Card Evaluation Challenge emails: {{.}}{{/unsubscribeUrl}}
+
+MTG Card Evaluation Challenge is unofficial Fan Content permitted under the Fan Content Policy. Not approved/endorsed by Wizards.
+© {{year}} {{productName}}

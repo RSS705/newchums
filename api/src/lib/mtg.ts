@@ -94,22 +94,12 @@ export function mtgTimeline(set: MtgSetRow, now: Date = new Date()): TimelineEnt
     entries.push({ key: "arena", label: "Arena launch", at: set.arena_release_at, detail: "Premier Draft opens and 17Lands starts collecting games." });
     const firstStandings = mtgMorningAfter(set.arena_release_at); // 9 AM ET the morning after
     entries.push({ key: "first_standings", label: "First standings", at: firstStandings.toISOString(), detail: "Day 1 of scoring. The first few days swing a lot." });
-    // Weekly standings: Tuesdays at 10 AM ET between the first standings and the final week.
-    const finalMs = new Date(set.final_at).getTime();
-    let d = new Date(firstStandings);
-    for (let i = 0; i < 6; i++) {
-      d = new Date(d.getTime() + 86400000);
-      const dow = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", weekday: "short" }).format(d);
-      if (dow === "Tue") break;
-    }
-    for (let week = 0; week < 6; week++) {
-      const tue = new Date(d.getTime() + week * 7 * 86400000);
-      if (tue.getTime() >= finalMs - 6 * 86400000) break;
-      // 10 AM Eastern whichever side of the clock change the Tuesday falls.
-      const [y, m, day] = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(tue).split("-").map(Number);
-      const tenAm = easternToUtc(y, m, day, 10);
-      entries.push({ key: `weekly_${week + 1}`, label: `Week ${week + 1}`, at: tenAm.toISOString(), detail: "Another week of games is in. See how your picks are holding up." });
-    }
+    mtgWeeklyStandingsTimes(set).forEach((at, i) => {
+      entries.push({
+        key: `weekly_${i + 1}`, label: "Weekly standings", at: at.toISOString(),
+        detail: "An email with your rank, how far you've moved, your best and worst picks, and the badges you're on track for.",
+      });
+    });
   }
   if (set.tabletop_release_at) {
     entries.push({ key: "paper", label: "Paper release", at: set.tabletop_release_at, detail: "The set arrives in stores." });
@@ -499,10 +489,42 @@ export function buildIcsEvent(ev: IcsEvent, now: Date = new Date()): string {
 
 export type MtgBadgeTier = "common" | "uncommon" | "rare" | "mythic" | "shame";
 
-/** Badge definitions (spec section 7, where `number` comes from). Later
- *  batches add the rest. */
+/** Badge definitions (spec section 7, where `number` comes from). The
+ *  description is the fallback reason; `badgeDescription` writes the real one
+ *  from what the award remembers. */
 export const MTG_BADGES: Record<string, { number: number; name: string; tier: MtgBadgeTier; description: string }> = {
+  champion: { number: 1, name: "Champion", tier: "mythic", description: "Finished first in the group." },
+  runner_up: { number: 2, name: "Runner-Up", tier: "rare", description: "Finished second in the group." },
+  third_place: { number: 3, name: "Third Place", tier: "uncommon", description: "Finished third in the group." },
+  common_sense: { number: 4, name: "Common Sense", tier: "rare", description: "Had the group's highest commons subtotal." },
+  uncommon_knowledge: { number: 5, name: "Uncommon Knowledge", tier: "rare", description: "Had the group's highest uncommons subtotal." },
+  rare_insight: { number: 6, name: "Rare Insight", tier: "rare", description: "Had the group's highest rares subtotal." },
+  mythic_vision: { number: 7, name: "Mythic Vision", tier: "rare", description: "Had the group's highest mythics subtotal." },
+  pick_of_the_season: { number: 8, name: "Pick of the Season", tier: "rare", description: "Made the pick that earned the most points in the group." },
+  comeback_kid: { number: 9, name: "Comeback Kid", tier: "uncommon", description: "Made the group's biggest climb from the first standings, at least two places." },
+  king_of_the_hill: { number: 10, name: "King of the Hill", tier: "uncommon", description: "Spent the most days in first place in the group." },
+  contrarian: { number: 11, name: "Contrarian", tier: "uncommon", description: "Made the picks that match the Group Mind least." },
+  hive_mind: { number: 12, name: "Hive Mind", tier: "common", description: "Made the picks that match the Group Mind most." },
+  photo_finish: { number: 13, name: "Photo Finish", tier: "uncommon", description: "Finished closer on points to the player one place away than anyone else in the group." },
+  rollercoaster: { number: 14, name: "Rollercoaster", tier: "common", description: "Moved the most places in the group across the daily standings, up and down." },
   early_bird: { number: 15, name: "Early Bird", tier: "common", description: "First in the group to complete all 20 picks." },
+  clean_sweep: { number: 16, name: "Clean Sweep", tier: "mythic", description: "The five picks at a rarity finished as its top five." },
+  beat_the_crowd: { number: 17, name: "Beat the Crowd", tier: "mythic", description: "Finished above the group's Group Mind." },
+  wire_to_wire: { number: 18, name: "Wire to Wire", tier: "mythic", description: "First in the group on every day of standings." },
+  perfect_order: { number: 19, name: "Perfect Order", tier: "rare", description: "The five picks at a rarity finished in the order they were ranked." },
+  oracle: { number: 20, name: "Oracle", tier: "rare", description: "Finished in the top 5% of the Everyone board." },
+  sleeper_agent: { number: 21, name: "Sleeper Agent", tier: "rare", description: "Picked a card that finished in the top 10 though drafters took it late." },
+  told_you_so: { number: 22, name: "Told You So", tier: "rare", description: "A pick with a Receipts note, left out of the Group Mind, finished in the top five." },
+  called_it: { number: 23, name: "Called It", tier: "uncommon", description: "A #1 pick finished #1 at its rarity." },
+  sniper: { number: 24, name: "Sniper", tier: "uncommon", description: "All five picks at a rarity finished in its top 10." },
+  grand_slam: { number: 25, name: "Grand Slam", tier: "uncommon", description: "At every rarity, a pick finished in the top five." },
+  bomb_squad: { number: 26, name: "Bomb Squad", tier: "uncommon", description: "Picked both the #1 rare and the #1 mythic." },
+  common_denominator: { number: 27, name: "Common Denominator", tier: "uncommon", description: "Picked the #1 common." },
+  lone_wolf: { number: 28, name: "Lone Wolf", tier: "uncommon", description: "The only player in the group to pick a card that finished in the top five." },
+  sharp_eye: { number: 29, name: "Sharp Eye", tier: "uncommon", description: "Finished in the top 25% of the Everyone board." },
+  bullseye: { number: 30, name: "Bullseye", tier: "common", description: "A pick finished at exactly the rank it was given." },
+  well_rounded: { number: 31, name: "Well-Rounded", tier: "common", description: "At every rarity, a pick finished in the top 10." },
+  bomb_detector: { number: 32, name: "Bomb Detector", tier: "common", description: "Picked the #1 rare or the #1 mythic." },
   on_the_record: { number: 33, name: "On the Record", tier: "common", description: "Made all 20 picks before the lock." },
   locked_and_loaded: { number: 34, name: "Locked and Loaded", tier: "common", description: "Had a complete entry at least seven days before the lock." },
   buzzer_beater: { number: 35, name: "Buzzer Beater", tier: "common", description: "Made a last change in the final hour before the lock." },
@@ -511,6 +533,12 @@ export const MTG_BADGES: Record<string, { number: number; name: string; tier: Mt
   loyalist: { number: 38, name: "Loyalist", tier: "common", description: "At least 10 of 20 picks share a color." },
   gold_rush: { number: 39, name: "Gold Rush", tier: "uncommon", description: "Picked at least five multicolored cards." },
   artificer: { number: 40, name: "Artificer", tier: "uncommon", description: "Picked at least three colorless cards." },
+  wooden_spoon: { number: 41, name: "Wooden Spoon", tier: "shame", description: "Finished last in the group." },
+  whiff_of_the_season: { number: 42, name: "Whiff of the Season", tier: "shame", description: "A #1 pick had the lowest Card Score of every #1 pick in the group." },
+  bust: { number: 43, name: "Bust", tier: "shame", description: "A #1 pick finished in the bottom quarter of its rarity." },
+  rock_bottom: { number: 44, name: "Rock Bottom", tier: "shame", description: "A pick finished dead last at its rarity." },
+  eats_words: { number: 45, name: "Eats Words", tier: "shame", description: "A pick with a Receipts note finished in the bottom quarter of its rarity." },
+  monkey_business: { number: 46, name: "Monkey Business", tier: "shame", description: "Finished below the 1,000 points random picks would score." },
 };
 
 const TIER_RANK: Record<MtgBadgeTier, number> = { mythic: 4, rare: 3, uncommon: 2, common: 1, shame: 0 };
@@ -531,10 +559,208 @@ export function badgeLabel(code: string, detail: Record<string, unknown> | null 
   return base;
 }
 
-/** Why the player earned it, naming the Loyalist color. */
-export function badgeDescription(code: string, detail: Record<string, unknown> | null | undefined): string {
-  if (code === "loyalist" && typeof detail?.colorName === "string") return `At least 10 of 20 picks are ${detail.colorName.toLowerCase()}.`;
-  return MTG_BADGES[code]?.description ?? "";
+/** "1st", "2nd", "11th", "23rd". */
+export function ordinal(n: number): string {
+  const teen = n % 100 >= 11 && n % 100 <= 13;
+  return `${n}${teen ? "th" : (["th", "st", "nd", "rd"][n % 10] ?? "th")}`;
+}
+
+const RARITY_PLURAL_LOWER: Record<MtgRarity, string> = { common: "commons", uncommon: "uncommons", rare: "rares", mythic: "mythics" };
+
+type BadgeCardDetail = { name: string; rarity: MtgRarity; rank: number | null; ranked: number | null; points: number | null; score: number | null };
+
+const detailNumber = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+const isRarity = (v: unknown): v is MtgRarity => typeof v === "string" && (MTG_RARITIES as readonly string[]).includes(v);
+
+/** The cards a season badge remembers, whether it keeps a list or one card. */
+function detailCards(detail: Record<string, unknown>): BadgeCardDetail[] {
+  const raw = Array.isArray(detail.cards) ? detail.cards : detail.card && typeof detail.card === "object" ? [detail.card] : [];
+  return raw.flatMap((c) => {
+    const o = (c ?? {}) as Record<string, unknown>;
+    if (typeof o.name !== "string" || !isRarity(o.rarity)) return [];
+    return [{ name: o.name, rarity: o.rarity, rank: detailNumber(o.rank), ranked: detailNumber(o.ranked), points: detailNumber(o.points), score: detailNumber(o.score) }];
+  });
+}
+
+/** "1,234 points", with a decimal when rounding would hide a difference that matters. */
+const wholePoints = (n: number) => Math.round(n).toLocaleString("en-US");
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+/**
+ * Why the player earned a badge, or is on track for it (`onTrack`, present
+ * tense), from what the award remembers. Written without a subject, since
+ * it's read on other players' pages too. Falls back to the catalogue's line
+ * when the detail is missing something.
+ */
+export function badgeDescription(code: string, detail: Record<string, unknown> | null | undefined, onTrack = false): string {
+  const d = detail ?? {};
+  const fallback = MTG_BADGES[code]?.description ?? "";
+  const when = (earned: string, now: string) => (onTrack ? now : earned);
+  const num = (key: string) => detailNumber(d[key]);
+  const rarity = isRarity(d.rarity) ? d.rarity : null;
+  const cards = detailCards(d);
+  type RankedDetail = BadgeCardDetail & { rank: number; ranked: number };
+  const rankedCards = cards.filter((c): c is RankedDetail => c.rank !== null && c.ranked !== null);
+  // One clause per card, the first three and a count for the rest.
+  const clauses = (write: (c: RankedDetail) => string) => {
+    if (rankedCards.length === 0) return null;
+    const shown = rankedCards.slice(0, 3).map(write).join("; ");
+    return rankedCards.length > 3 ? `${shown}; and ${rankedCards.length - 3} more` : shown;
+  };
+  // A lead-in, then the cards: "Dead last right now: Card, 40th of 40 commons."
+  const cardList = (earned: string, now: string) => {
+    const list = clauses((c) => `${c.name}, ${ordinal(c.rank)} of ${c.ranked} ${among(c)}`);
+    return list ? `${when(earned, now)}: ${list}.` : null;
+  };
+  const among = (c: { rarity: MtgRarity }) => RARITY_PLURAL_LOWER[c.rarity];
+  let text: string | null = null;
+  switch (code) {
+    case "loyalist":
+      if (typeof d.colorName === "string") text = `At least 10 of 20 picks are ${d.colorName.toLowerCase()}.`;
+      break;
+    case "champion":
+    case "runner_up":
+    case "third_place":
+    case "wooden_spoon": {
+      const players = num("players");
+      const place = ({ champion: "first", runner_up: "second", third_place: "third", wooden_spoon: "last" } as Record<string, string>)[code];
+      if (players !== null) text = when(`Finished ${place} of ${players} in the group.`, `${place[0].toUpperCase()}${place.slice(1)} of ${players} in the group right now.`);
+      break;
+    }
+    case "common_sense":
+    case "uncommon_knowledge":
+    case "rare_insight":
+    case "mythic_vision": {
+      const points = num("points");
+      if (rarity && points !== null) text = when(`Had the group's highest ${RARITY_PLURAL_LOWER[rarity]} subtotal, ${wholePoints(points)} points.`, `The group's highest ${RARITY_PLURAL_LOWER[rarity]} subtotal right now, ${wholePoints(points)} points.`);
+      break;
+    }
+    case "pick_of_the_season": {
+      const list = cards.filter((c) => c.points !== null).slice(0, 3).map((c) => when(`${c.name} earned ${wholePoints(c.points as number)} points`, `${c.name} is earning ${wholePoints(c.points as number)} points`));
+      if (list.length > 0) text = `${list.join("; ")}, the most of any pick in the group.`;
+      break;
+    }
+    case "comeback_kid": {
+      const from = num("from");
+      const to = num("to");
+      if (from !== null && to !== null) text = `${when("Climbed", "Up")} from ${ordinal(from)} in the first standings to ${ordinal(to)}, the biggest climb in the group.`;
+      break;
+    }
+    case "king_of_the_hill": {
+      const days = num("days");
+      if (days !== null) text = when(`Spent ${plural(days, "day")} in first place, the most in the group.`, `${plural(days, "day")} in first place so far, the most in the group.`);
+      break;
+    }
+    case "contrarian":
+    case "hive_mind": {
+      const shared = num("shared");
+      if (shared === null) break;
+      const count = code === "contrarian" && shared > 0 ? `Only ${shared}` : shared === 0 ? "None" : String(shared);
+      text = `${count} of 20 picks ${when("matched", "match")} the Group Mind, the ${code === "contrarian" ? "fewest" : "most"} in the group.`;
+      break;
+    }
+    case "photo_finish": {
+      const gap = num("gap");
+      if (gap === null) break;
+      if (gap === 0) text = when("Finished level on points with the player one place away.", "Level on points with the player one place away right now.");
+      else {
+        const size = gap < 0.1 ? "under 0.1" : gap.toFixed(1);
+        text = when(`Finished ${size} points from the player one place away, the closest gap in the group.`, `${size[0].toUpperCase()}${size.slice(1)} points from the player one place away, the closest gap in the group right now.`);
+      }
+      break;
+    }
+    case "rollercoaster": {
+      const places = num("places");
+      if (places !== null) text = when(`Moved ${plural(places, "place")} up and down across the daily standings, the most in the group.`, `${plural(places, "place")} moved up and down so far, the most in the group.`);
+      break;
+    }
+    case "whiff_of_the_season": {
+      const list = cards.filter((c) => c.score !== null).slice(0, 3).map((c) => when(`${c.name}, a #1 ${c.rarity} pick, finished with a Card Score of ${Math.round(c.score as number)}`, `${c.name}, a #1 ${c.rarity} pick, has a Card Score of ${Math.round(c.score as number)}`));
+      if (list.length > 0) text = `${list.join("; ")}, the lowest of any #1 pick in the group.`;
+      break;
+    }
+    case "beat_the_crowd":
+    case "monkey_business": {
+      const points = num("points");
+      const mind = num("mind");
+      if (points === null) break;
+      if (code === "monkey_business") {
+        text = when(`Finished with ${wholePoints(points)} points, below the 1,000 points random picks would score.`, `${wholePoints(points)} points right now, below the 1,000 points random picks would score.`);
+      } else if (mind !== null) {
+        const close = Math.round(points) === Math.round(mind);
+        const fmt = (n: number) => (close ? n.toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : wholePoints(n));
+        text = when(`Finished with ${fmt(points)} points, above the Group Mind's ${fmt(mind)}.`, `${fmt(points)} points right now, above the Group Mind's ${fmt(mind)}.`);
+      }
+      break;
+    }
+    case "wire_to_wire": {
+      const days = num("days");
+      if (days === null) break;
+      text = days === 1
+        ? when("First in the group on the only day of standings.", "First in the group on the only day of standings so far.")
+        : when(`First in the group on all ${days} days of standings.`, `First in the group on all ${days} days of standings so far.`);
+      break;
+    }
+    case "told_you_so":
+      text = cardList("Picked with a Receipts note, left out of the Group Mind, and finished in the top five", "Picked with a Receipts note, left out of the Group Mind, and in the top five right now");
+      break;
+    case "lone_wolf":
+      text = cardList("Picked by no one else in the group, and finished in the top five", "Picked by no one else in the group, and in the top five right now");
+      break;
+    case "clean_sweep":
+      if (rarity) text = when(`The five ${rarity} picks finished as the top five ${RARITY_PLURAL_LOWER[rarity]}.`, `The five ${rarity} picks are the top five ${RARITY_PLURAL_LOWER[rarity]} right now.`);
+      break;
+    case "perfect_order": {
+      const ranks = Array.isArray(d.ranks) ? d.ranks.map(detailNumber).filter((r): r is number => r !== null) : [];
+      if (rarity && ranks.length > 0) text = `The five ${rarity} picks ${when("finished", "are")} in the order they were ranked${onTrack ? " right now" : ""}: ${ranks.map(ordinal).join(", ")}.`;
+      break;
+    }
+    case "sniper":
+      if (rarity) text = `All five ${rarity} picks ${when("finished", "are")} in the top 10 ${RARITY_PLURAL_LOWER[rarity]}${onTrack ? " right now" : ""}.`;
+      break;
+    case "grand_slam":
+    case "well_rounded":
+      text = `At every rarity, a pick ${when("finished", "is")} in the top ${code === "grand_slam" ? "five" : "10"}${onTrack ? " right now" : ""}.`;
+      break;
+    case "oracle":
+    case "sharp_eye": {
+      const rank = num("rank");
+      const players = num("players");
+      const share = code === "oracle" ? "5%" : "25%";
+      if (rank !== null && players !== null) text = when(`Finished ${ordinal(rank)} of ${players} on the Everyone board, in the top ${share}.`, `${ordinal(rank)} of ${players} on the Everyone board right now, in the top ${share}.`);
+      break;
+    }
+    case "called_it": {
+      const list = clauses((c) => when(`${c.name}, the #1 ${c.rarity} pick, finished #1 among ${among(c)}`, `${c.name}, the #1 ${c.rarity} pick, is #1 among ${among(c)} right now`));
+      if (list) text = `${list}.`;
+      break;
+    }
+    case "bust": {
+      const list = clauses((c) => when(`${c.name}, the #1 ${c.rarity} pick, finished ${ordinal(c.rank)} of ${c.ranked} ${among(c)}, in the bottom quarter`, `${c.name}, the #1 ${c.rarity} pick, is ${ordinal(c.rank)} of ${c.ranked} ${among(c)} right now, in the bottom quarter`));
+      if (list) text = `${list}.`;
+      break;
+    }
+    case "bomb_squad":
+    case "bomb_detector":
+    case "common_denominator": {
+      const list = cards.slice(0, 2).map((c) => `${c.name}, the #1 ${c.rarity}`);
+      if (list.length > 0) text = `Picked ${list.join(", and ")}${onTrack ? " right now" : ""}.`;
+      break;
+    }
+    case "sleeper_agent":
+      text = cardList("Taken late by drafters, and finished in the top 10", "Taken late by drafters, and in the top 10 right now");
+      break;
+    case "bullseye":
+      text = cardList("Finished exactly where they were ranked", "Exactly where they were ranked right now");
+      break;
+    case "rock_bottom":
+      text = cardList("Finished dead last", "Dead last right now");
+      break;
+    case "eats_words":
+      text = cardList("Picked with a Receipts note, and finished in the bottom quarter", "Picked with a Receipts note, and in the bottom quarter right now");
+      break;
+  }
+  return text ?? fallback;
 }
 
 /** Colour letters on a card, whatever separator the sync stored them with. */
@@ -663,9 +889,48 @@ export function formatEasternDate(at: string | Date): string {
   return new Intl.DateTimeFormat("en-US", { timeZone: EASTERN, weekday: "long", month: "long", day: "numeric" }).format(new Date(at));
 }
 
-export type FunFactPlayer = { name: string; picks: Array<{ rarity: MtgRarity; slot: number; cardId: string; cardName: string }> };
+/**
+ * When the weekly standings email goes out (spec section 8, email 4): 10:00
+ * AM ET every Tuesday after the first standings, whichever side of the clock
+ * change, leaving out the final week, which the season results email covers.
+ * The timeline lists the same times.
+ */
+export function mtgWeeklyStandingsTimes(set: { arena_release_at: string | Date | null; final_at: string | Date }): Date[] {
+  if (!set.arena_release_at) return [];
+  const first = easternParts(mtgMorningAfter(set.arena_release_at));
+  // Calendar arithmetic on the Eastern date, held at UTC midnight so a day is always 24 hours.
+  let day = Date.UTC(first.year, first.month - 1, first.day) + 86400000;
+  while (new Date(day).getUTCDay() !== 2) day += 86400000;
+  const lastSend = new Date(set.final_at).getTime() - 6 * 86400000;
+  const out: Date[] = [];
+  for (let week = 0; week < 20; week++) {
+    const d = new Date(day + week * 7 * 86400000);
+    const at = easternToUtc(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate(), 10);
+    if (at.getTime() >= lastSend) break;
+    out.push(at);
+  }
+  return out;
+}
 
-const RARITY_PLURAL_LOWER: Record<MtgRarity, string> = { common: "commons", uncommon: "uncommons", rare: "rares", mythic: "mythics" };
+/**
+ * Whether the hourly job should send this week's standings email now: on one
+ * of `mtgWeeklyStandingsTimes`' Tuesdays, from 10:00 AM ET, once that day's
+ * standings are published, or from 8:00 PM ET with the latest standings there
+ * are, as long as there are some. `period` names the week in the email log.
+ */
+export function mtgWeeklyStandingsDue(
+  set: { arena_release_at: string | Date | null; final_at: string | Date },
+  latestSnapshotDate: string | null,
+  now: Date = new Date(),
+): { period: string; sendAt: Date } | null {
+  const today = easternDateKey(now);
+  const sendAt = mtgWeeklyStandingsTimes(set).find((at) => easternDateKey(at) === today);
+  if (!sendAt || now.getTime() < sendAt.getTime() || !latestSnapshotDate) return null;
+  if (latestSnapshotDate !== today && easternHour(now) < 20) return null;
+  return { period: today, sendAt };
+}
+
+export type FunFactPlayer = { name: string; picks: Array<{ rarity: MtgRarity; slot: number; cardId: string; cardName: string }> };
 
 /**
  * One fun fact for a group's reveal email (spec section 8, email 3): the

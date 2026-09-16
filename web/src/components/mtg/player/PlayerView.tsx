@@ -14,6 +14,7 @@ import Stack from "@mui/material/Stack";
 import Switch from "@mui/material/Switch";
 import Typography from "@mui/material/Typography";
 import ArrowBackRoundedIcon from "@mui/icons-material/ArrowBackRounded";
+import EmojiEventsRoundedIcon from "@mui/icons-material/EmojiEventsRounded";
 import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
 import LeaderboardRoundedIcon from "@mui/icons-material/LeaderboardRounded";
 import ShowChartRoundedIcon from "@mui/icons-material/ShowChartRounded";
@@ -26,7 +27,7 @@ import BadgeChip from "../reveal/BadgeChip";
 import {
   MTG_ATTRIBUTION, MTG_RARITIES, MTG_SLOTS_PER_RARITY, MTG_TOTAL_PICKS, RARITY_LABEL, RARITY_PLURAL, SLOT_MULTIPLIERS,
   formatCount, formatDayKey, formatWhen, formatWinRate, ordinal,
-  type MtgCard, type MtgPlayerPayload, type MtgPlayerPick, type MtgRarity, type MtgTopCard,
+  type MtgBadge, type MtgCard, type MtgPlayerPayload, type MtgPlayerPick, type MtgRarity, type MtgTopCard,
 } from "../mtgTypes";
 
 type Load =
@@ -49,6 +50,38 @@ const tenths = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits:
 const signedWhole = (n: number) => (Math.round(n) > 0 ? `+${whole(n)}` : Math.round(n) < 0 ? `−${whole(-n)}` : "±0");
 const shiftDay = (key: string, days: number) => new Date(Date.parse(`${key}T12:00:00Z`) + days * 86400000).toISOString().slice(0, 10);
 const weekday = (key: string) => new Intl.DateTimeFormat("en-US", { timeZone: "UTC", weekday: "short" }).format(new Date(`${key}T12:00:00Z`));
+
+/** Earned badges, then the ones the latest standings put the player on track
+ *  for, drawn as outlines and explained, since they can still slip away. */
+function BadgesCard({ badges, isViewer, name }: { badges: MtgBadge[]; isViewer: boolean; name: string }) {
+  const earned = badges.filter((b) => !b.onTrack);
+  const onTrack = badges.filter((b) => b.onTrack);
+  const chips = (list: MtgBadge[]) => (
+    <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap">
+      {list.map((b) => <BadgeChip key={`${b.code}-${b.name}`} badge={b} />)}
+    </Stack>
+  );
+  return (
+    <AppCard>
+      <IconTitle icon={<EmojiEventsRoundedIcon sx={{ fontSize: 18 }} />} title="Badges" caption="Tap a badge to see why." />
+      {earned.length > 0 && (
+        <Box>
+          <Typography variant="body2" component="h3" fontWeight={700} sx={{ mb: 0.75 }}>Earned</Typography>
+          {chips(earned)}
+        </Box>
+      )}
+      {onTrack.length > 0 && (
+        <Box sx={{ mt: earned.length > 0 ? 2 : 0 }}>
+          <Typography variant="body2" component="h3" fontWeight={700}>On track</Typography>
+          <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.75 }}>
+            {isViewer ? "You earn these" : `${name} earns these`} on the final day if the standings stay this way.
+          </Typography>
+          {chips(onTrack)}
+        </Box>
+      )}
+    </AppCard>
+  );
+}
 
 /** A card image, shown whole: Scryfall's art is never cropped or covered. */
 function CardThumb({ card, width }: { card: MtgCard; width: number }) {
@@ -330,14 +363,7 @@ export default function PlayerView() {
         </AppCard>
       )}
 
-      {data.badges.length > 0 && (
-        <AppCard>
-          <Typography variant="h6" component="h2" fontWeight={800} sx={{ fontSize: "1.0625rem", mb: 1 }}>Badges</Typography>
-          <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap">
-            {data.badges.map((b) => <BadgeChip key={`${b.code}-${b.name}`} badge={b} />)}
-          </Stack>
-        </AppCard>
-      )}
+      {data.badges.length > 0 && <BadgesCard badges={data.badges} isViewer={player.isViewer} name={name} />}
 
       {!player.hasEntry ? (
         <AppCard>
