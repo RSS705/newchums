@@ -51,7 +51,9 @@ export default function CardGrid({ cards, visible, filters, onFiltersChange, pic
             input: { startAdornment: <InputAdornment position="start"><SearchRoundedIcon sx={{ fontSize: 20 }} /></InputAdornment> },
             htmlInput: { "aria-label": `Search ${pluralLabel}` },
           }}
-          sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2.5 } }}
+          // The theme's input padding also overrides MUI's zero left padding
+          // beside an icon, which left a wide gap before the placeholder.
+          sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2.5 }, "& .MuiInputBase-inputAdornedStart": { pl: 0 } }}
         />
         <Badge color="primary" badgeContent={active} invisible={active === 0}>
           <Button

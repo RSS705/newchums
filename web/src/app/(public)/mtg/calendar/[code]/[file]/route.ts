@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 /**
- * Same-origin "Add to calendar" files for the MTG Prediction Challenge
+ * Same-origin "Add to calendar" files for the MTG Card Evaluation Challenge
  * (spec 4.2): /mtg/calendar/<set>/lock.ics and final.ics. The API builds the
  * file from the set's dates; this route passes it through so the timeline and
  * the emails can link to newchums.com instead of the API host.

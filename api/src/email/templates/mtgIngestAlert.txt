@@ -10,4 +10,4 @@
 
 ---
 
-This alert went to the admin inbox from the MTG Prediction Challenge stats job on NewChums.
+This alert went to the admin inbox from the MTG Card Evaluation Challenge stats job on NewChums.

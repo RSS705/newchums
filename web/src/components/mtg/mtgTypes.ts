@@ -1,4 +1,4 @@
-/** Wire shapes for the MTG Prediction Challenge (see api/src/lib/mtg.ts). */
+/** Wire shapes for the MTG Card Evaluation Challenge (see api/src/lib/mtg.ts). */
 
 export type MtgPhase = "upcoming" | "previews" | "open" | "locked" | "live" | "final";
 export type MtgRarity = "common" | "uncommon" | "rare" | "mythic";
@@ -12,7 +12,6 @@ export type TimelineEntry = {
   endAt?: string;
   detail: string;
   status: "done" | "now" | "upcoming";
-  calendar?: boolean;
 };
 
 export type MtgSetPayload = {
@@ -65,7 +64,7 @@ export type MtgCard = {
 
 /** Attribution that goes on every challenge surface (spec section 9.3). */
 export const MTG_ATTRIBUTION =
-  "Card performance data from 17Lands.com (Premier Draft, all users). Card images and data via Scryfall. MTG Prediction Challenge is unofficial Fan Content permitted under the Fan Content Policy. Not approved/endorsed by Wizards. Portions of the materials used are property of Wizards of the Coast. ©Wizards of the Coast LLC. Not affiliated with 17Lands or Scryfall.";
+  "Card performance data from 17Lands.com (Premier Draft, all users). Card images and data via Scryfall. MTG Card Evaluation Challenge is unofficial Fan Content permitted under the Fan Content Policy. Not approved/endorsed by Wizards. Portions of the materials used are property of Wizards of the Coast. ©Wizards of the Coast LLC. Not affiliated with 17Lands or Scryfall.";
 
 export function formatWhen(iso: string): string {
   try {

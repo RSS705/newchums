@@ -39,7 +39,7 @@ export default function HowScoringWorksContent({ set }: { set: MtgSetPayload | n
       <Container maxWidth="md">
         <Stack spacing={{ xs: 3, sm: 4 }}>
           <Box>
-            <Typography variant="overline" sx={{ fontWeight: 800, color: "primary.main", letterSpacing: "0.08em" }}>MTG Prediction Challenge</Typography>
+            <Typography variant="overline" sx={{ fontWeight: 800, color: "primary.main", letterSpacing: "0.08em" }}>MTG Card Evaluation Challenge</Typography>
             <Typography component="h1" sx={{ fontWeight: 800, fontSize: { xs: "2rem", sm: "2.75rem" }, lineHeight: 1.1, letterSpacing: "-0.02em" }}>
               How scoring works
             </Typography>
@@ -83,12 +83,12 @@ export default function HowScoringWorksContent({ set }: { set: MtgSetPayload | n
                 {set ? (
                   <>
                     Picks lock <strong>{easternLong(set.dates.lockAt)}</strong>
-                    {set.dates.arenaReleaseAt ? `, just before ${set.name} hits Arena` : ""}.
+                    {set.dates.prereleaseStartAt ? ", before prerelease weekend starts" : ""}.
                     {firstStandings ? ` Standings update daily from ${easternDate(firstStandings)}.` : ""}
                     {` The season ends ${easternDate(set.dates.finalAt)}; the standings that morning are final, and badges are awarded.`}
                   </>
                 ) : (
-                  "Picks lock the night before the set launches on Arena. Standings update daily from the next morning, and the season ends about four weeks later, when the standings that morning are final and badges are awarded."
+                  "Picks lock before prerelease weekend starts. Standings update daily from the morning after the set launches on Arena, and the season runs until the next set comes out, when the standings that morning are final and badges are awarded."
                 )}
               </Section>
               <Section title="Badges">
@@ -103,7 +103,7 @@ export default function HowScoringWorksContent({ set }: { set: MtgSetPayload | n
             </Stack>
           </AppCard>
 
-          {set && set.timeline.length > 0 && <SeasonTimeline entries={set.timeline} setName={set.name} setCode={set.code} />}
+          {set && set.timeline.length > 0 && <SeasonTimeline entries={set.timeline} setName={set.name} />}
 
           <Typography variant="caption" color="text.disabled" sx={{ display: "block", lineHeight: 1.6 }}>{MTG_ATTRIBUTION}</Typography>
         </Stack>

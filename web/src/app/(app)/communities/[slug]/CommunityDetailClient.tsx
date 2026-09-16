@@ -607,22 +607,23 @@ export default function CommunityDetailClient({
   }, [viewerHobbyItems]);
 
   // Mirror the explore feed's local-interest signal so the community detail
-  // ends with the same "N active people near you are into X" line. Kept
-  // community-agnostic: we pass no hobby filter, so the backend picks based
-  // on the viewer's own hobbies (same as the unfiltered explore feed).
+  // ends with the same "N active people near you are into X" line, counted
+  // only over the community's own hobbies so it stays on brand. A community
+  // without hobbies shows no line.
+  const communityHobbySlugs = useMemo(() => (community?.hobbies ?? []).map((h) => h.slug).filter(Boolean).join(","), [community]);
   useEffect(() => {
-    if (isAuthenticated !== true) return;
+    if (isAuthenticated !== true || !communityHobbySlugs) return;
     let cancelled = false;
     (async () => {
       try {
-        const res = await apiFetch("/explore/local-signal", { auth: true });
+        const res = await apiFetch(`/explore/local-signal?hobbies=${encodeURIComponent(communityHobbySlugs)}`, { auth: true });
         if (cancelled) return;
         const data = (await res.json()) as { ok: boolean; signal: LocalSignal | null };
         if (data.ok) setLocalSignal(data.signal);
       } catch { /* degrade silently */ }
     })();
     return () => { cancelled = true; };
-  }, [isAuthenticated]);
+  }, [isAuthenticated, communityHobbySlugs]);
 
   useEffect(() => {
     if (!community || restricted) return;
@@ -1888,7 +1889,8 @@ export default function CommunityDetailClient({
             {viewerPendingRequest && !isMember && (
               <Chip icon={<HourglassEmptyRoundedIcon />} label="Request pending" color="warning" variant="outlined" size="small" />
             )}
-            {isMember && (
+            {/* Challenge communities are about the game, so no plan button there. */}
+            {isMember && community.specialization !== "mtg_prediction_challenge" && (
               <Button
                 component={Link}
                 href={createPlanHref}
@@ -2882,9 +2884,8 @@ export default function CommunityDetailClient({
       )}
 
       {/* Local interest signal. Same copy/layout as the explore feed's
-          footer: surfaces one hobby the viewer shares with active people
-          in their area. Community-agnostic for now; the backend picks
-          the hobby from the viewer's own interests. */}
+          footer: surfaces one of the community's hobbies that active
+          people in the viewer's area share. */}
       {localSignal && (
         <Box
           sx={{

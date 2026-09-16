@@ -5,13 +5,13 @@ import type { MtgSetPayload } from "@/components/mtg/mtgTypes";
 import HowScoringWorksContent from "./HowScoringWorksContent";
 
 const DESCRIPTION =
-  "How the MTG Prediction Challenge scores your picks: 17Lands GIH WR, Card Scores from 0 to 100, slot multipliers, small samples, ties and the season calendar.";
+  "How the MTG Card Evaluation Challenge scores your picks: 17Lands GIH WR, Card Scores from 0 to 100, slot multipliers, small samples, ties and the season calendar.";
 
 export const metadata: Metadata = {
-  title: "How scoring works | MTG Prediction Challenge",
+  title: "How scoring works | MTG Card Evaluation Challenge",
   description: DESCRIPTION,
   alternates: { canonical: "/mtg/how-scoring-works" },
-  openGraph: { title: "How MTG Prediction Challenge scoring works", description: DESCRIPTION, url: "/mtg/how-scoring-works" },
+  openGraph: { title: "How MTG Card Evaluation Challenge scoring works", description: DESCRIPTION, url: "/mtg/how-scoring-works" },
 };
 
 /** Season dates change once a season, so an hour of caching is plenty. */

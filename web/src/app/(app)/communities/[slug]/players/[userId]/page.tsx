@@ -5,7 +5,7 @@ export const metadata: Metadata = {
   title: "Player | NewChums",
 };
 
-/** A player's picks and standing in an MTG Prediction Challenge group (spec 10.6). */
+/** A player's picks and standing in an MTG Card Evaluation Challenge group (spec 10.6). */
 export default function CommunityPlayerPage() {
   return <PlayerView />;
 }

@@ -317,7 +317,7 @@ export default function AdminMtgStats({ code }: { code: string }) {
                   <Typography variant="body2" sx={{ minWidth: 200 }}>{card.name} <Typography component="span" variant="caption" color="text.secondary">· {card.rarity}{card.arenaId ? ` · Arena ${card.arenaId}` : ""}</Typography></Typography>
                   {options.length > 0 && (
                     <TextField select size="small" label={`Match to (${options.length})`} value="" disabled={busy !== null} sx={{ minWidth: 260 }}
-                      helperText={fellBack ? `No unmatched ${card.rarity} left in the feed — every unmatched record is listed` : undefined}
+                      helperText={fellBack ? `No unmatched ${card.rarity} left in the feed, so every unmatched record is listed` : undefined}
                       onChange={(e) => { const r = options[Number(e.target.value)]; if (r) setConfirmMatch({ cardId: card.id, record: r }); }}>
                       {options.map((r, i) => (
                         <MenuItem key={`${r.name}-${r.mtgaId ?? i}`} value={String(i)}>{r.name} · {r.rarity} · {games(r.gihGames)} games</MenuItem>

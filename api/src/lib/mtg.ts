@@ -1,5 +1,5 @@
 /**
- * MTG Prediction Challenge (docs/MTG-Bets-Spec.md), shared pieces.
+ * MTG Card Evaluation Challenge (docs/MTG-Bets-Spec.md), shared pieces.
  *
  * Batch 1: season phases and timeline, and the Scryfall card sync. Later
  * batches add entries, the 17Lands ingest, scoring and badges here.
@@ -10,7 +10,7 @@ export const MTG_RARITIES = ["common", "uncommon", "rare", "mythic"] as const;
 export type MtgRarity = (typeof MTG_RARITIES)[number];
 
 /** How the game presents itself, so the same headers go on every request. */
-export const MTG_USER_AGENT = "NewChums/1.0 (MTG Prediction Challenge; https://newchums.com)";
+export const MTG_USER_AGENT = "NewChums/1.0 (MTG Card Evaluation Challenge; https://newchums.com)";
 
 export type MtgSetRow = {
   id: string;
@@ -67,8 +67,6 @@ export type TimelineEntry = {
   endAt?: string;
   detail: string;
   status: "done" | "now" | "upcoming";
-  /** Entries that get an "Add to calendar" link. */
-  calendar?: boolean;
 };
 
 /** The dates that matter to players, in order, with a status each. Weekly
@@ -79,20 +77,19 @@ export function mtgTimeline(set: MtgSetRow, now: Date = new Date()): TimelineEnt
   const entries: Array<Omit<TimelineEntry, "status">> = [];
   if (set.previews_start_at) {
     entries.push({
-      key: "previews", label: "Previews", at: set.previews_start_at, endAt: set.gallery_complete_at ?? undefined,
-      detail: "Wizards and creators reveal new cards every day. They appear in the pick screens automatically.",
+      key: "previews", label: "Previews start, picks open", at: set.previews_start_at, endAt: set.gallery_complete_at ?? undefined,
+      detail: "New cards are revealed every day, and you can make your picks from the first one. Revealed cards appear in the pick screens automatically.",
     });
   }
-  if (set.picks_open_at) {
-    entries.push({ key: "picks_open", label: "Picks open", at: set.picks_open_at, detail: "The full card list is out. Make your five picks at each rarity." });
-  }
+  // Picks lock before prereleases start, so the lock comes first even when the
+  // two share a moment (the sort below keeps insertion order for ties).
+  entries.push({ key: "lock", label: "Picks lock", at: set.lock_at, detail: "After this moment nothing can change, and everyone's picks are revealed to the group." });
   if (set.prerelease_start_at) {
     entries.push({
       key: "prerelease", label: "Prerelease weekend", at: set.prerelease_start_at, endAt: set.prerelease_end_at ?? undefined,
-      detail: "Tabletop events at stores. No 17Lands data yet, but a good excuse to make a Plan.",
+      detail: "Tabletop events at stores, from Friday evening. Picks are locked by then.",
     });
   }
-  entries.push({ key: "lock", label: "Picks lock", at: set.lock_at, detail: "After this moment nothing can change, and everyone's picks are revealed to the group.", calendar: true });
   if (set.arena_release_at) {
     entries.push({ key: "arena", label: "Arena launch", at: set.arena_release_at, detail: "Premier Draft opens and 17Lands starts collecting games." });
     const firstStandings = mtgMorningAfter(set.arena_release_at); // 9 AM ET the morning after
@@ -108,14 +105,16 @@ export function mtgTimeline(set: MtgSetRow, now: Date = new Date()): TimelineEnt
     for (let week = 0; week < 6; week++) {
       const tue = new Date(d.getTime() + week * 7 * 86400000);
       if (tue.getTime() >= finalMs - 6 * 86400000) break;
-      const tenAm = new Date(tue.toISOString().slice(0, 10) + "T14:00:00Z"); // 10 AM EDT
+      // 10 AM Eastern whichever side of the clock change the Tuesday falls.
+      const [y, m, day] = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(tue).split("-").map(Number);
+      const tenAm = easternToUtc(y, m, day, 10);
       entries.push({ key: `weekly_${week + 1}`, label: `Week ${week + 1}`, at: tenAm.toISOString(), detail: "Another week of games is in. See how your picks are holding up." });
     }
   }
   if (set.tabletop_release_at) {
     entries.push({ key: "paper", label: "Paper release", at: set.tabletop_release_at, detail: "The set arrives in stores." });
   }
-  entries.push({ key: "final", label: "Final day", at: set.final_at, detail: "The morning's standings are the last of the season.", calendar: true });
+  entries.push({ key: "final", label: "Final day", at: set.final_at, detail: "The morning's standings are the last of the season, as the next set arrives." });
   entries.sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
   return entries.map((e) => {
     const start = new Date(e.at).getTime();
@@ -476,7 +475,7 @@ export function buildIcsEvent(ev: IcsEvent, now: Date = new Date()): string {
   const lines = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
-    "PRODID:-//NewChums//MTG Prediction Challenge//EN",
+    "PRODID:-//NewChums//MTG Card Evaluation Challenge//EN",
     "CALSCALE:GREGORIAN",
     "METHOD:PUBLISH",
     "BEGIN:VEVENT",

@@ -1013,7 +1013,7 @@ app.get("/admin/users/:id/attendance-record/details", async (c) => {
   }
 });
 
-// ─── MTG Prediction Challenge (docs/MTG-Bets-Spec.md) ────────────────────────
+// ─── MTG Card Evaluation Challenge (docs/MTG-Bets-Spec.md) ────────────────────────
 //
 // Batch 1: set + timeline + card pool + admin set settings + card sync.
 
@@ -1502,8 +1502,8 @@ app.get("/mtg/sets/:code/calendar/:file", async (c) => {
       durationMinutes: 30,
       summary: isLock ? `${set.name} picks lock` : `${set.name} final standings`,
       description: isLock
-        ? `MTG Prediction Challenge picks for ${set.name} lock now. Change anything until then. How scoring works: ${web}/mtg/how-scoring-works`
-        : `The ${set.name} season of the MTG Prediction Challenge ends. The standings this morning are final and badges are awarded.`,
+        ? `MTG Card Evaluation Challenge picks for ${set.name} lock now. Change anything until then. How scoring works: ${web}/mtg/how-scoring-works`
+        : `The ${set.name} season of the MTG Card Evaluation Challenge ends. The standings this morning are final and badges are awarded.`,
       url: `${web}/mtg/how-scoring-works`,
       alarmMinutesBefore: isLock ? 180 : 60,
     });
@@ -2367,7 +2367,7 @@ async function runMtgIngest(
 ): Promise<MtgIngestResult> {
   // The schedule always works on today's Eastern date. An admin may name any
   // day of the season instead, so the final day can be retried after it has
-  // ended — spec 9.1 promises the final pull is retried until it succeeds.
+  // ended; spec 9.1 promises the final pull is retried until it succeeds.
   const named = opts.date ?? null;
   if (named && !mtgIngestDateAllowed(set, named))
     return { outcome: "skipped", reason: "That day is outside the season, which runs from the day after the Arena launch through the final day", snapshotDate: named };
@@ -3399,6 +3399,9 @@ app.put("/admin/mtg/sets/:code", async (c) => {
   if (!dates.lock_at || !dates.final_at) return c.json({ ok: false, error: "VALIDATION", message: "Lock and final dates are required" }, 400);
   if (new Date(dates.lock_at).getTime() >= new Date(dates.final_at).getTime())
     return c.json({ ok: false, error: "VALIDATION", message: "The final day must be after the lock" }, 400);
+  // Prereleases are the first real games with a set, so picks lock before they start.
+  if (dates.prerelease_start_at && new Date(dates.lock_at).getTime() > new Date(dates.prerelease_start_at).getTime())
+    return c.json({ ok: false, error: "VALIDATION", message: "Picks must lock before prereleases start", field: "lock_at" }, 400);
   const status = ["active", "final", "archived"].includes(String(body.status)) ? String(body.status) : "active";
   const sql = getSql(c.env);
   try {
@@ -11910,7 +11913,7 @@ app.post("/communities", async (c) => {
   const website = body.website ? String(body.website).trim().slice(0, 500) : null;
   const discordUrl = body.discord_url ? String(body.discord_url).trim().slice(0, 500) : null;
   const whatsappUrl = body.whatsapp_url ? String(body.whatsapp_url).trim().slice(0, 500) : null;
-  // Specialized community (MTG Prediction Challenge). Set once at creation;
+  // Specialized community (MTG Card Evaluation Challenge). Set once at creation;
   // PATCH never touches it, so a normal community can never turn into a game.
   const specializationRaw = body.specialization == null || body.specialization === "" ? null : String(body.specialization);
   if (specializationRaw !== null && specializationRaw !== MTG_SPECIALIZATION)
@@ -15584,7 +15587,10 @@ app.get("/events/explore/public", async (c) => {
  *
  *  Selection logic:
  *  1. Build candidate categories: filter hobby's category first (if set),
- *     followed by the viewer's profile hobby categories in order.
+ *     followed by the viewer's profile hobby categories in order. With
+ *     `hobbies` (comma-separated slugs, as a community page sends its own
+ *     tags), the candidates are those hobbies only, so the line stays on
+ *     brand for the community.
  *  2. For each candidate (in priority order), count local active users with an
  *     interest in the same effective category.
  *  3. Pick the highest-count candidate that reaches MIN_COUNT (= 5).
@@ -15621,10 +15627,12 @@ app.get("/explore/local-signal", async (c) => {
     // Active cutoff
     const activeSince = new Date(Date.now() - ACTIVE_MONTHS * 30 * 24 * 60 * 60 * 1000).toISOString();
 
-    // Determine candidate hobby slugs: filtered hobby first, then viewer profile hobbies
+    // Determine candidate hobby slugs: a community's own hobbies only, or else
+    // the filtered hobby first, then viewer profile hobbies.
     const filterHobbySlug = c.req.query("hobby")?.trim() || null;
+    const onlyHobbySlugs = (c.req.query("hobbies") ?? "").split(",").map((s) => s.trim()).filter(Boolean).slice(0, 25);
 
-    const viewerHobbyRows = (await sql`
+    const viewerHobbyRows = onlyHobbySlugs.length > 0 ? [] : (await sql`
       SELECT i.id, i.slug, i.name, i.category
       FROM newchums.user_interests ui
       JOIN newchums.interests i ON i.id = ui.interest_id AND i.is_deleted = false
@@ -15648,7 +15656,13 @@ app.get("/explore/local-signal", async (c) => {
       candidates.push({ displayLabel: display, effectiveCategory: ec });
     };
 
-    if (filterHobbySlug) {
+    if (onlyHobbySlugs.length > 0) {
+      const onlyRows = (await sql`
+        SELECT name, category FROM newchums.interests
+        WHERE slug = ANY(${onlyHobbySlugs}::text[]) AND is_deleted = false ORDER BY name
+      `) as { name: string; category: string | null }[];
+      for (const h of onlyRows) pushCandidate(h.name, h.category);
+    } else if (filterHobbySlug) {
       const filterRows = (await sql`
         SELECT id, slug, name, category FROM newchums.interests
         WHERE slug = ${filterHobbySlug} AND is_deleted = false LIMIT 1
@@ -22621,7 +22635,7 @@ async function handleScheduled(
   }
 
   // Deliver whatever the jobs above enqueued (plus any retries)
-  // MTG Prediction Challenge: the lock runs first, so the reveal email never
+  // MTG Card Evaluation Challenge: the lock runs first, so the reveal email never
   // goes out ahead of it; then the season emails are queued and delivered in
   // their own outbox pass.
   try {
@@ -22649,7 +22663,7 @@ async function handleScheduled(
     console.error("[scheduled] email outbox error:", err);
   }
 
-  // MTG Prediction Challenge: Scryfall card sync (two-hourly during previews)
+  // MTG Card Evaluation Challenge: Scryfall card sync (two-hourly during previews)
   try {
     await processMtgCardSync(sql, env);
   } catch (err) {

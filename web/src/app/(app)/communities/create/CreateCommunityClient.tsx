@@ -599,11 +599,6 @@ export default function CreateCommunityClient() {
               sx={{ alignItems: "flex-start" }}
             />
           </RadioGroup>
-          {access === "invite_only" && (
-            <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.5 }}>
-              The invite link is created with the community. Copy it from the community page with the Invite link button, or reset it any time from Edit.
-            </Typography>
-          )}
         </Stack>
       </AppCard>
 
@@ -658,7 +653,7 @@ export default function CreateCommunityClient() {
               slotProps={{ input: { "aria-label": "Specialized community type" } }}
               sx={{ borderRadius: 2 }}
             >
-              <MenuItem value="mtg_prediction_challenge">MTG Prediction Challenge</MenuItem>
+              <MenuItem value="mtg_prediction_challenge">MTG Card Evaluation Challenge</MenuItem>
             </Select>
           )}
           {specialized && (

@@ -148,7 +148,7 @@ export default function CommunityListCard({
         <LockRoundedIcon sx={{ fontSize: 15, color: "text.disabled" }} />
       )}
       {c.specialization === "mtg_prediction_challenge" && (
-        <Chip label="MTG Prediction Challenge" size="small" sx={{ height: 20, fontSize: "0.6875rem", fontWeight: 700, borderRadius: 1, bgcolor: "primary.light", color: "primary.dark", "& .MuiChip-label": { px: 0.75 } }} />
+        <Chip label="MTG Card Evaluation Challenge" size="small" sx={{ height: 20, fontSize: "0.6875rem", fontWeight: 700, borderRadius: 1, bgcolor: "primary.light", color: "primary.dark", "& .MuiChip-label": { px: 0.75 } }} />
       )}
       {c.viewer_role === "owner" && (
         <Chip label="Owner" size="small" sx={{ height: 20, fontSize: "0.6875rem", fontWeight: 600, borderRadius: 1, bgcolor: "primary.light", color: "primary.dark" }} />

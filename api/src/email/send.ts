@@ -1140,7 +1140,7 @@ export const sendPlanWrapUpEmail = async (
 
 export type MtgKeyDate = { label: string; when: string };
 
-/** MTG Prediction Challenge welcome (spec section 8, email 1): sent when a
+/** MTG Card Evaluation Challenge welcome (spec section 8, email 1): sent when a
  *  player creates or joins their first challenge group for a set. The
  *  creator gets the invite link to share; everyone gets the lock time, the
  *  key dates in Eastern time, and a button to their picks. */
@@ -1172,8 +1172,8 @@ export const sendMtgWelcomeEmail = async (
       heading: p.isCreator ? `${p.communityName} is ready` : `You're in ${p.communityName}`,
       greeting: `Hi ${p.recipientName},`,
       bodyText: p.isCreator
-        ? `Your MTG Prediction Challenge group for ${p.setName} is set up. Share the invite link with your friends, then pick the five cards you think will perform best at each rarity, in order.`
-        : `You've joined an MTG Prediction Challenge group for ${p.setName}. Pick the five cards you think will perform best at each rarity, in order, and 17Lands data keeps score once the set is on Arena.`,
+        ? `Your MTG Card Evaluation Challenge group for ${p.setName} is set up. Share the invite link with your friends, then pick the five cards you think will perform best at each rarity, in order.`
+        : `You've joined an MTG Card Evaluation Challenge group for ${p.setName}. Pick the five cards you think will perform best at each rarity, in order, and 17Lands data keeps score once the set is on Arena.`,
       communityName: p.communityName,
       setName: p.setName,
       hasEntry: p.picked > 0,
@@ -1191,7 +1191,7 @@ export const sendMtgWelcomeEmail = async (
     { subjectKey: p.isCreator ? "mtgWelcome_creator" : "mtgWelcome", idempotencyKey: p.idempotencyKey },
   );
 
-/** MTG Prediction Challenge lock warning (spec section 8, email 2): 10 AM ET
+/** MTG Card Evaluation Challenge lock warning (spec section 8, email 2): 10 AM ET
  *  the day before the lock, to everyone with an entry or a group for the
  *  set, finished or not. One email per player, with a line per group. */
 export const sendMtgLockWarningEmail = async (
@@ -1220,7 +1220,7 @@ export const sendMtgLockWarningEmail = async (
     p.to,
     "mtgLockWarning",
     {
-      heading: p.lockTonight ? "Picks lock tonight" : "Picks lock tomorrow night",
+      heading: p.lockTonight ? "Picks lock today" : "Picks lock tomorrow",
       greeting: `Hi ${p.recipientName},`,
       bodyText: `Picks for ${p.setName} lock ${p.lockAtLabel}. After that nothing can change, and everyone's picks are revealed to their groups.`,
       progressLine: complete

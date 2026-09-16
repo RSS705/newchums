@@ -63,11 +63,11 @@ export const SUBJECTS = {
   planReminder: "Tomorrow: {{planTitle}}",
   kudosReceived_one: "You got a tag at {{planTitle}}",
   kudosReceived_many: "You got {{count}} tags",
-  // MTG Prediction Challenge (spec section 8)
+  // MTG Card Evaluation Challenge (spec section 8)
   mtgWelcome: "You're in {{communityName}} for {{setName}}",
   mtgWelcome_creator: "{{communityName}} is ready. Share the invite link",
-  mtgLockWarning: "Picks lock tomorrow night",
-  mtgLockWarning_tonight: "Picks lock tonight",
+  mtgLockWarning: "Picks lock tomorrow",
+  mtgLockWarning_tonight: "Picks lock today",
   mtgRevealed: "The picks are in for {{setName}}",
   mtgIngestAlert: "MTG standings for {{setName}} weren't updated ({{dateLabel}})",
   planWrapUp_attendee: "Anyone earn a tag at {{planTitle}}?",

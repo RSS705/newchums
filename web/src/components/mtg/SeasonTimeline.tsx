@@ -6,8 +6,6 @@ import Chip from "@mui/material/Chip";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import CalendarMonthRoundedIcon from "@mui/icons-material/CalendarMonthRounded";
-import EventAvailableRoundedIcon from "@mui/icons-material/EventAvailableRounded";
-import Link from "@mui/material/Link";
 import { AppCard } from "@/components/ui";
 import { type TimelineEntry, formatWhen, formatWhenEastern } from "./mtgTypes";
 
@@ -17,12 +15,16 @@ function useHydrated(): boolean {
   return useSyncExternalStore(noSubscribe, () => true, () => false);
 }
 
+/** Height of an entry's title line; the dot sits in a box this tall so it
+ *  centres on the title whatever the chips beside it do. */
+const TITLE_LINE = 24;
+/** 6.5:1 on white and 5.6:1 on the highlighted row. */
+const LOCK_RED = "#B91C1C";
+
 /** The dates that matter to players, each with done / now / upcoming, shown
- *  in the viewer's own time zone. The current phase is highlighted. */
-export default function SeasonTimeline({ entries, setName, setCode }: { entries: TimelineEntry[]; setName: string; setCode?: string }) {
-  // The lock and the final day carry "Add to calendar" (spec 4.2), served
-  // same-origin by the web app's calendar route.
-  const calendarHref = (key: string) => (setCode ? `/mtg/calendar/${encodeURIComponent(setCode)}/${key}.ics` : null);
+ *  in the viewer's own time zone. The current phase is highlighted, and the
+ *  lock is in red. */
+export default function SeasonTimeline({ entries, setName }: { entries: TimelineEntry[]; setName: string }) {
   // Server HTML cannot know the reader's time zone, so it shows Eastern time
   // and the client swaps in local times after hydration.
   const hydrated = useHydrated();
@@ -58,16 +60,18 @@ export default function SeasonTimeline({ entries, setName, setCode }: { entries:
                 opacity: done ? 0.6 : 1,
               }}
             >
-              <Box
-                sx={{
-                  width: 10, height: 10, borderRadius: "50%", mt: "6px", flexShrink: 0,
-                  bgcolor: isNow ? "primary.main" : done ? "text.disabled" : "transparent",
-                  border: "2px solid", borderColor: isNow ? "primary.main" : done ? "text.disabled" : "divider",
-                }}
-              />
+              <Box sx={{ height: TITLE_LINE, display: "flex", alignItems: "center", flexShrink: 0 }}>
+                <Box
+                  sx={{
+                    width: 10, height: 10, borderRadius: "50%",
+                    bgcolor: isNow ? "primary.main" : done ? "text.disabled" : "transparent",
+                    border: "2px solid", borderColor: isNow ? "primary.main" : done ? "text.disabled" : "divider",
+                  }}
+                />
+              </Box>
               <Box sx={{ minWidth: 0, flex: 1 }}>
-                <Stack direction="row" spacing={1} alignItems="center" useFlexGap flexWrap="wrap">
-                  <Typography variant="body2" fontWeight={700} sx={{ textDecoration: done ? "line-through" : "none" }}>{e.label}</Typography>
+                <Stack direction="row" spacing={1} alignItems="center" useFlexGap flexWrap="wrap" sx={{ minHeight: TITLE_LINE }}>
+                  <Typography variant="body2" fontWeight={700} sx={{ lineHeight: `${TITLE_LINE}px`, textDecoration: done ? "line-through" : "none", color: e.key === "lock" && !done ? LOCK_RED : undefined }}>{e.label}</Typography>
                   {isNow && <Chip label="Happening now" size="small" color="primary" sx={{ height: 20, fontSize: "0.6875rem", fontWeight: 700 }} />}
                   {done && <Chip label="Done" size="small" variant="outlined" sx={{ height: 20, fontSize: "0.6875rem" }} />}
                 </Stack>
@@ -77,17 +81,6 @@ export default function SeasonTimeline({ entries, setName, setCode }: { entries:
                 <Typography variant="caption" sx={{ display: "block", color: done ? "text.disabled" : "text.secondary", lineHeight: 1.45 }}>
                   {e.detail}
                 </Typography>
-                {e.calendar && !done && calendarHref(e.key) && (
-                  <Link
-                    href={calendarHref(e.key) ?? undefined}
-                    underline="hover"
-                    variant="caption"
-                    sx={{ display: "inline-flex", alignItems: "center", gap: 0.5, mt: 0.5, fontWeight: 700, minHeight: 28 }}
-                  >
-                    <EventAvailableRoundedIcon sx={{ fontSize: 15 }} />
-                    Add to calendar
-                  </Link>
-                )}
               </Box>
             </Stack>
           );

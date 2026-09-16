@@ -24,8 +24,8 @@ Add the lock to your calendar: {{lockCalendarUrl}}
 
 ---
 
-You're receiving this because you're playing the MTG Prediction Challenge on NewChums.
-{{#unsubscribeUrl}}Turn off MTG Prediction Challenge emails: {{.}}{{/unsubscribeUrl}}
+You're receiving this because you're playing the MTG Card Evaluation Challenge on NewChums.
+{{#unsubscribeUrl}}Turn off MTG Card Evaluation Challenge emails: {{.}}{{/unsubscribeUrl}}
 
-MTG Prediction Challenge is unofficial Fan Content permitted under the Fan Content Policy. Not approved/endorsed by Wizards.
+MTG Card Evaluation Challenge is unofficial Fan Content permitted under the Fan Content Policy. Not approved/endorsed by Wizards.
 © {{year}} {{productName}}

@@ -43,15 +43,29 @@ describe("mtgPhase", () => {
 });
 
 describe("mtgTimeline", () => {
-  it("is sorted, marks the current entry and puts calendar links on lock and final", () => {
+  it("is sorted, marks the current entry, and opens picks with the previews", () => {
     const entries = mtgTimeline(fra, new Date("2026-09-10T12:00:00Z"));
     const times = entries.map((e) => new Date(e.at).getTime());
     expect([...times].sort((a, b) => a - b)).toEqual(times);
-    expect(entries[0]).toMatchObject({ key: "previews", status: "now" });
+    expect(entries[0]).toMatchObject({ key: "previews", label: "Previews start, picks open", status: "now" });
     expect(entries.filter((e) => e.status === "now")).toHaveLength(1);
-    expect(entries.find((e) => e.key === "lock")?.calendar).toBe(true);
-    expect(entries.find((e) => e.key === "final")?.calendar).toBe(true);
+    expect(entries.some((e) => e.key === "picks_open")).toBe(false);
     expect(entries[entries.length - 1].key).toBe("final");
+  });
+
+  it("puts the lock ahead of prereleases that start at the same moment", () => {
+    const friday = "2026-09-25T22:00:00Z";
+    const keys = mtgTimeline({ ...fra, lock_at: friday, prerelease_start_at: friday }).map((e) => e.key);
+    expect(keys.indexOf("lock")).toBe(keys.indexOf("prerelease") - 1);
+  });
+
+  it("keeps weekly entries at 10 AM Eastern after the clocks change", () => {
+    const long = { ...fra, final_at: "2026-11-13T14:00:00Z" };
+    const weekly = mtgTimeline(long).filter((e) => e.key.startsWith("weekly_"));
+    expect(weekly.some((w) => new Date(w.at).getTime() > Date.parse("2026-11-01T06:00:00Z"))).toBe(true);
+    for (const w of weekly) {
+      expect(new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", weekday: "short", hour: "numeric", hour12: false }).format(new Date(w.at))).toMatch(/^Tue,? 10$/);
+    }
   });
 
   it("puts weekly standings on Tuesdays at 10 AM Eastern and skips the final week", () => {

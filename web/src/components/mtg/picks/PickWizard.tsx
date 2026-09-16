@@ -133,7 +133,7 @@ export default function PickWizard() {
         if (!cData.ok || !cData.community) { setLoad({ kind: "error", message: "We couldn't find that community." }); return; }
         setCommunityName(cData.community.name ?? "");
         if (cData.community.specialization !== "mtg_prediction_challenge") {
-          setLoad({ kind: "error", message: "This community isn't an MTG Prediction Challenge." });
+          setLoad({ kind: "error", message: "This community isn't an MTG Card Evaluation Challenge." });
           return;
         }
         if (cData.viewerMembership?.status !== "active") { setLoad({ kind: "not_member", name: cData.community.name ?? "this community" }); return; }
@@ -455,10 +455,7 @@ export default function PickWizard() {
           <Box sx={{ minWidth: 0 }}>
             <Typography component="h1" sx={{ fontWeight: 800, fontSize: { xs: "1.625rem", sm: "2rem" }, lineHeight: 1.15 }}>Your picks</Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-              {setInfo.name}. One entry counts in every group you&apos;re in.{" "}
-              <Typography component={Link} href="/mtg/how-scoring-works" onClick={leaveTo("/mtg/how-scoring-works")} variant="body2" sx={{ fontWeight: 700, color: "primary.main", textDecoration: "none", "&:hover": { textDecoration: "underline" } }}>
-                How scoring works
-              </Typography>
+              Current Set: {setInfo.name}. You pick once, and these picks count in every challenge group you&apos;re in.
             </Typography>
           </Box>
           <Stack direction="row" spacing={1.25} alignItems="center" useFlexGap flexWrap="wrap">
