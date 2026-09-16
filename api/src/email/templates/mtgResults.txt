@@ -1,0 +1,52 @@
+{{heading}}
+
+{{greeting}}
+
+{{bodyText}}
+
+{{#hasGroups}}
+---
+
+Your groups
+{{#groups}}
+
+{{name}} ({{url}})
+{{standingLine}}
+{{championLine}}
+{{#moments}}
+{{.}}
+{{/moments}}
+{{/groups}}
+
+{{/hasGroups}}
+{{#hasBadges}}
+---
+
+Your badges
+{{badgeLine}}
+{{#badges}}
+{{name}}: {{description}}
+{{/badges}}
+
+{{/hasBadges}}
+{{#nextSeasonLine}}
+---
+
+{{.}}
+
+{{/nextSeasonLine}}
+---
+
+{{ctaText}}: {{ctaUrl}}
+
+{{ctaHelperText}}
+
+How scoring works: {{scoringUrl}}
+
+---
+
+You're receiving this because you're in an MTG Card Evaluation Challenge group on NewChums.
+{{#unsubscribeUrl}}Turn off MTG Card Evaluation Challenge emails: {{.}}{{/unsubscribeUrl}}
+
+MTG Card Evaluation Challenge is unofficial Fan Content permitted under the Fan Content Policy. Not approved/endorsed by Wizards.
+© {{year}} {{productName}}

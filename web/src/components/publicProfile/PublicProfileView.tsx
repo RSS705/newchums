@@ -26,6 +26,7 @@ import ProfileChumsSection from "./ProfileChumsSection";
 import ProfileCommunitiesSection from "./ProfileCommunitiesSection";
 import ProfileHobbiesSection from "./ProfileHobbiesSection";
 import ProfileSectionHeader from "./ProfileSectionHeader";
+import ProfileMtgBadgesSection from "./ProfileMtgBadgesSection";
 import PublicProfileKudosSection from "./PublicProfileKudosSection";
 
 export type PublicProfileUser = {
@@ -354,6 +355,10 @@ export default function PublicProfileView({ user, avatarBaseUrl, isOwner, chumAc
           viewerLoggedIn={!!viewerLoggedIn}
         />
       )}
+
+      {/* The MTG Card Evaluation Challenge trophy case: badges by season, with
+          private groups unnamed to non-members. Empty renders nothing. */}
+      {ownerHandleSlug && <ProfileMtgBadgesSection handle={ownerHandleSlug} viewerLoggedIn={!!viewerLoggedIn} />}
 
       {/* Public connections section, self-contained card, hidden if owner toggled it off or list is empty */}
       {ownerHandleSlug && !user.is_hidden_chum_list && (

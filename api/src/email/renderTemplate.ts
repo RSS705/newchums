@@ -73,6 +73,8 @@ import mtgLockWarningHtml from "./templates/mtgLockWarning.html";
 import mtgLockWarningTxt from "./templates/mtgLockWarning.txt";
 import mtgRevealedHtml from "./templates/mtgRevealed.html";
 import mtgRevealedTxt from "./templates/mtgRevealed.txt";
+import mtgResultsHtml from "./templates/mtgResults.html";
+import mtgResultsTxt from "./templates/mtgResults.txt";
 import mtgIngestAlertHtml from "./templates/mtgIngestAlert.html";
 import mtgIngestAlertTxt from "./templates/mtgIngestAlert.txt";
 import planRemovedByAdminHtml from "./templates/planRemovedByAdmin.html";
@@ -130,6 +132,7 @@ const TEMPLATES: Record<string, TemplatePair> = {
   mtgWelcome: { html: mtgWelcomeHtml, text: mtgWelcomeTxt },
   mtgLockWarning: { html: mtgLockWarningHtml, text: mtgLockWarningTxt },
   mtgRevealed: { html: mtgRevealedHtml, text: mtgRevealedTxt },
+  mtgResults: { html: mtgResultsHtml, text: mtgResultsTxt },
   mtgIngestAlert: { html: mtgIngestAlertHtml, text: mtgIngestAlertTxt },
   planRemovedByAdmin: { html: planRemovedByAdminHtml, text: planRemovedByAdminTxt },
   planSignin: { html: planSigninHtml, text: planSigninTxt },

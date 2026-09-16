@@ -13,6 +13,7 @@ import Tabs from "@mui/material/Tabs";
 import Typography from "@mui/material/Typography";
 import CheckCircleRoundedIcon from "@mui/icons-material/CheckCircleRounded";
 import GroupsRoundedIcon from "@mui/icons-material/GroupsRounded";
+import HistoryRoundedIcon from "@mui/icons-material/HistoryRounded";
 import LeaderboardRoundedIcon from "@mui/icons-material/LeaderboardRounded";
 import LockClockOutlinedIcon from "@mui/icons-material/LockClockOutlined";
 import MenuBookRoundedIcon from "@mui/icons-material/MenuBookRounded";
@@ -23,10 +24,11 @@ import SeasonTimeline from "./SeasonTimeline";
 import { rememberChallengeGroup } from "./challengeGroup";
 import RevealSummary from "./reveal/RevealSummary";
 import Leaderboard from "./leaderboard/Leaderboard";
+import SeasonResults from "./results/SeasonResults";
 import CardViewer from "./picks/CardViewer";
 import {
   MTG_ATTRIBUTION, MTG_RARITIES, MTG_TOTAL_PICKS, RARITY_LABEL,
-  type MtgCard, type MtgProgressMember, type MtgRarity, type MtgSetPayload, countdown, formatWhen,
+  type MtgCard, type MtgProgressMember, type MtgRarity, type MtgSeasonRef, type MtgSetPayload, countdown, formatWhen, seasonPageHref,
 } from "./mtgTypes";
 
 type Props = {
@@ -45,10 +47,10 @@ const PHASE_COPY: Record<MtgSetPayload["phase"], { title: string; body: string }
   open: { title: "Picks are open", body: "Pick the five cards you think will post the highest win rate at each rarity, in order. Everything saves as you go." },
   locked: { title: "Picks are locked", body: "Nobody can change their picks now, and everyone's picks are revealed to the group. Standings start the morning after the Arena launch." },
   live: { title: "The season is live", body: "Standings update every morning from 17Lands Premier Draft data." },
-  final: { title: "Season complete", body: "The last standings of the season are in." },
+  final: { title: "Season complete", body: "The final standings are in, with the podium, every badge the group earned, and a results image to share." },
 };
-/** The final day before its standings are published: the clock says final, the data doesn't yet. */
-const FINAL_PENDING = { title: "Final day", body: "The last standings of the season appear as soon as 17Lands' data is in." };
+/** The final day until the season is finalized: the clock says final, the data doesn't yet. */
+const FINAL_PENDING = { title: "Final day", body: "The last standings of the season appear as soon as 17Lands' data is in, then the podium, everyone's badges and an email with your results." };
 
 /** Grey placeholder widths for the blank standings' player names. */
 const BLANK_ROWS = ["58%", "44%", "36%"];
@@ -128,6 +130,8 @@ export default function MtgChallengeHome({ communityId, communityName, slug, isM
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [progress, setProgress] = useState<MtgProgressMember[] | null>(null);
+  // The seasons this group has played, for past seasons and last season's results.
+  const [seasons, setSeasons] = useState<MtgSeasonRef[] | null>(null);
   // After the lock the pool grid starts folded away, so the Reveal leads.
   const [poolOpen, setPoolOpen] = useState(false);
 
@@ -167,6 +171,16 @@ export default function MtgChallengeHome({ communityId, communityName, slug, isM
   }, [setCode, communityId, isMember, isAuthenticated]);
   const myPicked = progress?.find((m) => m.isViewer)?.picked ?? null;
 
+  useEffect(() => {
+    if (!setCode || !isMember || !isAuthenticated) return;
+    let cancelled = false;
+    apiFetch(`/mtg/communities/${communityId}/seasons`, { auth: true })
+      .then((r) => r.json())
+      .then((d: { ok?: boolean; seasons?: MtgSeasonRef[] }) => { if (!cancelled && d.ok && Array.isArray(d.seasons)) setSeasons(d.seasons); })
+      .catch(() => { /* past seasons are extra; the page works without them */ });
+    return () => { cancelled = true; };
+  }, [setCode, communityId, isMember, isAuthenticated]);
+
   // The clock can pass the lock while the page is open; the minute tick then
   // switches the home to the Reveal without a reload.
   const pastLock = !!set && nowMs >= Date.parse(set.dates.lockAt);
@@ -201,8 +215,8 @@ export default function MtgChallengeHome({ communityId, communityName, slug, isM
     );
   }
 
-  const finalStandingsIn = !!set.standings && set.standings.day !== null && set.standings.totalDays !== null && set.standings.day >= set.standings.totalDays;
-  const copy = set.phase === "final" && !finalStandingsIn
+  const finalized = set.phase === "final" && !!set.finalizedAt;
+  const copy = set.phase === "final" && !finalized
     ? FINAL_PENDING
     : PHASE_COPY[pastLock && (set.phase === "upcoming" || set.phase === "previews" || set.phase === "open") ? "locked" : set.phase];
   const list = pool ? byRarity[rarity] : null;
@@ -212,6 +226,9 @@ export default function MtgChallengeHome({ communityId, communityName, slug, isM
   const standingsLive = !!set.standings || set.phase === "live" || set.phase === "final";
   const firstStandingsAt = set.timeline.find((e) => e.key === "first_standings")?.at ?? null;
   const picksOpenNow = set.picksOpen && !pastLock;
+  // Until the next season locks, the last one's podium and badges stay on the home (spec 10.2).
+  const lastSeason = !afterLock ? seasons?.find((s) => s.final && !s.isCurrent) ?? null : null;
+  const pastSeasons = (seasons ?? []).filter((s) => !s.isCurrent && s.final);
 
   let cta: React.ReactNode = null;
   if (picksOpenNow) {
@@ -279,15 +296,39 @@ export default function MtgChallengeHome({ communityId, communityName, slug, isM
         </Stack>
         {revealOpen && !isMember && (
           <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5 }}>
-            Join the group to see everyone&apos;s picks.
+            {set.phase === "final"
+              ? "Join the group to see the final standings and everyone's picks, and to play next season."
+              : `Picks for ${set.name} are locked, so new members follow this season and play from the next one. Join to see everyone's picks and the standings.`}
           </Typography>
         )}
         {!standingsLive && <BlankStandings firstStandingsAt={firstStandingsAt} picksOpen={picksOpenNow} />}
       </AppCard>
 
+      {/* Between seasons, last season's podium and badges until this one locks. */}
+      {isMember && lastSeason && (
+        <SeasonResults
+          communityId={communityId}
+          communityName={communityName}
+          slug={slug}
+          setCode={lastSeason.code}
+          past
+          heading={`Last season: ${lastSeason.name}`}
+          seasonHref={seasonPageHref(slug, lastSeason)}
+        />
+      )}
+
       {/* From the Arena launch the standings lead (waiting for the first day at
-          first), and the Reveal sits one tap below. */}
-      {isMember && standingsLive && <Leaderboard communityId={communityId} slug={slug} setCode={set.code} nowMs={nowMs} firstStandingsAt={firstStandingsAt} />}
+          first), and the Reveal sits one tap below. Once the season is over the
+          podium comes first, then the final standings, then every badge. */}
+      {isMember && finalized ? (
+        <SeasonResults
+          communityId={communityId}
+          communityName={communityName}
+          slug={slug}
+          setCode={set.code}
+          between={<Leaderboard communityId={communityId} slug={slug} setCode={set.code} nowMs={nowMs} firstStandingsAt={firstStandingsAt} />}
+        />
+      ) : isMember && standingsLive && <Leaderboard communityId={communityId} slug={slug} setCode={set.code} nowMs={nowMs} firstStandingsAt={firstStandingsAt} />}
       {revealOpen && isMember && <RevealSummary communityId={communityId} slug={slug} />}
 
       {/* Every member and how far along their picks are. Counts only: nobody's
@@ -425,6 +466,25 @@ export default function MtgChallengeHome({ communityId, communityName, slug, isM
           </>
         )}
       </AppCard>
+
+      {pastSeasons.length > 0 && (
+        <AppCard>
+          <Stack direction="row" spacing={1.25} alignItems="center" sx={{ mb: 1.5 }}>
+            <IconDisc><HistoryRoundedIcon sx={{ fontSize: 18 }} /></IconDisc>
+            <Box sx={{ minWidth: 0 }}>
+              <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem", lineHeight: 1.2 }}>Past seasons</Typography>
+              <Typography variant="caption" color="text.secondary">Final standings, badges and everyone&apos;s picks from each season the group played.</Typography>
+            </Box>
+          </Stack>
+          <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+            {pastSeasons.map((s) => (
+              <Button key={s.code} component={Link} href={seasonPageHref(slug, s)} variant="outlined" sx={{ ...buttonSx, minHeight: 44 }}>
+                {s.name}
+              </Button>
+            ))}
+          </Stack>
+        </AppCard>
+      )}
 
       <SeasonTimeline entries={set.timeline} setName={set.name} />
 

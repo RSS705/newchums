@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  MTG_SLOT_WEIGHTS, checkSnapshot, computeCardScores, isDateKey, matchFeed, mtgIngestDateAllowed, mtgIngestSlot, mtgIngestWindow, mtgJoinCutoff, mtgStandingsDay,
+  MTG_SLOT_WEIGHTS, checkSnapshot, computeCardScores, isDateKey, matchFeed, mtgIngestDateAllowed, mtgIngestSlot, mtgIngestWindow, mtgStandingsDay,
   normalizeCardName, parseCardDataFeed, rankGroupDay, rankStandings, scoreEntry, type FeedRecord, type PoolCard,
 } from "../mtgScoring";
 
@@ -212,25 +212,14 @@ describe("standings", () => {
 });
 
 describe("rankGroupDay", () => {
-  const member = (id: string, entry: string | null, joined: string) => ({ id, entry_id: entry, completed_at: "2026-09-20T00:00:00Z", updated_at: "2026-09-20T00:00:00Z", joined_at: joined });
-  const members = [member("ann", "e1", "2026-09-01T00:00:00Z"), member("bo", "e2", "2026-09-01T00:00:00Z"), member("cy", "e3", "2026-10-03T12:00:00Z"), member("di", null, "2026-09-01T00:00:00Z")];
+  const member = (id: string, entry: string | null) => ({ id, entry_id: entry, completed_at: "2026-09-20T00:00:00Z", updated_at: "2026-09-20T00:00:00Z" });
+  const members = [member("ann", "e1"), member("bo", "e2"), member("cy", "e3"), member("di", null)];
   const scores = new Map([["e1", { total: "900", slot1_points: "100" }], ["e2", { total: 1100, slot1_points: 120 }], ["e3", { total: "1200", slot1_points: "90" }]]);
 
   it("ranks the members with points that day, highest first", () => {
     expect(rankGroupDay(members, scores).map((r) => [r.key, r.rank, r.total])).toEqual([["cy", 1, 1200], ["bo", 2, 1100], ["ann", 3, 900]]);
   });
-  it("leaves out anyone who joined after the day being ranked", () => {
-    const before = rankGroupDay(members, scores, Date.parse("2026-10-02T13:00:00Z"));
-    expect(before.map((r) => [r.key, r.rank])).toEqual([["bo", 1], ["ann", 2]]);
-  });
   it("skips members without an entry or without points that day", () => {
     expect(rankGroupDay(members, new Map([["e1", { total: 10, slot1_points: 1 }]])).map((r) => r.key)).toEqual(["ann"]);
-  });
-});
-
-describe("mtgJoinCutoff", () => {
-  it("is 9 AM Eastern on the next published day, either side of the clock change", () => {
-    expect(new Date(mtgJoinCutoff("2026-10-01")).toISOString()).toBe("2026-10-01T13:00:00.000Z");
-    expect(new Date(mtgJoinCutoff("2026-11-02")).toISOString()).toBe("2026-11-02T14:00:00.000Z");
   });
 });

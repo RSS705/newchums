@@ -1,4 +1,4 @@
-import { MTG_RARITIES, easternDateKey, easternHour, easternToUtc, type MtgRarity } from "./mtg";
+import { MTG_RARITIES, easternDateKey, easternHour, type MtgRarity } from "./mtg";
 
 // ── Constants from the spec ──────────────────────────────────────────────────
 
@@ -324,39 +324,24 @@ export function rankStandings<T extends StandingInput>(rows: T[]): Array<T & { r
   });
 }
 
-/**
- * Who counts on a past day's group standings (spec 10.5): the members who had
- * joined by 9 AM ET on the next published day, when that day stopped being the
- * newest on the leaderboard. Worked out from dates rather than publish times,
- * so re-publishing or publishing a day late never changes who counted, and a
- * member who joined after a day was published isn't shown as new twice.
- */
-export function mtgJoinCutoff(nextSnapshotDate: string): number {
-  const [y, m, d] = nextSnapshotDate.split("-").map(Number);
-  return easternToUtc(y, m, d, 9, 0).getTime();
-}
-
 export type GroupMemberStanding = {
   id: string;
   entry_id: string | null;
   completed_at: string | Date | null;
   updated_at: string | Date | null;
-  joined_at: string | Date;
 };
 
 /**
  * One day of a group's standings, ranked the way the leaderboard shows them:
- * the members with points that day. With `joinedBy`, members who joined the
- * group after that moment are left out, so an earlier day is ranked as the
- * group was then and a newcomer is never slotted into it after the fact
- * (which would push everyone below them down a place and invent movement).
+ * the members with points that day. Who plays is decided before this, by the
+ * group's roster for the season (`mtg_season_player`), which gives members
+ * outside it no `entry_id`, so every day ranks the same players.
  */
 export function rankGroupDay<M extends GroupMemberStanding, S extends { total: string | number; slot1_points: string | number }>(
   members: M[],
   scores: Map<string, S>,
-  joinedBy: number | null = null,
 ) {
-  const eligible = members.filter((m) => m.entry_id !== null && scores.has(m.entry_id) && (joinedBy === null || new Date(m.joined_at).getTime() <= joinedBy));
+  const eligible = members.filter((m) => m.entry_id !== null && scores.has(m.entry_id));
   return rankStandings(eligible.map((m) => {
     const score = scores.get(m.entry_id as string) as S;
     return { key: m.id, member: m, score, total: Number(score.total), slot1: Number(score.slot1_points), completedAt: m.completed_at, updatedAt: m.updated_at };

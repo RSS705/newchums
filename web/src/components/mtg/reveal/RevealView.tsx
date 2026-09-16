@@ -2,7 +2,7 @@
 
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import Avatar from "@mui/material/Avatar";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -19,7 +19,7 @@ import { apiFetch, getAvatarBaseUrl } from "@/lib/apiClient";
 import CardViewer from "../picks/CardViewer";
 import {
   MTG_ATTRIBUTION, MTG_RARITIES, MTG_SLOTS_PER_RARITY, RARITY_LABEL, RARITY_PLURAL,
-  type MtgCard, type MtgRarity, type MtgRevealPayload, type MtgRevealPlayer, formatWhen,
+  type MtgCard, type MtgRarity, type MtgRevealPayload, type MtgRevealPlayer, formatWhen, seasonFromSearch, seasonQuery,
 } from "../mtgTypes";
 import BadgeChip from "./BadgeChip";
 
@@ -171,6 +171,8 @@ const PlayerRow = memo(function PlayerRow({ player, rarity, onOpen }: { player: 
 export default function RevealView() {
   const params = useParams<{ slug: string }>();
   const slug = params?.slug ?? "";
+  // A past season's Reveal, opened from its season page.
+  const season = seasonFromSearch(useSearchParams());
   const [load, setLoad] = useState<Load>({ kind: "loading" });
   const [rarity, setRarity] = useState<MtgRarity>("mythic");
   const [viewer, setViewer] = useState<Viewer | null>(null);
@@ -189,7 +191,7 @@ export default function RevealView() {
           return;
         }
         group = { name: cData.community.name, slug };
-        const rRes = await apiFetch(`/mtg/communities/${cData.community.id}/reveal`, { auth: true });
+        const rRes = await apiFetch(`/mtg/communities/${cData.community.id}/reveal${seasonQuery(season)}`, { auth: true });
         const rData = await rRes.json();
         if (cancelled) return;
         if (rRes.status === 403 && rData.error === "SEALED") { setLoad({ kind: "sealed", lockAt: rData.lockAt ?? null, group }); return; }
@@ -197,7 +199,7 @@ export default function RevealView() {
         if (!rRes.ok || !rData.ok) { setLoad({ kind: "error", message: "We couldn't load the Reveal. Try again in a moment.", group }); return; }
         const data = rData as MtgRevealPayload;
         let celebrate = false;
-        if (data.entries > 0) {
+        if (data.entries > 0 && !season) {
           try {
             const key = `mtg-reveal-seen:${data.set.code}`;
             if (!window.localStorage.getItem(key)) {
@@ -212,7 +214,7 @@ export default function RevealView() {
       }
     })();
     return () => { cancelled = true; };
-  }, [slug]);
+  }, [slug, season]);
 
   const openViewer = useCallback((list: MtgCard[], index: number) => setViewer({ list, index: Math.max(0, index) }), []);
   const data = load.kind === "ready" ? load.data : null;
@@ -221,8 +223,8 @@ export default function RevealView() {
   const groupName = data ? data.community.name : load.kind === "sealed" || load.kind === "error" ? load.group?.name : undefined;
 
   const back = (
-    <Button component={Link} href={`/communities/${slug}`} variant="text" size="small" startIcon={<ArrowBackRoundedIcon />} sx={{ textTransform: "none", fontWeight: 600, color: "text.secondary", ml: -1, mb: 0.5, minHeight: 40, boxShadow: "none" }}>
-      {groupName ?? "Back"}
+    <Button component={Link} href={season ? `/communities/${slug}/seasons/${season}` : `/communities/${slug}`} variant="text" size="small" startIcon={<ArrowBackRoundedIcon />} sx={{ textTransform: "none", fontWeight: 600, color: "text.secondary", ml: -1, mb: 0.5, minHeight: 40, boxShadow: "none" }}>
+      {season && data ? data.set.name : groupName ?? "Back"}
     </Button>
   );
 

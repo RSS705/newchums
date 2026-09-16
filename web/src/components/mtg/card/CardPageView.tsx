@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import NextLink from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import Avatar from "@mui/material/Avatar";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -23,7 +23,7 @@ import { loadChallengeGroup, type ChallengeGroupRef } from "../challengeGroup";
 import { IconTitle, StatTile, srOnly } from "../pageBits";
 import {
   MTG_ATTRIBUTION, RARITY_PLURAL, RARITY_SINGULAR, SLOT_MULTIPLIERS,
-  formatCount, formatDayKey, formatWinRate, ordinal, type MtgCardPagePayload,
+  formatCount, formatDayKey, formatWinRate, ordinal, seasonFromSearch, seasonQuery, type MtgCardPagePayload,
 } from "../mtgTypes";
 
 type Load =
@@ -45,6 +45,8 @@ export default function CardPageView() {
   const params = useParams<{ slug: string; cardId: string }>();
   const slug = params?.slug ?? "";
   const cardId = params?.cardId ?? "";
+  // A past season's page names it; links from here keep it.
+  const season = seasonFromSearch(useSearchParams());
   const [load, setLoad] = useState<Load>({ kind: "loading" });
   const [showBack, setShowBack] = useState(false);
   // Bumped by Try again, which reruns the load below.
@@ -59,7 +61,7 @@ export default function CardPageView() {
         group = await loadChallengeGroup(slug);
         if (cancelled) return;
         if (!group) { setLoad({ kind: "error", message: "We couldn't find that challenge group.", group: null, retry: false }); return; }
-        const res = await apiFetch(`/mtg/communities/${group.id}/cards/${encodeURIComponent(cardId)}`, { auth: true });
+        const res = await apiFetch(`/mtg/communities/${group.id}/cards/${encodeURIComponent(cardId)}${seasonQuery(season)}`, { auth: true });
         const body = await res.json();
         if (cancelled) return;
         if (res.status === 403) { setLoad({ kind: "error", message: `Join ${group.name} to see its cards.`, group, retry: false }); return; }
@@ -71,14 +73,14 @@ export default function CardPageView() {
       }
     })();
     return () => { cancelled = true; };
-  }, [slug, cardId, attempt]);
+  }, [slug, cardId, season, attempt]);
 
   const data = load.kind === "ready" ? load.data : null;
   const groupName = data ? data.community.name : load.kind === "error" ? load.group?.name : undefined;
   const back = (
-    <Button component={NextLink} href={`/communities/${slug}`} variant="text" size="small" startIcon={<ArrowBackRoundedIcon />}
+    <Button component={NextLink} href={season ? `/communities/${slug}/seasons/${season}` : `/communities/${slug}`} variant="text" size="small" startIcon={<ArrowBackRoundedIcon />}
       sx={{ textTransform: "none", fontWeight: 600, color: "text.secondary", ml: -1, mb: 0.5, minHeight: 40, boxShadow: "none" }}>
-      {groupName ?? "Back"}
+      {season && data ? data.set.name : groupName ?? "Back"}
     </Button>
   );
 
@@ -221,7 +223,7 @@ export default function CardPageView() {
                     {who.replace(/^@/, "").charAt(0).toUpperCase()}
                   </Avatar>
                   <Box sx={{ minWidth: 0, flex: 1 }}>
-                    <Link component={NextLink} href={`/communities/${slug}/players/${p.userId}`} underline="hover" color="text.primary"
+                    <Link component={NextLink} href={`/communities/${slug}/players/${p.userId}${seasonQuery(season)}`} underline="hover" color="text.primary"
                       sx={{ fontWeight: 700, fontSize: "0.9375rem", overflowWrap: "anywhere", "&::after": { content: '""', position: "absolute", inset: 0, borderRadius: 1.5 }, "&:focus-visible": { outline: "none" }, "&:focus-visible::after": { outline: "2px solid", outlineColor: "primary.main", outlineOffset: -2 } }}>
                       {who}
                     </Link>

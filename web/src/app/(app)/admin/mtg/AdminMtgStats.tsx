@@ -226,7 +226,7 @@ export default function AdminMtgStats({ code }: { code: string }) {
         )}
       </Stack>
       <TextField size="small" label="Day" placeholder="today" value={day} onChange={(e) => setDay(e.target.value)} sx={{ mt: 1.5, maxWidth: 260, width: "100%" }}
-        helperText="Blank fetches and pastes today. Name a day like 2026-10-27 to publish one that has already ended." />
+        helperText="Blank fetches and pastes today. A fetch can name only the final day, once it has ended, since 17Lands' feed has today's numbers. To fill in another day, paste a response saved that day and name it, like 2026-10-27." />
 
       {retry && (
         <Alert

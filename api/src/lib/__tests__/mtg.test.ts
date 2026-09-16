@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { collectorSort, easternHour, mtgPhase, mtgTimeline, type MtgSetRow } from "../mtg";
+import { MTG_BADGES, MTG_FINALIZE_GRACE_MS, collectorSort, easternHour, mtgFinalizeDue, mtgPhase, mtgPicksOpenAt, mtgResultsEmailAt, mtgTimeline, type MtgSetRow } from "../mtg";
 
 // Reality Fracture as seeded by migration 123.
 const fra: MtgSetRow = {
@@ -83,5 +83,50 @@ describe("easternHour", () => {
     expect(easternHour(new Date("2026-09-11T10:30:00Z"))).toBe(6); // EDT, UTC-4
     expect(easternHour(new Date("2026-12-11T11:30:00Z"))).toBe(6); // EST, UTC-5
     expect(easternHour(new Date("2026-09-11T03:30:00Z"))).toBe(23);
+  });
+});
+
+describe("the season's end", () => {
+  // The production final day: Friday, November 13, 9 AM EST.
+  const season = { status: "active", final_at: "2026-11-13T14:00:00Z" };
+  const at = (iso: string) => new Date(iso);
+
+  it("finalizes once the final day's standings are published", () => {
+    expect(mtgFinalizeDue(season, "2026-11-13", at("2026-11-13T14:05:00Z"))).toBe(true);
+    // Not before the final morning, even with that day's standings somehow in.
+    expect(mtgFinalizeDue(season, "2026-11-13", at("2026-11-13T13:59:00Z"))).toBe(false);
+  });
+
+  it("waits for the final day's standings, then ends with the latest after the grace period", () => {
+    expect(mtgFinalizeDue(season, "2026-11-12", at("2026-11-13T20:00:00Z"))).toBe(false);
+    expect(mtgFinalizeDue(season, "2026-11-12", new Date(Date.parse(season.final_at) + MTG_FINALIZE_GRACE_MS - 1))).toBe(false);
+    expect(mtgFinalizeDue(season, "2026-11-12", new Date(Date.parse(season.final_at) + MTG_FINALIZE_GRACE_MS))).toBe(true);
+  });
+
+  it("never finalizes without standings, or a season that isn't active", () => {
+    expect(mtgFinalizeDue(season, null, at("2026-12-01T00:00:00Z"))).toBe(false);
+    expect(mtgFinalizeDue({ ...season, status: "final" }, "2026-11-13", at("2026-11-13T15:00:00Z"))).toBe(false);
+  });
+
+  it("sends the results email at 10 AM ET on the final day, or when the season is finalized if later", () => {
+    expect(mtgResultsEmailAt({ final_at: season.final_at, finalized_at: "2026-11-13T14:02:00Z" }).toISOString()).toBe("2026-11-13T15:00:00.000Z");
+    expect(mtgResultsEmailAt({ final_at: season.final_at, finalized_at: "2026-11-14T16:00:00Z" }).toISOString()).toBe("2026-11-14T16:00:00.000Z");
+    expect(mtgResultsEmailAt({ final_at: season.final_at }).toISOString()).toBe("2026-11-13T15:00:00.000Z");
+  });
+
+  it("opens the next season's picks at previews or the picks date, whichever is first", () => {
+    expect(mtgPicksOpenAt({ previews_start_at: "2026-10-20T13:00:00Z", picks_open_at: "2026-10-30T13:00:00Z" })?.toISOString()).toBe("2026-10-20T13:00:00.000Z");
+    expect(mtgPicksOpenAt({ previews_start_at: null, picks_open_at: "2026-10-30T13:00:00Z" })?.toISOString()).toBe("2026-10-30T13:00:00.000Z");
+    expect(mtgPicksOpenAt({ previews_start_at: null, picks_open_at: null })).toBeNull();
+  });
+});
+
+describe("badge tiers (Version 18)", () => {
+  it("keeps the placings every group hands out below Rare, with Champion the group's Mythic", () => {
+    expect(MTG_BADGES.champion.tier).toBe("mythic");
+    for (const code of ["runner_up", "common_sense", "uncommon_knowledge", "rare_insight", "mythic_vision", "pick_of_the_season", "sleeper_agent"]) {
+      expect(MTG_BADGES[code].tier).toBe("uncommon");
+    }
+    expect(MTG_BADGES.third_place.tier).toBe("common");
   });
 });

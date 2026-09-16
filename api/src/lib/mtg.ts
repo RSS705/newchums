@@ -30,6 +30,8 @@ export type MtgSetRow = {
   status: string;
   /** When the lock job finished (Batch 4); null until then. */
   locked_at?: string | Date | null;
+  /** When the finalize job ended the season (Batch 8); null until then. */
+  finalized_at?: string | Date | null;
 };
 
 export type MtgPhase = "upcoming" | "previews" | "open" | "locked" | "live" | "final";
@@ -96,7 +98,7 @@ export function mtgTimeline(set: MtgSetRow, now: Date = new Date()): TimelineEnt
   if (set.tabletop_release_at) {
     entries.push({ key: "paper", label: "Paper release", at: set.tabletop_release_at, detail: "The set arrives in stores." });
   }
-  entries.push({ key: "final", label: "Final day", at: set.final_at, detail: "The morning's standings are the last of the season, as the next set arrives." });
+  entries.push({ key: "final", label: "Final day", at: set.final_at, detail: "The last standings of the season, the podium and everyone's badges, and an email with your results." });
   entries.sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
   return entries.map((e) => {
     const start = new Date(e.at).getTime();
@@ -486,13 +488,15 @@ export type MtgBadgeTier = "common" | "uncommon" | "rare" | "mythic" | "shame";
  *  from what the award remembers. */
 export const MTG_BADGES: Record<string, { number: number; name: string; tier: MtgBadgeTier; description: string }> = {
   champion: { number: 1, name: "Champion", tier: "mythic", description: "Finished first in the group." },
-  runner_up: { number: 2, name: "Runner-Up", tier: "rare", description: "Finished second in the group." },
-  third_place: { number: 3, name: "Third Place", tier: "uncommon", description: "Finished third in the group." },
-  common_sense: { number: 4, name: "Common Sense", tier: "rare", description: "Had the group's highest commons subtotal." },
-  uncommon_knowledge: { number: 5, name: "Uncommon Knowledge", tier: "rare", description: "Had the group's highest uncommons subtotal." },
-  rare_insight: { number: 6, name: "Rare Insight", tier: "rare", description: "Had the group's highest rares subtotal." },
-  mythic_vision: { number: 7, name: "Mythic Vision", tier: "rare", description: "Had the group's highest mythics subtotal." },
-  pick_of_the_season: { number: 8, name: "Pick of the Season", tier: "rare", description: "Made the pick that earned the most points in the group." },
+  // Tiers recalibrated in Version 18: every group hands out these honors, so as
+  // Rares they gave most players a Rare, where spec 7.6 expects one in ten.
+  runner_up: { number: 2, name: "Runner-Up", tier: "uncommon", description: "Finished second in the group." },
+  third_place: { number: 3, name: "Third Place", tier: "common", description: "Finished third in the group." },
+  common_sense: { number: 4, name: "Common Sense", tier: "uncommon", description: "Had the group's highest commons subtotal." },
+  uncommon_knowledge: { number: 5, name: "Uncommon Knowledge", tier: "uncommon", description: "Had the group's highest uncommons subtotal." },
+  rare_insight: { number: 6, name: "Rare Insight", tier: "uncommon", description: "Had the group's highest rares subtotal." },
+  mythic_vision: { number: 7, name: "Mythic Vision", tier: "uncommon", description: "Had the group's highest mythics subtotal." },
+  pick_of_the_season: { number: 8, name: "Pick of the Season", tier: "uncommon", description: "Made the pick that earned the most points in the group." },
   comeback_kid: { number: 9, name: "Comeback Kid", tier: "uncommon", description: "Made the group's biggest climb from the first standings, at least two places." },
   king_of_the_hill: { number: 10, name: "King of the Hill", tier: "uncommon", description: "Spent the most days in first place in the group." },
   contrarian: { number: 11, name: "Contrarian", tier: "uncommon", description: "Made the picks that match the Group Mind least." },
@@ -505,7 +509,7 @@ export const MTG_BADGES: Record<string, { number: number; name: string; tier: Mt
   wire_to_wire: { number: 18, name: "Wire to Wire", tier: "mythic", description: "First in the group on every day of standings." },
   perfect_order: { number: 19, name: "Perfect Order", tier: "rare", description: "The five picks at a rarity finished in the order they were ranked." },
   oracle: { number: 20, name: "Oracle", tier: "rare", description: "Finished in the top 5% of the Everyone board." },
-  sleeper_agent: { number: 21, name: "Sleeper Agent", tier: "rare", description: "Picked a card that finished in the top 10 though drafters took it late." },
+  sleeper_agent: { number: 21, name: "Sleeper Agent", tier: "uncommon", description: "Picked a card that finished in the top 10 though drafters took it late." },
   told_you_so: { number: 22, name: "Told You So", tier: "rare", description: "A pick with a Receipts note, left out of the Group Mind, finished in the top five." },
   called_it: { number: 23, name: "Called It", tier: "uncommon", description: "A #1 pick finished #1 at its rarity." },
   sniper: { number: 24, name: "Sniper", tier: "uncommon", description: "All five picks at a rarity finished in its top 10." },
@@ -893,6 +897,42 @@ export function mtgRevealedEmailAt(lockAt: string | Date): Date {
 /** "Wednesday, September 30" in Eastern time. */
 export function formatEasternDate(at: string | Date): string {
   return new Intl.DateTimeFormat("en-US", { timeZone: EASTERN, weekday: "long", month: "long", day: "numeric" }).format(new Date(at));
+}
+
+/** How long past `final_at` the finalize job waits for the final day's
+ *  standings before ending the season with the latest day there is. */
+export const MTG_FINALIZE_GRACE_MS = 26 * 3600000;
+
+/**
+ * Whether the finalize job should end the season now (spec 12.3): once the
+ * final day has begun and its standings are published, or, if 17Lands never
+ * delivered them, once the grace period has passed, with the latest standings.
+ * Never without any standings at all.
+ */
+export function mtgFinalizeDue(
+  set: { status: string; final_at: string | Date },
+  latestSnapshotDate: string | null,
+  now: Date = new Date(),
+): boolean {
+  if (set.status !== "active" || !latestSnapshotDate) return false;
+  const finalMs = new Date(set.final_at).getTime();
+  if (now.getTime() < finalMs) return false;
+  return latestSnapshotDate >= easternDateKey(set.final_at) || now.getTime() >= finalMs + MTG_FINALIZE_GRACE_MS;
+}
+
+/** When the season results email goes out (spec section 8, email 5): 10:00
+ *  AM ET on the final day, or when the season is finalized if that's later. */
+export function mtgResultsEmailAt(set: { final_at: string | Date; finalized_at?: string | Date | null }): Date {
+  const p = easternParts(new Date(set.final_at));
+  const tenAm = easternToUtc(p.year, p.month, p.day, 10, 0);
+  const finalized = set.finalized_at ? new Date(set.finalized_at).getTime() : 0;
+  return new Date(Math.max(tenAm.getTime(), finalized));
+}
+
+/** The earliest moment a season's picks open: previews or the picks date, whichever comes first. */
+export function mtgPicksOpenAt(set: { previews_start_at: string | Date | null; picks_open_at: string | Date | null }): Date | null {
+  const starts = [set.previews_start_at, set.picks_open_at].map((v) => (v ? new Date(v).getTime() : Number.NaN)).filter((ms) => Number.isFinite(ms));
+  return starts.length > 0 ? new Date(Math.min(...starts)) : null;
 }
 
 export type FunFactPlayer = { name: string; picks: Array<{ rarity: MtgRarity; slot: number; cardId: string; cardName: string }> };

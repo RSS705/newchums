@@ -2,7 +2,7 @@
 
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import NextLink from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import Avatar from "@mui/material/Avatar";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -27,7 +27,7 @@ import { IconTitle, StatTile, srOnly } from "../pageBits";
 import BadgeChip from "../reveal/BadgeChip";
 import {
   MTG_ATTRIBUTION, MTG_RARITIES, MTG_SLOTS_PER_RARITY, MTG_TOTAL_PICKS, RARITY_LABEL, RARITY_PLURAL, SLOT_MULTIPLIERS,
-  formatCount, formatDayKey, formatWhen, formatWinRate, ordinal, smallCardImage,
+  formatCount, formatDayKey, formatWhen, formatWinRate, ordinal, seasonFromSearch, seasonQuery, smallCardImage,
   type MtgBadge, type MtgCard, type MtgPlayerPayload, type MtgPlayerPick, type MtgRarity, type MtgTopCard,
 } from "../mtgTypes";
 
@@ -252,6 +252,8 @@ export default function PlayerView() {
   const params = useParams<{ slug: string; userId: string }>();
   const slug = params?.slug ?? "";
   const userId = params?.userId ?? "";
+  // A past season's page names it; links from here keep it.
+  const season = seasonFromSearch(useSearchParams());
   const [load, setLoad] = useState<Load>({ kind: "loading" });
   const [comparing, setComparing] = useState<MtgRarity[]>([]);
   // Bumped by Try again, which reruns the load below.
@@ -266,7 +268,7 @@ export default function PlayerView() {
         group = await loadChallengeGroup(slug);
         if (cancelled) return;
         if (!group) { setLoad({ kind: "error", message: "We couldn't find that challenge group.", group: null, retry: false }); return; }
-        const res = await apiFetch(`/mtg/communities/${group.id}/players/${encodeURIComponent(userId)}`, { auth: true });
+        const res = await apiFetch(`/mtg/communities/${group.id}/players/${encodeURIComponent(userId)}${seasonQuery(season)}`, { auth: true });
         const body = await res.json();
         if (cancelled) return;
         if (res.status === 403 && body.error === "SEALED") { setLoad({ kind: "sealed", lockAt: body.lockAt ?? null, group }); return; }
@@ -279,9 +281,9 @@ export default function PlayerView() {
       }
     })();
     return () => { cancelled = true; };
-  }, [slug, userId, attempt]);
+  }, [slug, userId, season, attempt]);
 
-  const cardHref = useCallback((id: string) => `/communities/${slug}/cards/${id}`, [slug]);
+  const cardHref = useCallback((id: string) => `/communities/${slug}/cards/${id}${seasonQuery(season)}`, [slug, season]);
   const data = load.kind === "ready" ? load.data : null;
   const chartPoints = useMemo(
     () => (data ? data.history.map((h) => ({ key: h.date, label: formatDayKey(h.date), value: h.total, detail: h.rank !== null ? ordinal(h.rank) : undefined })) : []),
@@ -290,9 +292,9 @@ export default function PlayerView() {
 
   const groupName = data ? data.community.name : load.kind === "sealed" || load.kind === "error" ? load.group?.name : undefined;
   const back = (
-    <Button component={NextLink} href={`/communities/${slug}`} variant="text" size="small" startIcon={<ArrowBackRoundedIcon />}
+    <Button component={NextLink} href={season ? `/communities/${slug}/seasons/${season}` : `/communities/${slug}`} variant="text" size="small" startIcon={<ArrowBackRoundedIcon />}
       sx={{ textTransform: "none", fontWeight: 600, color: "text.secondary", ml: -1, mb: 0.5, minHeight: 40, boxShadow: "none" }}>
-      {groupName ?? "Back"}
+      {season && data ? data.set.name : groupName ?? "Back"}
     </Button>
   );
 
@@ -398,9 +400,11 @@ export default function PlayerView() {
       {!player.hasEntry || player.pickCount === 0 ? (
         <AppCard>
           <Typography variant="body2" color="text.secondary">
-            {data.set.phase === "upcoming" || data.set.phase === "previews" || data.set.phase === "open"
-              ? player.isViewer ? "You haven't made any picks yet." : `${name} hasn't made any picks yet.`
-              : player.isViewer ? "You didn't make picks this season, so you're following along." : `${name} didn't make picks this season, so they're following along.`}
+            {player.joinedAfterLock
+              ? player.isViewer ? "You joined after picks locked, so you're following this season and play from the next one." : `${name} joined after picks locked, so they're following this season and play from the next one.`
+              : data.set.phase === "upcoming" || data.set.phase === "previews" || data.set.phase === "open"
+                ? player.isViewer ? "You haven't made any picks yet." : `${name} hasn't made any picks yet.`
+                : player.isViewer ? "You didn't make picks this season, so you're following along." : `${name} didn't make picks this season, so they're following along.`}
           </Typography>
           {player.isViewer && data.set.phase !== "locked" && data.set.phase !== "live" && data.set.phase !== "final" && (
             <Button component={NextLink} href={`/communities/${slug}/picks`} variant="contained" sx={{ mt: 1.5, textTransform: "none", fontWeight: 700, borderRadius: 2.5, boxShadow: "none" }}>

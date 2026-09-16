@@ -1287,6 +1287,53 @@ export const sendMtgRevealedEmail = async (
     { subjectKey: "mtgRevealed", idempotencyKey: p.idempotencyKey },
   );
 
+/** MTG season results (spec section 8, email 5): how the player's season
+ *  finished in each of their groups, every badge they earned, and when the
+ *  next season's picks open. A champion gets the "Congratulations" version. */
+export const sendMtgResultsEmail = async (
+  env: Bindings,
+  p: {
+    to: string;
+    recipientName: string;
+    setName: string;
+    /** The group the player won, when they won one. */
+    championOf: string | null;
+    groups: Array<{ name: string; url: string; standingLine: string; championLine: string; moments: string[] }>;
+    badges: Array<{ name: string; description: string }>;
+    nextSeasonLine: string | null;
+    resultsUrl: string;
+    scoringUrl: string;
+    unsubscribeUrl: string;
+    idempotencyKey?: string;
+  },
+) =>
+  dispatch(
+    env,
+    p.to,
+    "mtgResults",
+    {
+      heading: p.championOf ? "Congratulations, champion" : "The season is over",
+      greeting: `Hi ${p.recipientName},`,
+      setName: p.setName,
+      groupName: p.championOf ?? "",
+      bodyText: p.championOf
+        ? `You won ${p.championOf} in ${p.setName}. Here's how the season finished.`
+        : `${p.setName} is over and the final standings are in. Here's how your season finished.`,
+      hasGroups: p.groups.length > 0,
+      groups: p.groups.map((g) => ({ ...g, hasMoments: g.moments.length > 0 })),
+      hasBadges: p.badges.length > 0,
+      badgeLine: `You earned ${p.badges.length} ${p.badges.length === 1 ? "badge" : "badges"} this season.`,
+      badges: p.badges,
+      nextSeasonLine: hasContent(p.nextSeasonLine) ? p.nextSeasonLine : null,
+      ctaText: "See the final standings",
+      ctaUrl: p.resultsUrl,
+      ctaHelperText: "The podium, everyone's badges, and a results image to share with your group.",
+      scoringUrl: p.scoringUrl,
+      unsubscribeUrl: hasContent(p.unsubscribeUrl) ? p.unsubscribeUrl : null,
+    },
+    { subjectKey: p.championOf ? "mtgResults_champion" : "mtgResults", idempotencyKey: p.idempotencyKey },
+  );
+
 /** MTG stats ingest alert (spec 9.1): to the admin inbox when a day's 17Lands
  *  data fails its checks, or the day ends without new standings. */
 export const sendMtgIngestAlertEmail = async (

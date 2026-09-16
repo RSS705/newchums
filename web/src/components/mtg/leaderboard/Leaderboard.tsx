@@ -22,7 +22,7 @@ import { BadgeIcon } from "../badgeIcons";
 import { srOnly } from "../pageBits";
 import BadgeChip from "../reveal/BadgeChip";
 import EveryoneBoard from "./EveryoneBoard";
-import { MTG_RARITIES, RARITY_LABEL, type MtgLeaderboardPayload, type MtgLeaderboardRow } from "../mtgTypes";
+import { MTG_RARITIES, RARITY_LABEL, seasonQuery, type MtgLeaderboardPayload, type MtgLeaderboardRow } from "../mtgTypes";
 
 type Standings = NonNullable<MtgLeaderboardPayload["standings"]>;
 
@@ -245,9 +245,10 @@ type Item = { kind: "player"; row: MtgLeaderboardRow } | { kind: "mind" } | { ki
  * random-picks line placed where their points fall. A row opens to its points
  * by rarity and its badges, with a link to the player's page. The Everyone tab
  * ranks the whole season by handle. The board refreshes when the tab comes
- * back into view, and every half hour while it stays open.
+ * back into view, and every half hour while it stays open. A past season's
+ * page passes `past`, so the board and its links name the season.
  */
-export default function Leaderboard({ communityId, slug, setCode, nowMs, firstStandingsAt }: { communityId: string; slug: string; setCode: string; nowMs: number; firstStandingsAt: string | null }) {
+export default function Leaderboard({ communityId, slug, setCode, nowMs, firstStandingsAt, past = false }: { communityId: string; slug: string; setCode: string; nowMs: number; firstStandingsAt: string | null; past?: boolean }) {
   const [data, setData] = useState<MtgLeaderboardPayload | null>(null);
   const [failed, setFailed] = useState(false);
   const [openRow, setOpenRow] = useState<string | null>(null);
@@ -260,7 +261,7 @@ export default function Leaderboard({ communityId, slug, setCode, nowMs, firstSt
   const load = useCallback(async () => {
     lastFetch.current = Date.now();
     try {
-      const res = await apiFetch(`/mtg/communities/${communityId}/leaderboard`, { auth: true });
+      const res = await apiFetch(`/mtg/communities/${communityId}/leaderboard${past ? seasonQuery(setCode) : ""}`, { auth: true });
       const body = await res.json();
       if (res.ok && body.ok) {
         setData(body as MtgLeaderboardPayload);
@@ -271,7 +272,7 @@ export default function Leaderboard({ communityId, slug, setCode, nowMs, firstSt
     } catch {
       setFailed(true);
     }
-  }, [communityId]);
+  }, [communityId, past, setCode]);
 
   // Load on mount, again when the tab comes back into view, and every half
   // hour while it stays open; each runs from a callback, not the effect body.
@@ -369,7 +370,11 @@ export default function Leaderboard({ communityId, slug, setCode, nowMs, firstSt
 
   const sinceLabel = changeWindow(s);
   const best = s.rows.filter((r) => r.change !== null && Math.round(r.change) > 0).sort((a, b) => (b.change ?? 0) - (a.change ?? 0))[0];
-  const noEntry = [...s.noEntry].sort((a, b) => Number(b.isViewer) - Number(a.isViewer));
+  // Members without picks follow along; so do members who joined after picks
+  // locked, who play from the next season (the roster is fixed at the lock).
+  const byViewerFirst = <T extends { isViewer: boolean }>(list: T[]) => [...list].sort((a, b) => Number(b.isViewer) - Number(a.isViewer));
+  const noEntry = byViewerFirst(s.noEntry.filter((p) => !p.joinedAfterLock));
+  const lateJoiners = byViewerFirst(s.noEntry.filter((p) => p.joinedAfterLock));
 
   return (
     <AppCard>
@@ -393,7 +398,7 @@ export default function Leaderboard({ communityId, slug, setCode, nowMs, firstSt
         <Stack component="ol" spacing={0.75} aria-label="Standings" sx={{ m: 0, p: 0 }}>
           {items.map((item, i) =>
             item.kind === "player" ? (
-              <PlayerRow key={item.row.userId} row={item.row} sinceLabel={sinceLabel} href={`/communities/${slug}/players/${item.row.userId}`} open={openRow === item.row.userId} onToggle={() => setOpenRow((cur) => (cur === item.row.userId ? null : item.row.userId))} />
+              <PlayerRow key={item.row.userId} row={item.row} sinceLabel={sinceLabel} href={`/communities/${slug}/players/${item.row.userId}${past ? seasonQuery(setCode) : ""}`} open={openRow === item.row.userId} onToggle={() => setOpenRow((cur) => (cur === item.row.userId ? null : item.row.userId))} />
             ) : item.kind === "mind" && s.groupMind ? (
               <GroupMindRow key="mind" mind={s.groupMind} sinceLabel={sinceLabel} />
             ) : item.kind === "random" ? (
@@ -407,6 +412,11 @@ export default function Leaderboard({ communityId, slug, setCode, nowMs, firstSt
         {noEntry.length > 0 && (
           <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1.5 }}>
             {joinNames(noEntry.map((p) => displayName(p)))} {noEntry.length === 1 && !noEntry[0].isViewer ? "is" : "are"} following along.
+          </Typography>
+        )}
+        {lateJoiners.length > 0 && (
+          <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: noEntry.length > 0 ? 0.5 : 1.5 }}>
+            {joinNames(lateJoiners.map((p) => displayName(p)))} joined after picks locked, so {lateJoiners.some((p) => p.isViewer) ? "you play" : "they play"} from the next season.
           </Typography>
         )}
         </>

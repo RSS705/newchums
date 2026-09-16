@@ -30,6 +30,8 @@ type AdminSet = {
   status: string;
   phase: string;
   locked_at: string | null;
+  /** When the finalize job ended the season. */
+  finalized_at: string | null;
   payload: MtgSetPayload;
   syncs: { ran_at: string; outcome: string; cards_seen: number; cards_new: number; notes: string | null }[];
 };
@@ -116,6 +118,35 @@ export default function AdminMtgClient() {
     finally { setBusy(null); }
   };
 
+  /** End the season now with the latest standings (spec 12.3); the hourly job
+   *  does this itself once the final day's standings are in. */
+  const finalizeNow = async (s: AdminSet) => {
+    if (!window.confirm(`End ${s.name || s.code.toUpperCase()} now? The latest standings become final, every badge is awarded and the results email goes out.`)) return;
+    setBusy(`${s.code}:finalize`);
+    try {
+      const res = await apiFetch(`/admin/mtg/sets/${s.code}/finalize`, { auth: true, method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      const data = (await res.json()) as { ok?: boolean; message?: string; result?: { date: string; badges: number } };
+      if (!res.ok || !data.ok || !data.result) { toast.error(data.message ?? "The season wasn't finalized"); return; }
+      toast.success(`Finalized with the standings from ${data.result.date}: ${data.result.badges} badges awarded`);
+      await load();
+    } catch { toast.error("The season wasn't finalized"); }
+    finally { setBusy(null); }
+  };
+
+  /** Undo the end of a season, to fix its standings and finalize again. */
+  const reopen = async (s: AdminSet) => {
+    if (!window.confirm(`Reopen ${s.name || s.code.toUpperCase()}? The final standings stop being final and the season's badges go back to on track. Results emails already sent aren't sent again.`)) return;
+    setBusy(`${s.code}:reopen`);
+    try {
+      const res = await apiFetch(`/admin/mtg/sets/${s.code}/reopen`, { auth: true, method: "POST" });
+      const data = (await res.json()) as { ok?: boolean; message?: string };
+      if (!res.ok || !data.ok) { toast.error(data.message ?? "The season wasn't reopened"); return; }
+      toast.success("Season reopened");
+      await load();
+    } catch { toast.error("The season wasn't reopened"); }
+    finally { setBusy(null); }
+  };
+
   const syncNow = async (code: string) => {
     setBusy(`${code}:sync`);
     try {
@@ -134,7 +165,7 @@ export default function AdminMtgClient() {
     if (!/^[a-z0-9]{2,6}$/.test(code)) { toast.error("Use the Scryfall set code, like fra"); return; }
     if (drafts[code]) { toast.error("That set already exists"); return; }
     setDrafts((prev) => ({ ...prev, [code]: { name: "", feed_url: `https://www.17lands.com/api/card_data?expansion=${code.toUpperCase()}&event_type=PremierDraft&time_period=ALL_TIME`, status: "active" } }));
-    setSets((prev) => [{ code, name: "", previews_start_at: null, gallery_complete_at: null, prerelease_start_at: null, prerelease_end_at: null, picks_open_at: null, lock_at: "", arena_release_at: null, tabletop_release_at: null, final_at: "", feed_url: "", status: "active", phase: "upcoming", payload: { code, name: "", phase: "upcoming", dates: { previewsStartAt: null, galleryCompleteAt: null, prereleaseStartAt: null, prereleaseEndAt: null, picksOpenAt: null, lockAt: "", arenaReleaseAt: null, tabletopReleaseAt: null, finalAt: "" }, timeline: [], pool: { common: 0, uncommon: 0, rare: 0, mythic: 0 }, poolTotal: 0, galleryComplete: false, lastCardSyncAt: null, scoringVersion: 1, picksOpen: false, revealOpen: false, lockedAt: null, standings: null }, locked_at: null, syncs: [] }, ...prev]);
+    setSets((prev) => [{ code, name: "", previews_start_at: null, gallery_complete_at: null, prerelease_start_at: null, prerelease_end_at: null, picks_open_at: null, lock_at: "", arena_release_at: null, tabletop_release_at: null, final_at: "", feed_url: "", status: "active", phase: "upcoming", finalized_at: null, payload: { code, name: "", phase: "upcoming", dates: { previewsStartAt: null, galleryCompleteAt: null, prereleaseStartAt: null, prereleaseEndAt: null, picksOpenAt: null, lockAt: "", arenaReleaseAt: null, tabletopReleaseAt: null, finalAt: "" }, timeline: [], pool: { common: 0, uncommon: 0, rare: 0, mythic: 0 }, poolTotal: 0, galleryComplete: false, lastCardSyncAt: null, scoringVersion: 1, picksOpen: false, revealOpen: false, lockedAt: null, standings: null, finalizedAt: null }, locked_at: null, syncs: [] }, ...prev]);
     setNewCode("");
   };
 
@@ -170,15 +201,20 @@ export default function AdminMtgClient() {
                 Pool {s.payload.poolTotal}: {s.payload.pool.common} C · {s.payload.pool.uncommon} U · {s.payload.pool.rare} R · {s.payload.pool.mythic} M
               </Typography>
               {s.locked_at && <Chip label={`Locked ${new Date(s.locked_at).toLocaleString()}`} size="small" variant="outlined" sx={{ fontWeight: 600 }} />}
+              {s.finalized_at && <Chip label={`Finalized ${new Date(s.finalized_at).toLocaleString()}`} size="small" variant="outlined" sx={{ fontWeight: 600 }} />}
             </Stack>
             <Grid container spacing={1.5}>
               <Grid size={{ xs: 12, sm: 6 }}>
                 <TextField label="Name" size="small" fullWidth value={d.name ?? ""} onChange={(e) => setField(s.code, "name", e.target.value)} />
               </Grid>
               <Grid size={{ xs: 12, sm: 6 }}>
-                <TextField label="Status" size="small" select fullWidth value={d.status ?? "active"} onChange={(e) => setField(s.code, "status", e.target.value)}>
-                  <MenuItem value="active">Active</MenuItem>
-                  <MenuItem value="final">Final</MenuItem>
+                <TextField
+                  label="Status" size="small" select fullWidth value={d.status ?? "active"} onChange={(e) => setField(s.code, "status", e.target.value)}
+                  helperText={s.finalized_at ? "Reopen the season to make it active again." : "A season becomes final when it's finalized, below or by the hourly job."}
+                >
+                  {/* Final and active are the finalize and reopen buttons' job, since they also award or take back badges. */}
+                  <MenuItem value="active" disabled={!!s.finalized_at}>Active</MenuItem>
+                  <MenuItem value="final" disabled={!s.finalized_at}>Final</MenuItem>
                   <MenuItem value="archived">Archived</MenuItem>
                 </TextField>
               </Grid>
@@ -214,6 +250,15 @@ export default function AdminMtgClient() {
               >
                 {busy === `${s.code}:lock` ? "Locking…" : s.locked_at ? "Run the lock again" : "Run the lock now"}
               </Button>
+              {s.finalized_at ? (
+                <Button variant="outlined" color="warning" onClick={() => reopen(s)} disabled={busy === `${s.code}:reopen`} sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2 }}>
+                  {busy === `${s.code}:reopen` ? "Reopening…" : "Reopen the season"}
+                </Button>
+              ) : s.status === "active" && s.final_at && Date.now() >= Date.parse(s.final_at) ? (
+                <Button variant="outlined" onClick={() => finalizeNow(s)} disabled={busy === `${s.code}:finalize`} sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2 }}>
+                  {busy === `${s.code}:finalize` ? "Finalizing…" : "Finalize now"}
+                </Button>
+              ) : null}
             </Stack>
             {s.syncs.length > 0 && (
               <Box sx={{ mt: 2 }}>

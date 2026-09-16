@@ -36,6 +36,8 @@ export type MtgSetPayload = {
   lockedAt: string | null;
   /** The latest published standings; null before the first day. */
   standings: MtgStandingsSummary | null;
+  /** When the finalize job ended the season; null until then. */
+  finalizedAt: string | null;
 };
 
 export type MtgCard = {
@@ -241,7 +243,8 @@ export type MtgLeaderboardPayload = {
     day: number | null;
     totalDays: number | null;
     rows: MtgLeaderboardRow[];
-    noEntry: Array<{ userId: string; name: string | null; username: string | null; isViewer: boolean }>;
+    /** Members not ranked: no picks, or joined after picks locked (`joinedAfterLock`), so following along until the next season. */
+    noEntry: Array<{ userId: string; name: string | null; username: string | null; isViewer: boolean; joinedAfterLock?: boolean }>;
     groupMind: { total: number; change: number | null; atLock: boolean } | null;
     randomPicks: number;
   };
@@ -283,7 +286,7 @@ type MtgPageSet = { code: string; name: string; phase: MtgPhase; lockAt: string;
 export type MtgPlayerPayload = {
   set: MtgPageSet;
   community: { id: string; name: string; slug: string };
-  player: { userId: string; name: string | null; username: string | null; avatarUrl: string | null; isViewer: boolean; hasEntry: boolean; pickCount: number };
+  player: { userId: string; name: string | null; username: string | null; avatarUrl: string | null; isViewer: boolean; hasEntry: boolean; pickCount: number; joinedAfterLock?: boolean };
   standing: null | {
     date: string;
     previousDate: string | null;
@@ -359,3 +362,60 @@ export const formatCount = (n: number | null) => (n === null ? "–" : Math.roun
 /** A YYYY-MM-DD day as "Oct 1". */
 export const formatDayKey = (key: string) =>
   new Intl.DateTimeFormat("en-US", { timeZone: "UTC", month: "short", day: "numeric" }).format(new Date(`${key}T12:00:00Z`));
+
+// ── The season's end, past seasons and the trophy case (Batch 8) ─────────────
+
+export type MtgResultsPerson = { userId: string; name: string | null; username: string | null; isViewer: boolean };
+
+/** One badge in the ceremony, with everyone in the group who earned it. */
+export type MtgCeremonyBadge = {
+  code: string;
+  name: string;
+  tier: MtgBadgeTier;
+  /** What the badge is for, the same for every recipient. */
+  description: string;
+  groupHonor: boolean;
+  recipients: Array<MtgResultsPerson & { count: number; reason: string }>;
+};
+
+/** GET /mtg/communities/:id/results?set= */
+export type MtgResultsPayload = {
+  set: { code: string; name: string; finalAt: string };
+  community: { id: string; name: string; slug: string };
+  /** Null until the season is final. */
+  results: null | {
+    date: string;
+    day: number | null;
+    totalDays: number | null;
+    /** Players ranked in the group on the final day. */
+    players: number;
+    /** Ranks 1 to 3; tied players share a rank. */
+    podium: Array<MtgResultsPerson & { avatarUrl: string | null; rank: number; total: number }>;
+    badges: MtgCeremonyBadge[];
+    /** The viewer's finish, when they played: `name` as the group sees it, `topBadges` their three best badge names. */
+    viewer: null | { rank: number; total: number; name: string; badgeCount: number; topBadges: string[] };
+  };
+};
+
+/** GET /mtg/communities/:id/seasons: newest first. */
+export type MtgSeasonRef = { code: string; name: string; final: boolean; finalAt: string; isCurrent: boolean };
+
+/** Where a season lives: the group home while it's being played, its own page once it's over. */
+export const seasonPageHref = (slug: string, season: MtgSeasonRef) => (season.isCurrent && !season.final ? `/communities/${slug}` : `/communities/${slug}/seasons/${season.code}`);
+
+/** GET /public/users/:handle/mtg-badges: seasons newest first. */
+export type MtgTrophyCasePayload = {
+  seasons: Array<{
+    set: { code: string; name: string; final: boolean };
+    badges: Array<MtgBadge & { group: null | { name: string; slug: string } | { private: true } }>;
+  }>;
+};
+
+/** `?set=code` for a season's API calls and links, or nothing for the current season. */
+export const seasonQuery = (setCode: string | null | undefined) => (setCode ? `?set=${encodeURIComponent(setCode)}` : "");
+
+/** The season a page was opened for (`?set=`), or null for the current one. */
+export function seasonFromSearch(params: { get: (key: string) => string | null } | null): string | null {
+  const code = params?.get("set")?.toLowerCase() ?? null;
+  return code && /^[a-z0-9]{2,6}$/.test(code) ? code : null;
+}
