@@ -2,6 +2,8 @@ export { default as OperatingHoursEditor } from "./OperatingHoursEditor";
 export { default as OperatingHoursDisplay } from "./OperatingHoursDisplay";
 export { default as OperatingHoursInline } from "./OperatingHoursInline";
 export { default as CommunityBannerEditor } from "./CommunityBannerEditor";
+export { default as CommunityLogoEditor } from "./CommunityLogoEditor";
+export { default as CommunityImagesEditor } from "./CommunityImagesEditor";
 export { default as CommunityAnnouncementsTab } from "./CommunityAnnouncementsTab";
 export type { CommunityAnnouncement } from "./CommunityAnnouncementsTab";
 export { default as CommunityScheduleTab } from "./CommunityScheduleTab";

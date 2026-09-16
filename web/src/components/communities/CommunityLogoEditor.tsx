@@ -2,6 +2,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import Box from "@mui/material/Box";
+import CircularProgress from "@mui/material/CircularProgress";
 import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
@@ -14,54 +15,42 @@ import Cropper, { type Area } from "react-easy-crop";
 import { AppButton, useToast } from "@/components/ui";
 import { getCroppedImg, type PixelCrop } from "@/lib/cropImage";
 
-/** Raw-file upload cap, mirrors the plan-banner section. getCroppedImg then
- *  compresses/re-encodes to fit under MAX_COMMUNITY_BANNER_BYTES. */
-const MAX_BANNER_INPUT_BYTES = 20 * 1024 * 1024; // 20MB
+/** Raw-file upload cap, the same as the banner's. getCroppedImg then
+ *  re-encodes the crop well under the API's 2MB avatar limit. */
+const MAX_LOGO_INPUT_BYTES = 20 * 1024 * 1024; // 20MB
 
-/**
- * Compressed-output cap. Matches the API's `MAX_COMMUNITY_BANNER_BYTES`
- * (600KB) so a successfully cropped blob always fits the upload limit.
- */
-const MAX_COMMUNITY_BANNER_BYTES = 600 * 1024;
+/** Square output, in pixels. The logo shows at 72px at most (the community
+ *  page header), so 256 stays sharp on 3x screens. */
+const LOGO_OUTPUT_SIZE = 256;
 
-/** Wide-banner output dimensions. 5:1 gives a strong header presence
- *  without dominating the community detail page, and keeps the WebP encode
- *  well under the 600KB server ceiling. */
-const BANNER_OUTPUT_WIDTH = 1600;
-const BANNER_OUTPUT_HEIGHT = 320;
-export const BANNER_ASPECT = BANNER_OUTPUT_WIDTH / BANNER_OUTPUT_HEIGHT;
+type Breakpoint = "xs" | "sm" | "md" | "lg" | "xl";
 
 type Props = {
-  /** Current remote banner URL, if any. Shown as the preview until the owner
-   *  picks a new one (at which point the local pending blob takes over). */
-  existingBannerUrl: string | null;
-  /** Pending local blob (newly cropped but not yet uploaded). Owned by the
-   *  parent form so it can be flushed to R2 after community create/edit. */
+  /** Current remote logo URL, if any. Shown until the owner picks a new one. */
+  existingLogoUrl: string | null;
+  /** Pending local blob (cropped but not yet uploaded). Owned by the parent
+   *  form so it can be flushed to R2 after community create/edit. */
   pendingBlob: Blob | null;
   onChangePendingBlob: (blob: Blob | null) => void;
-  /** Called when the user clicks "Remove". For the Create form this just
-   *  clears pending state. For Edit, the form posts a PATCH to clear
-   *  `banner_key`. */
-  onRemoveExisting?: () => void;
-  /** True when a remove request is in flight (Edit form only). */
-  removing?: boolean;
+  /** True while the parent form uploads the pending blob (Edit form only). */
+  uploading?: boolean;
+  /** Width of the square preview tile; a responsive object is accepted.
+   *  `CommunityImagesEditor` sizes it to match the banner beside it. */
+  tileWidth?: number | string | Partial<Record<Breakpoint, number | string>>;
 };
 
 /**
- * Community banner uploader. Custom image upload only, no colour presets
- * (community banners intentionally don't carry the theme-picker affordance
- * that the plan form has). Visual language mirrors the plan-banner
- * section, same section header treatment, same dashed-empty-state
- * preview, same action-button row, same bottom helper line. Available on
- * every plan; the call site is responsible for confirming the viewer can
- * edit the community (owner / super admin).
+ * Community logo uploader, the square sibling of `CommunityBannerEditor`:
+ * same section header, dashed empty state, action row and helper line, and
+ * its own crop dialog. The call site is responsible for confirming the
+ * viewer can edit the community (owner / super admin).
  */
-export default function CommunityBannerEditor({
-  existingBannerUrl,
+export default function CommunityLogoEditor({
+  existingLogoUrl,
   pendingBlob,
   onChangePendingBlob,
-  onRemoveExisting,
-  removing,
+  uploading = false,
+  tileWidth = 112,
 }: Props) {
   const toast = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -72,6 +61,10 @@ export default function CommunityBannerEditor({
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
   const [localPreview, setLocalPreview] = useState<string | null>(null);
 
+  const pickFile = () => {
+    if (!uploading) fileInputRef.current?.click();
+  };
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -79,12 +72,11 @@ export default function CommunityBannerEditor({
       toast.error("Please use JPEG, PNG, or WebP.");
       return;
     }
-    if (file.size > MAX_BANNER_INPUT_BYTES) {
+    if (file.size > MAX_LOGO_INPUT_BYTES) {
       toast.error("That image is over 20 MB, pick a smaller one.");
       return;
     }
-    const url = URL.createObjectURL(file);
-    setCropImageSrc(url);
+    setCropImageSrc(URL.createObjectURL(file));
     setCropDialogOpen(true);
     setCropPosition({ x: 0, y: 0 });
     setCropZoom(1);
@@ -95,19 +87,17 @@ export default function CommunityBannerEditor({
     setCroppedAreaPixels(croppedAreaPx);
   }, []);
 
+  const closeCropDialog = () => {
+    if (cropImageSrc) URL.revokeObjectURL(cropImageSrc);
+    setCropImageSrc(null);
+    setCropDialogOpen(false);
+  };
+
   const handleCropSave = async () => {
     if (!cropImageSrc || !croppedAreaPixels) return;
     try {
-      const blob = await getCroppedImg(
-        cropImageSrc,
-        croppedAreaPixels as PixelCrop,
-        BANNER_OUTPUT_WIDTH,
-        BANNER_OUTPUT_HEIGHT,
-        MAX_COMMUNITY_BANNER_BYTES,
-      );
-      URL.revokeObjectURL(cropImageSrc);
-      setCropImageSrc(null);
-      setCropDialogOpen(false);
+      const blob = await getCroppedImg(cropImageSrc, croppedAreaPixels as PixelCrop, LOGO_OUTPUT_SIZE);
+      closeCropDialog();
       onChangePendingBlob(blob);
       if (localPreview) URL.revokeObjectURL(localPreview);
       setLocalPreview(URL.createObjectURL(blob));
@@ -122,105 +112,91 @@ export default function CommunityBannerEditor({
     onChangePendingBlob(null);
   };
 
-  const previewUrl = localPreview || (!pendingBlob && existingBannerUrl) || null;
+  const previewUrl = localPreview || (!pendingBlob && existingLogoUrl) || null;
 
   return (
     <Stack spacing={2}>
       <Box>
         <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem" }}>
-          Banner
+          Logo
         </Typography>
       </Box>
 
-      {/* Preview / upload area. Same dashed-empty-state + hover treatment as
-          the plan-banner section so the two feel like one product. Aspect
-          ratio is locked at 5:1 so the preview matches exactly what renders
-          on the community hero. */}
+      {/* Square preview / upload tile, rounded like the logo on the
+          community page. */}
       <Box
         role="button"
-        tabIndex={0}
-        aria-label={previewUrl ? "Change the banner" : "Upload a banner"}
-        onClick={() => fileInputRef.current?.click()}
+        tabIndex={uploading ? -1 : 0}
+        aria-label={previewUrl ? "Change the logo" : "Upload a logo"}
+        aria-disabled={uploading || undefined}
+        onClick={pickFile}
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
-            fileInputRef.current?.click();
+            pickFile();
           }
         }}
         sx={{
-          width: "100%",
-          aspectRatio: `${BANNER_ASPECT}`,
+          width: tileWidth,
+          aspectRatio: "1",
           borderRadius: 2.5,
           border: "2px dashed",
           borderColor: previewUrl ? "transparent" : "grey.300",
           bgcolor: previewUrl ? "transparent" : "grey.50",
-          cursor: "pointer",
+          cursor: uploading ? "default" : "pointer",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
           overflow: "hidden",
           position: "relative",
           transition: "border-color 0.2s",
-          "&:hover": { borderColor: previewUrl ? "transparent" : "primary.main" },
+          "&:hover": { borderColor: previewUrl || uploading ? "transparent" : "primary.main" },
           "&:focus-visible": { outline: "2px solid", outlineColor: "primary.main", outlineOffset: 2 },
         }}
       >
         {previewUrl ? (
-          // Raw <img> is intentional: preview is either a blob: URL or the
-          // authenticated backend URL; Next.js Image would need remotePatterns
-          // config for both and adds nothing at 1600x320 here.
+          // Raw <img> for the same reason as the banner preview: a blob: URL
+          // or the backend URL, which Next.js Image would need configuring for.
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={previewUrl}
-            alt="Community banner preview"
+            alt="Community logo preview"
             style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
           />
         ) : (
-          <Stack alignItems="center" spacing={0.75}>
-            <AddPhotoAlternateRoundedIcon sx={{ fontSize: 36, color: "text.disabled" }} />
-            <Typography variant="body2" color="text.secondary">
-              Upload a banner
-            </Typography>
-          </Stack>
+          <AddPhotoAlternateRoundedIcon sx={{ fontSize: 30, color: "text.disabled" }} />
+        )}
+        {uploading && (
+          <Box
+            sx={{
+              position: "absolute",
+              inset: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              bgcolor: "rgba(255, 255, 255, 0.6)",
+            }}
+          >
+            <CircularProgress size={24} />
+          </Box>
         )}
       </Box>
 
-      {/* Action row: Change / Undo / Remove as AppButton chips, matches the
-          plan-banner section's pattern (outlined Change, text Remove). */}
-      <Stack direction="row" spacing={1} flexWrap="wrap">
+      <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
         {previewUrl && (
-          <AppButton
-            variant="outlined"
-            size="small"
-            onClick={() => fileInputRef.current?.click()}
-          >
-            Change photo
+          <AppButton variant="outlined" size="small" onClick={pickFile} disabled={uploading}>
+            {uploading ? "Uploading…" : "Change logo"}
           </AppButton>
         )}
-        {pendingBlob && (
-          <AppButton
-            variant="text"
-            size="small"
-            onClick={handleClearPending}
-          >
-            {existingBannerUrl ? "Undo change" : "Remove"}
-          </AppButton>
-        )}
-        {!pendingBlob && existingBannerUrl && onRemoveExisting && (
-          <AppButton
-            variant="text"
-            size="small"
-            color="error"
-            onClick={removing ? undefined : onRemoveExisting}
-            disabled={removing}
-          >
-            {removing ? "Removing…" : "Remove"}
+        {pendingBlob && !uploading && (
+          <AppButton variant="text" size="small" onClick={handleClearPending}>
+            {existingLogoUrl ? "Undo change" : "Remove"}
           </AppButton>
         )}
       </Stack>
 
       <Typography variant="caption" color="text.secondary">
-        Recommended 1600 &times; 320 (5:1). JPEG, PNG, or WebP up to 20 MB, we&apos;ll compress it automatically.
+        Recommended {LOGO_OUTPUT_SIZE}&nbsp;&times;&nbsp;{LOGO_OUTPUT_SIZE} (1:1).
       </Typography>
 
       <input
@@ -231,21 +207,16 @@ export default function CommunityBannerEditor({
         onChange={handleFileSelect}
       />
 
-      {/* Crop dialog */}
       <Dialog
         open={cropDialogOpen}
-        onClose={() => {
-          if (cropImageSrc) URL.revokeObjectURL(cropImageSrc);
-          setCropImageSrc(null);
-          setCropDialogOpen(false);
-        }}
-        maxWidth="md"
+        onClose={closeCropDialog}
+        maxWidth="sm"
         fullWidth
         PaperProps={{
           sx: { m: { xs: 2, sm: 3 }, maxHeight: { xs: "calc(100dvh - 32px)", sm: "calc(100dvh - 48px)" } },
         }}
       >
-        <DialogTitle>Crop banner</DialogTitle>
+        <DialogTitle>Crop logo</DialogTitle>
         <DialogContent sx={{ px: { xs: 2, sm: 3 } }}>
           {cropImageSrc && (
             <Stack spacing={2} sx={{ pt: 1 }}>
@@ -254,7 +225,7 @@ export default function CommunityBannerEditor({
                   image={cropImageSrc}
                   crop={cropPosition}
                   zoom={cropZoom}
-                  aspect={BANNER_ASPECT}
+                  aspect={1}
                   cropShape="rect"
                   onCropChange={setCropPosition}
                   onZoomChange={setCropZoom}
@@ -278,14 +249,7 @@ export default function CommunityBannerEditor({
           )}
         </DialogContent>
         <DialogActions sx={{ px: { xs: 2, sm: 3 }, pb: 2 }}>
-          <AppButton
-            variant="outlined"
-            onClick={() => {
-              if (cropImageSrc) URL.revokeObjectURL(cropImageSrc);
-              setCropImageSrc(null);
-              setCropDialogOpen(false);
-            }}
-          >
+          <AppButton variant="outlined" onClick={closeCropDialog}>
             Cancel
           </AppButton>
           <AppButton variant="contained" onClick={handleCropSave}>

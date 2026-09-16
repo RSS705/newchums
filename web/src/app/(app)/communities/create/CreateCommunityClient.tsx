@@ -6,7 +6,6 @@ import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
 import Stack from "@mui/material/Stack";
 import CircularProgress from "@mui/material/CircularProgress";
-import Avatar from "@mui/material/Avatar";
 import RadioGroup from "@mui/material/RadioGroup";
 import Radio from "@mui/material/Radio";
 import Switch from "@mui/material/Switch";
@@ -19,24 +18,20 @@ import DialogContent from "@mui/material/DialogContent";
 import DialogActions from "@mui/material/DialogActions";
 import Button from "@mui/material/Button";
 import Paper from "@mui/material/Paper";
-import Slider from "@mui/material/Slider";
 import AddCircleRoundedIcon from "@mui/icons-material/AddCircleRounded";
 import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
 import PersonOutlineRoundedIcon from "@mui/icons-material/PersonOutlineRounded";
-import PhotoCameraRoundedIcon from "@mui/icons-material/PhotoCameraRounded";
 import PlaceRoundedIcon from "@mui/icons-material/PlaceRounded";
 import StyleRoundedIcon from "@mui/icons-material/StyleRounded";
-import Cropper, { type Area } from "react-easy-crop";
 import { AppCard, AppButton, AppTextField, useToast } from "@/components/ui";
 import RichTextEditor from "@/components/ui/RichTextEditor";
 import PlacesAutocompleteInput, { formatPlaceDisplay } from "@/components/common/PlacesAutocompleteInput";
 import HobbyPickerField, { type HobbyOption } from "@/components/common/HobbyPickerField";
 import { apiFetch, getApiBaseUrl } from "@/lib/apiClient";
-import { getCroppedImg, type PixelCrop } from "@/lib/cropImage";
 import { loadGooglePlacesScript } from "@/lib/loadGooglePlaces";
 import { scrollToFirstError } from "@/lib/scrollToFirstError";
 import {
-  CommunityBannerEditor,
+  CommunityImagesEditor,
   OperatingHoursEditor,
   type OperatingHours,
 } from "@/components/communities";
@@ -76,15 +71,9 @@ export default function CreateCommunityClient() {
   const [capDialogOpen, setCapDialogOpen] = useState(false);
   const [capMessage, setCapMessage] = useState("");
 
-  // Logo state
-  const [logoPreview, setLogoPreview] = useState<string | null>(null);
-  const [cropDialogOpen, setCropDialogOpen] = useState(false);
-  const [cropImageSrc, setCropImageSrc] = useState<string | null>(null);
-  const [cropPosition, setCropPosition] = useState({ x: 0, y: 0 });
-  const [cropZoom, setCropZoom] = useState(1);
-  const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
+  // Logo (optional). Cropped in CommunityLogoEditor and uploaded after the
+  // community is created, like the banner.
   const [logoBlob, setLogoBlob] = useState<Blob | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Operating hours (optional, free for all plans).
   const [operatingHours, setOperatingHours] = useState<OperatingHours | null>(null);
@@ -124,39 +113,6 @@ export default function CreateCommunityClient() {
     const timer = setTimeout(() => { if (slug.length >= 3) checkSlug(slug); }, 400);
     return () => clearTimeout(timer);
   }, [slug, checkSlug]);
-
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
-      toast.error("Please use JPEG, PNG, or WebP.");
-      return;
-    }
-    const url = URL.createObjectURL(file);
-    setCropImageSrc(url);
-    setCropDialogOpen(true);
-    setCropPosition({ x: 0, y: 0 });
-    setCropZoom(1);
-    if (fileInputRef.current) fileInputRef.current.value = "";
-  };
-
-  const handleCropComplete = useCallback((_: Area, croppedAreaPx: Area) => {
-    setCroppedAreaPixels(croppedAreaPx);
-  }, []);
-
-  const handleCropSave = async () => {
-    if (!cropImageSrc || !croppedAreaPixels) return;
-    try {
-      const blob = await getCroppedImg(cropImageSrc, croppedAreaPixels as PixelCrop);
-      URL.revokeObjectURL(cropImageSrc);
-      setCropImageSrc(null);
-      setCropDialogOpen(false);
-      setLogoBlob(blob);
-      setLogoPreview(URL.createObjectURL(blob));
-    } catch {
-      toast.error("Failed to process image");
-    }
-  };
 
   const uploadCommunityLogo = async (communityId: string) => {
     if (!logoBlob) return;
@@ -349,13 +305,13 @@ export default function CreateCommunityClient() {
         </Stack>
       </Paper>
 
-      {/* Banner is available on every plan. The cropper, validation, and
-          upload pipeline match the edit form. */}
+      {/* Banner and logo, side by side (available on every plan). Both are
+          cropped in the browser and uploaded once the community exists; the
+          cropper, validation, and upload pipeline match the edit form. */}
       <AppCard>
-        <CommunityBannerEditor
-          existingBannerUrl={null}
-          pendingBlob={bannerBlob}
-          onChangePendingBlob={setBannerBlob}
+        <CommunityImagesEditor
+          banner={{ existingBannerUrl: null, pendingBlob: bannerBlob, onChangePendingBlob: setBannerBlob }}
+          logo={{ existingLogoUrl: null, pendingBlob: logoBlob, onChangePendingBlob: setLogoBlob }}
         />
       </AppCard>
 
@@ -391,60 +347,10 @@ export default function CreateCommunityClient() {
                 color="text.disabled"
                 sx={{ fontSize: "0.75rem", lineHeight: 1.35, display: "block" }}
               >
-                Logo, name, handle, description, and the hobbies it&apos;s about.
+                Name, handle, description, and the hobbies it&apos;s about.
               </Typography>
             </Box>
           </Stack>
-
-          {/* Logo (inline) */}
-          <Box>
-            <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 0.625 }}>Logo</Typography>
-            <Stack direction="row" alignItems="center" spacing={1.5}>
-              {logoPreview ? (
-                <Avatar
-                  variant="rounded"
-                  src={logoPreview}
-                  onClick={() => fileInputRef.current?.click()}
-                  sx={{ width: 56, height: 56, borderRadius: 2, cursor: "pointer", "&:hover": { opacity: 0.85 } }}
-                />
-              ) : (
-                <Box
-                  onClick={() => fileInputRef.current?.click()}
-                  sx={{
-                    width: 56, height: 56, borderRadius: 2,
-                    border: "2px dashed", borderColor: "grey.300",
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    cursor: "pointer",
-                    transition: "border-color 0.15s, background-color 0.15s",
-                    "&:hover": { borderColor: "primary.main", bgcolor: "action.hover" },
-                  }}
-                >
-                  <PhotoCameraRoundedIcon sx={{ fontSize: 20, color: "text.disabled" }} />
-                </Box>
-              )}
-              <Stack spacing={0}>
-                <Typography
-                  variant="body2"
-                  color="primary"
-                  onClick={() => fileInputRef.current?.click()}
-                  sx={{ cursor: "pointer", fontWeight: 500, "&:hover": { textDecoration: "underline" } }}
-                >
-                  {logoPreview ? "Change" : "Upload"}
-                </Typography>
-                {logoPreview && (
-                  <Typography
-                    variant="caption"
-                    color="text.disabled"
-                    onClick={() => { setLogoPreview(null); setLogoBlob(null); }}
-                    sx={{ cursor: "pointer", "&:hover": { color: "error.main" } }}
-                  >
-                    Remove
-                  </Typography>
-                )}
-              </Stack>
-            </Stack>
-            <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={handleFileSelect} />
-          </Box>
 
           <Box ref={setFieldRef("name")} sx={{ scrollMarginTop: 96 }}>
             <AppTextField
@@ -797,54 +703,6 @@ export default function CreateCommunityClient() {
           {saving ? <CircularProgress size={22} color="inherit" /> : "Create community"}
         </AppButton>
       </Stack>
-
-      {/* Crop dialog */}
-      <Dialog
-        open={cropDialogOpen}
-        onClose={() => { if (cropImageSrc) URL.revokeObjectURL(cropImageSrc); setCropImageSrc(null); setCropDialogOpen(false); }}
-        maxWidth="sm"
-        fullWidth
-        PaperProps={{
-          sx: { m: { xs: 2, sm: 3 }, maxHeight: { xs: "calc(100dvh - 32px)", sm: "calc(100dvh - 48px)" } },
-        }}
-      >
-        <DialogTitle>Crop logo</DialogTitle>
-        <DialogContent sx={{ px: { xs: 2, sm: 3 } }}>
-          {cropImageSrc && (
-            <Stack spacing={2} sx={{ pt: 1 }}>
-              <Box sx={{ position: "relative", height: 320 }}>
-                <Cropper
-                  image={cropImageSrc}
-                  crop={cropPosition}
-                  zoom={cropZoom}
-                  aspect={1}
-                  cropShape="rect"
-                  onCropChange={setCropPosition}
-                  onZoomChange={setCropZoom}
-                  onCropComplete={handleCropComplete}
-                />
-              </Box>
-              <Box>
-                <Typography variant="caption" color="text.secondary" gutterBottom>
-                  Zoom
-                </Typography>
-                <Slider value={cropZoom} min={1} max={3} step={0.1} valueLabelDisplay="auto" onChange={(_, v) => setCropZoom(v as number)} />
-              </Box>
-            </Stack>
-          )}
-        </DialogContent>
-        <DialogActions sx={{ px: { xs: 2, sm: 3 }, pb: 2 }}>
-          <AppButton
-            variant="outlined"
-            onClick={() => { if (cropImageSrc) URL.revokeObjectURL(cropImageSrc); setCropImageSrc(null); setCropDialogOpen(false); }}
-          >
-            Cancel
-          </AppButton>
-          <AppButton variant="contained" onClick={handleCropSave}>
-            Save
-          </AppButton>
-        </DialogActions>
-      </Dialog>
 
       {/* Community ownership cap dialog */}
       <Dialog open={capDialogOpen} onClose={() => setCapDialogOpen(false)} maxWidth="xs" fullWidth>
