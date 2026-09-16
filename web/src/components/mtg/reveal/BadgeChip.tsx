@@ -1,26 +1,35 @@
 "use client";
 
+import Box from "@mui/material/Box";
 import Chip from "@mui/material/Chip";
 import { TapTooltip } from "@/components/ui";
 import { BadgeGlyph } from "../badgeIcons";
 import { BADGE_TIER_STYLE, type MtgBadge } from "../mtgTypes";
+import { srOnly } from "../pageBits";
 
 /** A badge in its tier colors with its icon: filled when earned, a dashed
  *  outline when the player is only on track for it, and "×2" when it stacks.
- *  Its reason shows on hover, tap or keyboard focus, and screen readers hear
- *  it as the chip's description. */
+ *  Its reason shows on hover, tap or keyboard focus. Screen readers hear the
+ *  reason as part of the chip on every device, since a touch screen never
+ *  opens the tooltip for them. */
 export default function BadgeChip({ badge, size = "small" }: { badge: MtgBadge; size?: "small" | "medium" }) {
   const style = BADGE_TIER_STYLE[badge.tier] ?? BADGE_TIER_STYLE.common;
-  const count = badge.count && badge.count > 1 ? ` \u00d7${badge.count}` : "";
+  const count = badge.count && badge.count > 1 ? ` ×${badge.count}` : "";
   return (
-    <TapTooltip title={badge.description} placement="top" describeChild>
+    // The title is an element, not a string, so MUI doesn't also put the reason in a title attribute.
+    <TapTooltip title={<span>{badge.description}</span>} placement="top" describeChild>
       <Chip
         icon={<BadgeGlyph code={badge.code} />}
-        label={`${badge.name}${count}`}
+        label={
+          <>
+            {badge.name}{count}
+            <Box component="span" sx={srOnly}>{badge.onTrack ? ", on track: " : ": "}{badge.description}</Box>
+          </>
+        }
         size={size}
         tabIndex={0}
         sx={{
-          height: size === "small" ? { xs: 30, sm: 24 } : 30,
+          height: size === "small" ? { xs: 32, sm: 24 } : 32,
           fontWeight: 700,
           fontSize: size === "small" ? "0.6875rem" : "0.8125rem",
           bgcolor: badge.onTrack ? "background.paper" : style.bg,

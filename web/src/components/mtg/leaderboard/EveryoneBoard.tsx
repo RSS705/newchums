@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import FormControlLabel from "@mui/material/FormControlLabel";
@@ -9,6 +9,7 @@ import Switch from "@mui/material/Switch";
 import Typography from "@mui/material/Typography";
 import { apiFetch } from "@/lib/apiClient";
 import type { MtgEveryonePayload, MtgEveryoneRow } from "../mtgTypes";
+import { srOnly } from "../pageBits";
 
 /** 6.5:1 on white, as on the leaderboard. */
 const FAILED = "#B91C1C";
@@ -19,13 +20,16 @@ function Row({ row }: { row: MtgEveryoneRow }) {
   return (
     <Box
       component="li"
-      aria-label={`${row.rank}. ${row.isViewer ? "You, " : ""}${handle}, ${whole(row.total)} points`}
-      sx={{ listStyle: "none", display: "grid", gridTemplateColumns: "36px minmax(0, 1fr) auto", alignItems: "center", columnGap: 1, px: { xs: 1, sm: 1.5 }, minHeight: 44, borderRadius: 2, border: "1px solid", borderColor: row.isViewer ? "primary.main" : "divider" }}
+      sx={{ listStyle: "none", position: "relative", display: "grid", gridTemplateColumns: "36px minmax(0, 1fr) auto", alignItems: "center", columnGap: 1, px: { xs: 1, sm: 1.5 }, minHeight: 44, borderRadius: 2, border: "1px solid", borderColor: row.isViewer ? "primary.main" : "divider" }}
     >
+      {/* Read as one sentence; the visible parts are hidden from screen readers. */}
+      <Box component="span" sx={srOnly}>{row.rank}. {row.isViewer ? "You, " : ""}{handle}, {whole(row.total)} points</Box>
       <Typography aria-hidden sx={{ fontWeight: 800, fontSize: "0.9375rem" }}>{row.rank}</Typography>
-      <Typography aria-hidden variant="body2" noWrap sx={{ fontWeight: 700, color: row.handle ? "text.primary" : "text.secondary" }}>
-        {handle}{row.isViewer ? " (you)" : ""}
-      </Typography>
+      {/* The handle truncates; "You" never does. */}
+      <Box aria-hidden sx={{ display: "flex", alignItems: "center", gap: 0.75, minWidth: 0 }}>
+        <Typography variant="body2" noWrap sx={{ fontWeight: 700, minWidth: 0, color: row.handle ? "text.primary" : "text.secondary" }}>{handle}</Typography>
+        {row.isViewer && <Typography component="span" variant="caption" sx={{ flexShrink: 0, fontWeight: 800, color: "primary.main" }}>You</Typography>}
+      </Box>
       <Typography aria-hidden sx={{ fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>{whole(row.total)}</Typography>
     </Box>
   );
@@ -37,11 +41,12 @@ function Row({ row }: { row: MtgEveryoneRow }) {
  * hides themselves. A player with an entry can hide or show themselves here
  * at any time, before the first standings too.
  */
-export default function EveryoneBoard({ setCode }: { setCode: string }) {
+export default function EveryoneBoard({ setCode, standingsDate = null }: { setCode: string; /** The group board's latest day: a new one reloads this board too. */ standingsDate?: string | null }) {
   const [data, setData] = useState<MtgEveryonePayload | null>(null);
   const [failed, setFailed] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [saveFailed, setSaveFailed] = useState(false);
+  // A ref, not a disabled switch: disabling drops keyboard focus to the page.
+  const saving = useRef(false);
 
   const load = useCallback(async () => {
     try {
@@ -61,10 +66,11 @@ export default function EveryoneBoard({ setCode }: { setCode: string }) {
   useEffect(() => {
     const first = setTimeout(() => { load(); }, 0);
     return () => clearTimeout(first);
-  }, [load]);
+  }, [load, standingsDate]);
 
   const setHidden = async (hidden: boolean) => {
-    setSaving(true);
+    if (saving.current) return;
+    saving.current = true;
     setSaveFailed(false);
     try {
       const res = await apiFetch(`/mtg/sets/${encodeURIComponent(setCode)}/entry/everyone`, {
@@ -74,12 +80,17 @@ export default function EveryoneBoard({ setCode }: { setCode: string }) {
         body: JSON.stringify({ hidden }),
       });
       const body = await res.json();
-      if (res.ok && body.ok) await load();
-      else setSaveFailed(true);
+      if (res.ok && body.ok) {
+        // The switch shows what saved straight away; the rows follow with the reload.
+        setData((cur) => (cur ? { ...cur, viewer: { ...cur.viewer, hidden: body.hidden === true } } : cur));
+        await load();
+      } else {
+        setSaveFailed(true);
+      }
     } catch {
       setSaveFailed(true);
     } finally {
-      setSaving(false);
+      saving.current = false;
     }
   };
 
@@ -97,14 +108,20 @@ export default function EveryoneBoard({ setCode }: { setCode: string }) {
   const s = data.standings;
   return (
     <Box>
+      {failed && (
+        <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
+          <Typography variant="caption" sx={{ color: FAILED }}>Couldn&apos;t refresh the board.</Typography>
+          <Button variant="text" size="small" onClick={() => load()} sx={{ textTransform: "none", fontWeight: 700, minHeight: 40 }}>Try again</Button>
+        </Stack>
+      )}
       {data.viewer.hasEntry && (
         <Box sx={{ mb: 1.25 }}>
           <FormControlLabel
-            control={<Switch checked={!data.viewer.hidden} disabled={saving} onChange={(e) => setHidden(!e.target.checked)} />}
+            control={<Switch checked={!data.viewer.hidden} onChange={(e) => setHidden(!e.target.checked)} />}
             label="Show me on this board"
             sx={{ mr: 0, minHeight: 44, "& .MuiFormControlLabel-label": { fontSize: "0.875rem", fontWeight: 600 } }}
           />
-          {saveFailed && <Typography variant="caption" sx={{ display: "block", color: FAILED }}>That didn&apos;t save. Try again.</Typography>}
+          {saveFailed && <Typography variant="caption" role="alert" sx={{ display: "block", color: FAILED }}>That didn&apos;t save. Try again.</Typography>}
         </Box>
       )}
       {!s ? (

@@ -1,25 +1,29 @@
 import { describe, expect, it } from "vitest";
-import { MTG_BADGES, MTG_RARITIES, badgeDescription, compareBadges, mtgWeeklyStandingsDue, mtgWeeklyStandingsTimes, ordinal, type MtgRarity } from "../mtg";
+import { MTG_BADGES, MTG_RARITIES, badgeDescription, compareBadges, ordinal, type MtgRarity } from "../mtg";
 import { alsaMedians, computeSeasonBadges, type SeasonBadge, type SeasonCard, type SeasonEntry, type SeasonGroup, type SeasonPick } from "../mtgBadges";
 import { scoreEntry } from "../mtgScoring";
 
 // Twenty ranked cards at every rarity: "c1" is the #1 common, "m20" the last mythic.
 const N = 20;
-function pool(opts: { ranked?: number; alsa?: (rarity: MtgRarity, rank: number) => number | null } = {}): SeasonCard[] {
-  const ranked = opts.ranked ?? N;
-  return MTG_RARITIES.flatMap((rarity) => Array.from({ length: N }, (_, i) => {
-    const rank = i + 1;
-    const isRanked = rank <= ranked;
-    return {
-      cardId: `${rarity[0]}${rank}`,
-      name: `${rarity} card ${rank}`,
-      rarity,
-      rank: isRanked ? rank : null,
-      rankedCount: ranked,
-      cardScore: isRanked ? (100 * (ranked - rank)) / (ranked - 1) : 50,
-      alsa: opts.alsa ? opts.alsa(rarity, rank) : null,
-    };
-  }));
+function pool(opts: { ranked?: number | Partial<Record<MtgRarity, number>>; alsa?: (rarity: MtgRarity, rank: number) => number | null; adj?: (rarity: MtgRarity, rank: number) => number } = {}): SeasonCard[] {
+  return MTG_RARITIES.flatMap((rarity) => {
+    const ranked = typeof opts.ranked === "number" ? opts.ranked : opts.ranked?.[rarity] ?? N;
+    return Array.from({ length: N }, (_, i) => {
+      const rank = i + 1;
+      // Like computeCardScores: a rarity with fewer than two cards with a win rate ranks none.
+      const isRanked = ranked >= 2 && rank <= ranked;
+      return {
+        cardId: `${rarity[0]}${rank}`,
+        name: `${rarity} card ${rank}`,
+        rarity,
+        rank: isRanked ? rank : null,
+        rankedCount: ranked >= 2 ? ranked : 0,
+        cardScore: isRanked ? (100 * (ranked - rank)) / (ranked - 1) : 50,
+        adjWr: isRanked ? (opts.adj ? opts.adj(rarity, rank) : 0.6 - rank / 200) : null,
+        alsa: opts.alsa ? opts.alsa(rarity, rank) : null,
+      };
+    });
+  });
 }
 
 type Ranks = Partial<Record<MtgRarity, number[]>>;
@@ -140,6 +144,10 @@ describe("prediction achievements", () => {
     expect(mine(computeSeasonBadges({ cards: pool(), entries: [bad], groups: [] }), "a", "monkey_business")[0].detail).toEqual({ points: bad.total });
     const half = { ...bad, picks: bad.picks.slice(0, 10) };
     expect(mine(computeSeasonBadges({ cards: pool(), entries: [half], groups: [] }), "a", "monkey_business")).toHaveLength(0);
+    const thin = pool({ ranked: { mythic: 9 } });
+    const early = entry("a", { common: [16, 17, 18, 19, 20], uncommon: [16, 17, 18, 19, 20], rare: [16, 17, 18, 19, 20] }, thin);
+    expect(early.total).toBeLessThan(1000);
+    expect(mine(computeSeasonBadges({ cards: thin, entries: [early], groups: [] }), "a", "monkey_business")).toHaveLength(0);
   });
 
   it("judges nothing by rank until a rarity has more than ten cards ranked, and never an unranked card", () => {
@@ -258,13 +266,59 @@ describe("group honors", () => {
     expect(badges.filter((x) => x.code === "lone_wolf").map((x) => x.userId)).toEqual(["a"]);
   });
 
-  it("Told You So is a noted pick the Group Mind left out, in the top five", () => {
+  it("Told You So is a noted pick the Group Mind left out, in the top five, in a group of three", () => {
     const mindPicks = [{ rarity: "common" as const, slot: 1, cardId: "c1" }];
-    const two = [entry("a", { common: [1, 3, 7, 8, 9] }, cards, { notes: ["c1", "c3"] }), entry("b", {}, cards, { notes: ["c6"] })];
-    const badges = computeSeasonBadges({ cards, entries: two, groups: [group(two, { mind: mindPicks })] });
+    const three = [entry("a", { common: [1, 3, 7, 8, 9] }, cards, { notes: ["c1", "c3"] }), entry("b", {}, cards, { notes: ["c6"] }), entry("c")];
+    const badges = computeSeasonBadges({ cards, entries: three, groups: [group(three, { mind: mindPicks })] });
     expect(mine(badges, "a", "told_you_so")[0]).toMatchObject({ communityId: "g1", detail: { cards: [{ name: "common card 3", rank: 3 }] } });
     expect(mine(badges, "b", "told_you_so")).toHaveLength(0);
-    expect(computeSeasonBadges({ cards, entries: two, groups: [group(two)] }).filter((x) => x.code === "told_you_so")).toEqual([]);
+    expect(computeSeasonBadges({ cards, entries: three, groups: [group(three)] }).filter((x) => x.code === "told_you_so")).toEqual([]);
+    expect(computeSeasonBadges({ cards, entries: three.slice(0, 2), groups: [group(three.slice(0, 2), { mind: mindPicks })] }).filter((x) => x.code === "told_you_so")).toEqual([]);
+  });
+
+  it("Pick of the Season settles equal points on the higher adjusted win rate", () => {
+    // a's #1 common and b's #1 mythic both finish #1 at slot 1: 150 points each.
+    const adj = (rarity: MtgRarity, rank: number) => (rarity === "mythic" ? 0.66 : 0.6) - rank / 200;
+    const thinAdj = pool({ adj });
+    const three = [entry("a", { common: [1, 6, 7, 8, 9] }, thinAdj), entry("b", { mythic: [1, 6, 7, 8, 9] }, thinAdj), entry("c", {}, thinAdj)];
+    const badges = computeSeasonBadges({ cards: thinAdj, entries: three, groups: [group(three)] });
+    expect(badges.filter((x) => x.code === "pick_of_the_season").map((x) => x.userId)).toEqual(["b"]);
+    // The same card at #1 shares.
+    const twins = [entry("a", { mythic: [1, 6, 7, 8, 9] }, thinAdj), entry("b", { mythic: [1, 6, 7, 8, 9] }, thinAdj), entry("c", {}, thinAdj)];
+    expect(computeSeasonBadges({ cards: thinAdj, entries: twins, groups: [group(twins)] }).filter((x) => x.code === "pick_of_the_season").map((x) => x.userId).sort()).toEqual(["a", "b"]);
+  });
+
+  it("Wooden Spoon needs four players, so last of three keeps Third Place alone", () => {
+    const three = [entry("a", { common: [1, 2, 3, 4, 5] }), entry("b"), entry("c", { common: [16, 17, 18, 19, 20] })];
+    const badges = computeSeasonBadges({ cards, entries: three, groups: [group(three)] });
+    expect(codesFor(badges, "c")).toContain("third_place");
+    expect(codesFor(badges, "c")).not.toContain("wooden_spoon");
+  });
+
+  it("days with fewer than three players, or no ranked rarity, don't count", () => {
+    const [a, b, c] = ["a", "b", "c"].map((id) => entry(id));
+    const alone = [{ userId: "a", rank: 1 }];
+    const full = [{ userId: "a", rank: 1 }, { userId: "b", rank: 2 }, { userId: "c", rank: 3 }];
+    const founder = computeSeasonBadges({ cards, entries: [a, b, c], groups: [{ communityId: "g1", days: [alone, alone, full, full], mind: [] }] });
+    expect(mine(founder, "a", "wire_to_wire")[0].detail).toEqual({ days: 2 });
+    expect(mine(founder, "a", "king_of_the_hill")[0].detail).toEqual({ days: 2 });
+    const thinFirst = computeSeasonBadges({ cards, entries: [a, b, c], groups: [{ communityId: "g1", days: [full, full, full], mind: [] }], judgedDays: [false, true, true] });
+    expect(mine(thinFirst, "a", "wire_to_wire")[0].detail).toEqual({ days: 2 });
+  });
+
+  it("a rarity's honors wait until it's ranked, and standings honors until any rarity is", () => {
+    const noMythics = pool({ ranked: { mythic: 8 } });
+    const four = ["a", "b", "c", "d"].map((id, i) => entry(id, { common: [1 + i, 11, 12, 13, 14] }, noMythics));
+    const badges = computeSeasonBadges({ cards: noMythics, entries: four, groups: [group(four)] });
+    expect(badges.some((x) => x.code === "mythic_vision")).toBe(false);
+    expect(badges.some((x) => x.code === "common_sense")).toBe(true);
+    expect(badges.some((x) => x.code === "champion")).toBe(true);
+    const blank = pool({ ranked: 1 });
+    const flat = ["a", "b", "c", "d"].map((id) => entry(id, {}, blank));
+    const none = computeSeasonBadges({ cards: blank, entries: flat, groups: [group(flat)] });
+    for (const code of ["champion", "runner_up", "third_place", "wooden_spoon", "photo_finish", "king_of_the_hill", "wire_to_wire", "common_sense", "monkey_business"]) {
+      expect(none.some((x) => x.code === code)).toBe(false);
+    }
   });
 });
 
@@ -284,6 +338,9 @@ describe("badge catalogue and reasons", () => {
     expect(badgeDescription("photo_finish", { gap: 0.04 }, true)).toBe("Under 0.1 points from the player one place away, the closest gap in the group right now.");
     expect(badgeDescription("contrarian", { shared: 0 })).toBe("None of 20 picks matched the Group Mind, the fewest in the group.");
     expect(badgeDescription("oracle", { rank: 2, players: 40 })).toBe("Finished 2nd of 40 on the Everyone board, in the top 5%.");
+    expect(badgeDescription("monkey_business", { points: 999.6 }, true)).toBe("999.6 points right now, below the 1,000 points random picks would score.");
+    expect(badgeDescription("monkey_business", { points: 912.3 })).toBe("Finished with 912 points, below the 1,000 points random picks would score.");
+    expect(badgeDescription("beat_the_crowd", { points: 1500.04, mind: 1500.01 })).toBe("Finished with 1,500.04 points, above the Group Mind's 1,500.01.");
   });
 
   it("lists the first three cards and counts the rest", () => {
@@ -301,33 +358,5 @@ describe("badge catalogue and reasons", () => {
 
   it("ordinals", () => {
     expect([1, 2, 3, 4, 11, 12, 13, 21, 22, 101, 111].map(ordinal)).toEqual(["1st", "2nd", "3rd", "4th", "11th", "12th", "13th", "21st", "22nd", "101st", "111th"]);
-  });
-});
-
-describe("weekly standings schedule", () => {
-  // Reality Fracture as it stands in production.
-  const fra = { arena_release_at: "2026-09-29T18:00:00Z", final_at: "2026-11-13T14:00:00Z" };
-
-  it("is 10 AM ET each Tuesday after the first standings, across the clock change, with no email in the final week", () => {
-    expect(mtgWeeklyStandingsTimes(fra).map((d) => d.toISOString())).toEqual([
-      "2026-10-06T14:00:00.000Z",
-      "2026-10-13T14:00:00.000Z",
-      "2026-10-20T14:00:00.000Z",
-      "2026-10-27T14:00:00.000Z",
-      "2026-11-03T15:00:00.000Z",
-    ]);
-    expect(mtgWeeklyStandingsTimes({ ...fra, arena_release_at: null })).toEqual([]);
-  });
-
-  it("waits for the day's standings until 8 PM ET", () => {
-    const at = (iso: string, latest: string | null) => mtgWeeklyStandingsDue(fra, latest, new Date(iso));
-    expect(at("2026-10-06T13:30:00Z", "2026-10-06")).toBeNull(); // 9:30 AM
-    expect(at("2026-10-06T14:30:00Z", "2026-10-06")).toMatchObject({ period: "2026-10-06" });
-    expect(at("2026-10-06T14:30:00Z", "2026-10-05")).toBeNull();
-    expect(at("2026-10-06T23:30:00Z", "2026-10-05")).toBeNull(); // 7:30 PM
-    expect(at("2026-10-07T00:05:00Z", "2026-10-05")).toMatchObject({ period: "2026-10-06" }); // 8:05 PM
-    expect(at("2026-10-06T14:30:00Z", null)).toBeNull();
-    expect(at("2026-10-07T14:30:00Z", "2026-10-07")).toBeNull(); // a Wednesday
-    expect(at("2026-11-10T15:30:00Z", "2026-11-10")).toBeNull(); // the final week
   });
 });

@@ -1,4 +1,4 @@
-import { MTG_RARITIES, easternDateKey, easternHour, type MtgRarity } from "./mtg";
+import { MTG_RARITIES, easternDateKey, easternHour, easternToUtc, type MtgRarity } from "./mtg";
 
 // ── Constants from the spec ──────────────────────────────────────────────────
 
@@ -322,6 +322,18 @@ export function rankStandings<T extends StandingInput>(rows: T[]): Array<T & { r
     if (!tied) rank = i + 1;
     return { ...r, rank };
   });
+}
+
+/**
+ * Who counts on a past day's group standings (spec 10.5): the members who had
+ * joined by 9 AM ET on the next published day, when that day stopped being the
+ * newest on the leaderboard. Worked out from dates rather than publish times,
+ * so re-publishing or publishing a day late never changes who counted, and a
+ * member who joined after a day was published isn't shown as new twice.
+ */
+export function mtgJoinCutoff(nextSnapshotDate: string): number {
+  const [y, m, d] = nextSnapshotDate.split("-").map(Number);
+  return easternToUtc(y, m, d, 9, 0).getTime();
 }
 
 export type GroupMemberStanding = {

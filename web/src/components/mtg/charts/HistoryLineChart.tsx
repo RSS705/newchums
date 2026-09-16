@@ -6,6 +6,7 @@ import Button from "@mui/material/Button";
 import Typography from "@mui/material/Typography";
 import { useTheme } from "@mui/material/styles";
 import { CartesianGrid, LabelList, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { srOnly } from "../pageBits";
 
 export type HistoryPoint = { key: string; label: string; value: number; detail?: string };
 
@@ -29,6 +30,16 @@ type Props = {
 /** One step off the white card surface; solid hairlines, never dashed. */
 const GRID = "#E9EBEE";
 const AXIS_TEXT = "#6B7280";
+const REFERENCE = "#9CA3AF";
+
+/** Rank ticks at round steps from first place ("#1, #10, #20"), at most five. */
+function rankTicks([first, last]: [number, number]): number[] {
+  const span = Math.max(1, last - first);
+  const step = [1, 2, 5, 10, 20, 25, 50, 100].find((s) => span / s <= 4) ?? Math.ceil(span / 4);
+  const ticks = [first];
+  for (let t = step; t <= last; t += step) if (t > first) ticks.push(t);
+  return ticks;
+}
 
 /**
  * A single series across the season's days, drawn to the dataviz rules: a
@@ -53,15 +64,17 @@ export default function HistoryLineChart({ valueName, detailName, points, format
 
   return (
     <Box>
-      <Box component="figure" aria-label={summary} sx={{ m: 0, height: { xs: 200, sm: 240 } }}>
+      {/* An image to screen readers, named by the summary; the table below has every value. */}
+      <Box component="figure" role="img" aria-label={summary} sx={{ m: 0, height: { xs: 200, sm: 240 } }}>
         {/* A 1 px starting size instead of -1 until the container is measured, so Recharts doesn't warn on first render. */}
         <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 1, height: 1 }}>
-          <LineChart data={points} margin={{ top: 16, right: 44, bottom: 0, left: 0 }}>
+          <LineChart data={points} margin={{ top: 16, right: 44, bottom: 0, left: 0 }} accessibilityLayer={false}>
             <CartesianGrid vertical={false} stroke={GRID} />
             <XAxis dataKey="label" tick={{ fontSize: 11, fill: AXIS_TEXT }} tickLine={false} axisLine={{ stroke: GRID }} interval="preserveStartEnd" minTickGap={18} tickMargin={6} />
             <YAxis
               width={48}
               domain={yDomain}
+              ticks={invert ? rankTicks(yDomain) : undefined}
               reversed={invert}
               allowDecimals={false}
               tickFormatter={(v: number) => format(v)}
@@ -69,9 +82,8 @@ export default function HistoryLineChart({ valueName, detailName, points, format
               tickLine={false}
               axisLine={false}
             />
-            {reference && (
-              <ReferenceLine y={reference.value} stroke="#9CA3AF" strokeDasharray="4 4" label={{ value: reference.label, position: "insideBottomLeft", fill: AXIS_TEXT, fontSize: 11 }} />
-            )}
+            {/* Labelled below the chart, where the line can never run over it. */}
+            {reference && <ReferenceLine y={reference.value} stroke={REFERENCE} strokeDasharray="4 4" />}
             <Tooltip
               cursor={{ stroke: "#9CA3AF", strokeWidth: 1 }}
               isAnimationActive={false}
@@ -118,13 +130,19 @@ export default function HistoryLineChart({ valueName, detailName, points, format
           </LineChart>
         </ResponsiveContainer>
       </Box>
+      {reference && (
+        <Box aria-hidden sx={{ display: "flex", alignItems: "center", gap: 0.75, mt: 0.5, pl: "48px" }}>
+          <Box sx={{ width: 18, borderTop: "2px dashed", borderColor: REFERENCE }} />
+          <Typography variant="caption" sx={{ color: AXIS_TEXT, lineHeight: 1.3 }}>{reference.label}</Typography>
+        </Box>
+      )}
       <Button
         size="small"
         variant="text"
         onClick={() => setShowTable((v) => !v)}
         aria-expanded={showTable}
-        aria-controls={tableId}
-        sx={{ textTransform: "none", fontWeight: 700, minHeight: 36, px: 1, ml: -1 }}
+        aria-controls={showTable ? tableId : undefined}
+        sx={{ textTransform: "none", fontWeight: 700, minHeight: 44, px: 1, ml: -1 }}
       >
         {showTable ? "Hide the numbers" : "Show the numbers"}
       </Button>
@@ -141,6 +159,7 @@ export default function HistoryLineChart({ valueName, detailName, points, format
               "& .num": { textAlign: "right", fontVariantNumeric: "tabular-nums" },
             }}
           >
+            <Box component="caption" sx={srOnly}>{summary}</Box>
             <thead>
               <tr>
                 <th scope="col">Day</th>

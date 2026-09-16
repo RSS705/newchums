@@ -169,10 +169,11 @@ export type MtgBadge = {
 /** Badge tier colors, after Magic's rarity symbols (spec 7.1). */
 export const BADGE_TIER_STYLE: Record<MtgBadgeTier, { bg: string; fg: string; border: string }> = {
   common: { bg: "#F3F4F6", fg: "#1F2937", border: "#1F2937" },
-  uncommon: { bg: "#EEF1F4", fg: "#4B5563", border: "#9CA3AF" },
-  rare: { bg: "#FFF7DB", fg: "#8A6200", border: "#D4A017" },
+  // Borders at 3:1 or better on white, since an on-track badge is only its outline.
+  uncommon: { bg: "#EEF1F4", fg: "#4B5563", border: "#6B7280" },
+  rare: { bg: "#FFF7DB", fg: "#8A6200", border: "#A87A00" },
   mythic: { bg: "#FFEDE3", fg: "#B83A0B", border: "#E65B13" },
-  shame: { bg: "#F5F5F4", fg: "#57534E", border: "#A8A29E" },
+  shame: { bg: "#F5F5F4", fg: "#57534E", border: "#78716C" },
 };
 
 export type MtgRevealPick = { slot: number; note: string | null; onlyYou: boolean; card: MtgCard };
@@ -263,6 +264,8 @@ export type MtgPlayerPick = {
   multiplier: number;
   note: string | null;
   card: MtgCard;
+  /** Removed from scoring by an admin, so the pick scores a neutral 50. */
+  voided?: boolean;
   /** The card's numbers on the latest day; null before the first standings or for a voided card. */
   stats: MtgCardNumbers | null;
   /** Null before the first standings; a neutral 50 for a card without numbers. */
@@ -345,6 +348,9 @@ export function ordinal(n: number): string {
 }
 
 /** 0.5823 → "58.2%". */
+/** Scryfall's 146 px wide image for thumbnails, instead of the 488 px "normal" one. */
+export const smallCardImage = (url: string | null | undefined) => (url ? url.replace("/normal/", "/small/") : null);
+
 export const formatWinRate = (wr: number | null) => (wr === null ? "–" : `${(wr * 100).toFixed(1)}%`);
 
 /** 12345.6 → "12,346". */

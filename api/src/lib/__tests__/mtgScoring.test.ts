@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  MTG_SLOT_WEIGHTS, checkSnapshot, computeCardScores, isDateKey, matchFeed, mtgIngestDateAllowed, mtgIngestSlot, mtgIngestWindow, mtgStandingsDay,
+  MTG_SLOT_WEIGHTS, checkSnapshot, computeCardScores, isDateKey, matchFeed, mtgIngestDateAllowed, mtgIngestSlot, mtgIngestWindow, mtgJoinCutoff, mtgStandingsDay,
   normalizeCardName, parseCardDataFeed, rankGroupDay, rankStandings, scoreEntry, type FeedRecord, type PoolCard,
 } from "../mtgScoring";
 
@@ -225,5 +225,12 @@ describe("rankGroupDay", () => {
   });
   it("skips members without an entry or without points that day", () => {
     expect(rankGroupDay(members, new Map([["e1", { total: 10, slot1_points: 1 }]])).map((r) => r.key)).toEqual(["ann"]);
+  });
+});
+
+describe("mtgJoinCutoff", () => {
+  it("is 9 AM Eastern on the next published day, either side of the clock change", () => {
+    expect(new Date(mtgJoinCutoff("2026-10-01")).toISOString()).toBe("2026-10-01T13:00:00.000Z");
+    expect(new Date(mtgJoinCutoff("2026-11-02")).toISOString()).toBe("2026-11-02T14:00:00.000Z");
   });
 });

@@ -69,9 +69,7 @@ export type TimelineEntry = {
   status: "done" | "now" | "upcoming";
 };
 
-/** The dates that matter to players, in order, with a status each. Weekly
- *  standings days are every Tuesday between the first standings and the
- *  final day, excluding the final week (the results email replaces it). */
+/** The dates that matter to players, in order, with a status each. */
 export function mtgTimeline(set: MtgSetRow, now: Date = new Date()): TimelineEntry[] {
   const t = now.getTime();
   const entries: Array<Omit<TimelineEntry, "status">> = [];
@@ -94,12 +92,6 @@ export function mtgTimeline(set: MtgSetRow, now: Date = new Date()): TimelineEnt
     entries.push({ key: "arena", label: "Arena launch", at: set.arena_release_at, detail: "Premier Draft opens and 17Lands starts collecting games." });
     const firstStandings = mtgMorningAfter(set.arena_release_at); // 9 AM ET the morning after
     entries.push({ key: "first_standings", label: "First standings", at: firstStandings.toISOString(), detail: "Day 1 of scoring. The first few days swing a lot." });
-    mtgWeeklyStandingsTimes(set).forEach((at, i) => {
-      entries.push({
-        key: `weekly_${i + 1}`, label: "Weekly standings", at: at.toISOString(),
-        detail: "An email with your rank, how far you've moved, your best and worst picks, and the badges you're on track for.",
-      });
-    });
   }
   if (set.tabletop_release_at) {
     entries.push({ key: "paper", label: "Paper release", at: set.tabletop_release_at, detail: "The set arrives in stores." });
@@ -570,6 +562,8 @@ const RARITY_PLURAL_LOWER: Record<MtgRarity, string> = { common: "commons", unco
 type BadgeCardDetail = { name: string; rarity: MtgRarity; rank: number | null; ranked: number | null; points: number | null; score: number | null };
 
 const detailNumber = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+/** What random picks average (spec 6.3), the line Monkey Business falls below. */
+const MTG_RANDOM_POINTS = 1000;
 const isRarity = (v: unknown): v is MtgRarity => typeof v === "string" && (MTG_RARITIES as readonly string[]).includes(v);
 
 /** The cards a season badge remembers, whether it keeps a list or one card. */
@@ -582,8 +576,15 @@ function detailCards(detail: Record<string, unknown>): BadgeCardDetail[] {
   });
 }
 
-/** "1,234 points", with a decimal when rounding would hide a difference that matters. */
 const wholePoints = (n: number) => Math.round(n).toLocaleString("en-US");
+/** Two point totals at the fewest decimals (up to two) that still tell them apart. */
+function pointsPair(a: number, b: number): [string, string] {
+  for (const digits of [0, 1, 2]) {
+    const fmt = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+    if (fmt(a) !== fmt(b) || digits === 2) return [fmt(a), fmt(b)];
+  }
+  return [wholePoints(a), wholePoints(b)];
+}
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 /**
@@ -636,7 +637,9 @@ export function badgeDescription(code: string, detail: Record<string, unknown> |
       break;
     }
     case "pick_of_the_season": {
-      const list = cards.filter((c) => c.points !== null).slice(0, 3).map((c) => when(`${c.name} earned ${wholePoints(c.points as number)} points`, `${c.name} is earning ${wholePoints(c.points as number)} points`));
+      const scored = cards.filter((c) => c.points !== null);
+      const list = scored.slice(0, 3).map((c) => when(`${c.name} earned ${wholePoints(c.points as number)} points`, `${c.name} is earning ${wholePoints(c.points as number)} points`));
+      if (scored.length > 3) list.push(`and ${scored.length - 3} more`);
       if (list.length > 0) text = `${list.join("; ")}, the most of any pick in the group.`;
       break;
     }
@@ -675,7 +678,9 @@ export function badgeDescription(code: string, detail: Record<string, unknown> |
       break;
     }
     case "whiff_of_the_season": {
-      const list = cards.filter((c) => c.score !== null).slice(0, 3).map((c) => when(`${c.name}, a #1 ${c.rarity} pick, finished with a Card Score of ${Math.round(c.score as number)}`, `${c.name}, a #1 ${c.rarity} pick, has a Card Score of ${Math.round(c.score as number)}`));
+      const scored = cards.filter((c) => c.score !== null);
+      const list = scored.slice(0, 3).map((c) => when(`${c.name}, a #1 ${c.rarity} pick, finished with a Card Score of ${Math.round(c.score as number)}`, `${c.name}, a #1 ${c.rarity} pick, has a Card Score of ${Math.round(c.score as number)}`));
+      if (scored.length > 3) list.push(`and ${scored.length - 3} more`);
       if (list.length > 0) text = `${list.join("; ")}, the lowest of any #1 pick in the group.`;
       break;
     }
@@ -685,11 +690,12 @@ export function badgeDescription(code: string, detail: Record<string, unknown> |
       const mind = num("mind");
       if (points === null) break;
       if (code === "monkey_business") {
-        text = when(`Finished with ${wholePoints(points)} points, below the 1,000 points random picks would score.`, `${wholePoints(points)} points right now, below the 1,000 points random picks would score.`);
+        // Never "1,000 points, below the 1,000": show the decimals that keep it under.
+        const [shown] = pointsPair(points, MTG_RANDOM_POINTS);
+        text = when(`Finished with ${shown} points, below the 1,000 points random picks would score.`, `${shown} points right now, below the 1,000 points random picks would score.`);
       } else if (mind !== null) {
-        const close = Math.round(points) === Math.round(mind);
-        const fmt = (n: number) => (close ? n.toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : wholePoints(n));
-        text = when(`Finished with ${fmt(points)} points, above the Group Mind's ${fmt(mind)}.`, `${fmt(points)} points right now, above the Group Mind's ${fmt(mind)}.`);
+        const [mine, theirs] = pointsPair(points, mind);
+        text = when(`Finished with ${mine} points, above the Group Mind's ${theirs}.`, `${mine} points right now, above the Group Mind's ${theirs}.`);
       }
       break;
     }
@@ -887,47 +893,6 @@ export function mtgRevealedEmailAt(lockAt: string | Date): Date {
 /** "Wednesday, September 30" in Eastern time. */
 export function formatEasternDate(at: string | Date): string {
   return new Intl.DateTimeFormat("en-US", { timeZone: EASTERN, weekday: "long", month: "long", day: "numeric" }).format(new Date(at));
-}
-
-/**
- * When the weekly standings email goes out (spec section 8, email 4): 10:00
- * AM ET every Tuesday after the first standings, whichever side of the clock
- * change, leaving out the final week, which the season results email covers.
- * The timeline lists the same times.
- */
-export function mtgWeeklyStandingsTimes(set: { arena_release_at: string | Date | null; final_at: string | Date }): Date[] {
-  if (!set.arena_release_at) return [];
-  const first = easternParts(mtgMorningAfter(set.arena_release_at));
-  // Calendar arithmetic on the Eastern date, held at UTC midnight so a day is always 24 hours.
-  let day = Date.UTC(first.year, first.month - 1, first.day) + 86400000;
-  while (new Date(day).getUTCDay() !== 2) day += 86400000;
-  const lastSend = new Date(set.final_at).getTime() - 6 * 86400000;
-  const out: Date[] = [];
-  for (let week = 0; week < 20; week++) {
-    const d = new Date(day + week * 7 * 86400000);
-    const at = easternToUtc(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate(), 10);
-    if (at.getTime() >= lastSend) break;
-    out.push(at);
-  }
-  return out;
-}
-
-/**
- * Whether the hourly job should send this week's standings email now: on one
- * of `mtgWeeklyStandingsTimes`' Tuesdays, from 10:00 AM ET, once that day's
- * standings are published, or from 8:00 PM ET with the latest standings there
- * are, as long as there are some. `period` names the week in the email log.
- */
-export function mtgWeeklyStandingsDue(
-  set: { arena_release_at: string | Date | null; final_at: string | Date },
-  latestSnapshotDate: string | null,
-  now: Date = new Date(),
-): { period: string; sendAt: Date } | null {
-  const today = easternDateKey(now);
-  const sendAt = mtgWeeklyStandingsTimes(set).find((at) => easternDateKey(at) === today);
-  if (!sendAt || now.getTime() < sendAt.getTime() || !latestSnapshotDate) return null;
-  if (latestSnapshotDate !== today && easternHour(now) < 20) return null;
-  return { period: today, sendAt };
 }
 
 export type FunFactPlayer = { name: string; picks: Array<{ rarity: MtgRarity; slot: number; cardId: string; cardName: string }> };

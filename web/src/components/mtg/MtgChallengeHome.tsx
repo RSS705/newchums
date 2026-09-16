@@ -20,6 +20,7 @@ import StyleRoundedIcon from "@mui/icons-material/StyleRounded";
 import { AppCard } from "@/components/ui";
 import { apiFetch, getAvatarBaseUrl } from "@/lib/apiClient";
 import SeasonTimeline from "./SeasonTimeline";
+import { rememberChallengeGroup } from "./challengeGroup";
 import RevealSummary from "./reveal/RevealSummary";
 import Leaderboard from "./leaderboard/Leaderboard";
 import CardViewer from "./picks/CardViewer";
@@ -30,6 +31,8 @@ import {
 
 type Props = {
   communityId: string;
+  /** For the group's player and card pages, which otherwise look it up again. */
+  communityName: string;
   slug: string;
   isMember: boolean;
   isOwner: boolean;
@@ -40,10 +43,12 @@ const PHASE_COPY: Record<MtgSetPayload["phase"], { title: string; body: string }
   upcoming: { title: "Next season is on the way", body: "Dates are set. Cards start appearing, and picks open, when previews begin." },
   previews: { title: "Previews are running", body: "New cards land every day as they're revealed. You can start picking now and change anything until the lock." },
   open: { title: "Picks are open", body: "Pick the five cards you think will post the highest win rate at each rarity, in order. Everything saves as you go." },
-  locked: { title: "Picks are locked", body: "Entries are sealed and everyone's picks are revealed to the group. Standings start the morning after the Arena launch." },
+  locked: { title: "Picks are locked", body: "Nobody can change their picks now, and everyone's picks are revealed to the group. Standings start the morning after the Arena launch." },
   live: { title: "The season is live", body: "Standings update every morning from 17Lands Premier Draft data." },
   final: { title: "Season complete", body: "The last standings of the season are in." },
 };
+/** The final day before its standings are published: the clock says final, the data doesn't yet. */
+const FINAL_PENDING = { title: "Final day", body: "The last standings of the season appear as soon as 17Lands' data is in." };
 
 /** Grey placeholder widths for the blank standings' player names. */
 const BLANK_ROWS = ["58%", "44%", "36%"];
@@ -113,9 +118,10 @@ function BlankStandings({ firstStandingsAt, picksOpen }: { firstStandingsAt: str
  * after the lock, the Reveal summary (below the standings once they start);
  * the card pool, whose cards open large; and the season timeline.
  */
-export default function MtgChallengeHome({ communityId, slug, isMember, isAuthenticated }: Props) {
+export default function MtgChallengeHome({ communityId, communityName, slug, isMember, isAuthenticated }: Props) {
   const [set, setSet] = useState<MtgSetPayload | null>(null);
   const [loading, setLoading] = useState(true);
+  useEffect(() => { rememberChallengeGroup({ id: communityId, name: communityName, slug }); }, [communityId, communityName, slug]);
   const [rarity, setRarity] = useState<MtgRarity>("common");
   // Every rarity at once, so switching tabs never waits on the network.
   const [pool, setPool] = useState<MtgCard[] | null>(null);
@@ -195,7 +201,10 @@ export default function MtgChallengeHome({ communityId, slug, isMember, isAuthen
     );
   }
 
-  const copy = PHASE_COPY[pastLock && (set.phase === "upcoming" || set.phase === "previews" || set.phase === "open") ? "locked" : set.phase];
+  const finalStandingsIn = !!set.standings && set.standings.day !== null && set.standings.totalDays !== null && set.standings.day >= set.standings.totalDays;
+  const copy = set.phase === "final" && !finalStandingsIn
+    ? FINAL_PENDING
+    : PHASE_COPY[pastLock && (set.phase === "upcoming" || set.phase === "previews" || set.phase === "open") ? "locked" : set.phase];
   const list = pool ? byRarity[rarity] : null;
   const picksHref = `/communities/${slug}/picks`;
   const afterLock = pastLock || set.phase === "locked" || set.phase === "live" || set.phase === "final";
@@ -278,7 +287,7 @@ export default function MtgChallengeHome({ communityId, slug, isMember, isAuthen
 
       {/* From the Arena launch the standings lead (waiting for the first day at
           first), and the Reveal sits one tap below. */}
-      {isMember && standingsLive && <Leaderboard communityId={communityId} slug={slug} setCode={set.code} nowMs={nowMs} />}
+      {isMember && standingsLive && <Leaderboard communityId={communityId} slug={slug} setCode={set.code} nowMs={nowMs} firstStandingsAt={firstStandingsAt} />}
       {revealOpen && isMember && <RevealSummary communityId={communityId} slug={slug} />}
 
       {/* Every member and how far along their picks are. Counts only: nobody's

@@ -2128,6 +2128,7 @@ export default function CommunityDetailClient({
       {community.specialization === "mtg_prediction_challenge" ? (
         <MtgChallengeHome
           communityId={community.id}
+          communityName={community.name}
           slug={slug}
           isMember={isMember}
           isOwner={isOwner}

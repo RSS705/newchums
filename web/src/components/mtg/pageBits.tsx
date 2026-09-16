@@ -2,6 +2,9 @@ import Box from "@mui/material/Box";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 
+/** Visually hidden text for screen readers. Pixel strings on purpose: in sx a bare 1 means 100%. */
+export const srOnly = { position: "absolute", width: "1px", height: "1px", padding: 0, margin: "-1px", overflow: "hidden", clip: "rect(0 0 0 0)", whiteSpace: "nowrap", border: 0 } as const;
+
 /** A card section's heading: a tinted icon disc, the title, and an optional caption. */
 export function IconTitle({ icon, title, caption }: { icon: React.ReactNode; title: string; caption?: React.ReactNode }) {
   return (

@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useEffect, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import NextLink from "next/link";
 import { useParams } from "next/navigation";
 import Avatar from "@mui/material/Avatar";
@@ -14,6 +14,7 @@ import Stack from "@mui/material/Stack";
 import Switch from "@mui/material/Switch";
 import Typography from "@mui/material/Typography";
 import ArrowBackRoundedIcon from "@mui/icons-material/ArrowBackRounded";
+import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
 import EmojiEventsRoundedIcon from "@mui/icons-material/EmojiEventsRounded";
 import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
 import LeaderboardRoundedIcon from "@mui/icons-material/LeaderboardRounded";
@@ -22,25 +23,30 @@ import { AppCard } from "@/components/ui";
 import { apiFetch, getAvatarBaseUrl } from "@/lib/apiClient";
 import HistoryLineChart from "../charts/HistoryLineChart";
 import { loadChallengeGroup, type ChallengeGroupRef } from "../challengeGroup";
-import { IconTitle, StatTile } from "../pageBits";
+import { IconTitle, StatTile, srOnly } from "../pageBits";
 import BadgeChip from "../reveal/BadgeChip";
 import {
   MTG_ATTRIBUTION, MTG_RARITIES, MTG_SLOTS_PER_RARITY, MTG_TOTAL_PICKS, RARITY_LABEL, RARITY_PLURAL, SLOT_MULTIPLIERS,
-  formatCount, formatDayKey, formatWhen, formatWinRate, ordinal,
+  formatCount, formatDayKey, formatWhen, formatWinRate, ordinal, smallCardImage,
   type MtgBadge, type MtgCard, type MtgPlayerPayload, type MtgPlayerPick, type MtgRarity, type MtgTopCard,
 } from "../mtgTypes";
 
 type Load =
   | { kind: "loading" }
   | { kind: "sealed"; lockAt: string | null; group: ChallengeGroupRef }
-  | { kind: "error"; message: string; group: ChallengeGroupRef | null }
+  | { kind: "error"; message: string; group: ChallengeGroupRef | null; retry: boolean }
   | { kind: "ready"; data: MtgPlayerPayload };
 
 /** Movement colors, as on the leaderboard: 5.0:1 and 6.5:1 on white. */
 const UP = "#15803D";
 const DOWN = "#B91C1C";
-// Visually hidden text for screen readers. Pixel strings on purpose: in sx a bare 1 means 100%.
-const srOnly = { position: "absolute", width: "1px", height: "1px", padding: 0, margin: "-1px", overflow: "hidden", clip: "rect(0 0 0 0)", whiteSpace: "nowrap", border: 0 } as const;
+/** A link whose tap area is its whole row: the row is `position: relative`,
+ *  and only the name is announced as the link. */
+const stretchedLink = {
+  "&::after": { content: '""', position: "absolute", inset: 0, borderRadius: 1.5 },
+  "&:focus-visible": { outline: "none" },
+  "&:focus-visible::after": { outline: "2px solid", outlineColor: "primary.main", outlineOffset: -2 },
+} as const;
 
 /** Up to two lines, then an ellipsis: card names matter more than row height. */
 const clampTwo = { display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", overflowWrap: "anywhere" } as const;
@@ -48,6 +54,7 @@ const displayName = (p: { name: string | null; username: string | null }) => p.n
 const whole = (n: number) => Math.round(n).toLocaleString("en-US");
 const tenths = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 const signedWhole = (n: number) => (Math.round(n) > 0 ? `+${whole(n)}` : Math.round(n) < 0 ? `−${whole(-n)}` : "±0");
+const days = (n: number) => (n === 1 ? "1 day" : `each of ${n} days`);
 const shiftDay = (key: string, days: number) => new Date(Date.parse(`${key}T12:00:00Z`) + days * 86400000).toISOString().slice(0, 10);
 const weekday = (key: string) => new Intl.DateTimeFormat("en-US", { timeZone: "UTC", weekday: "short" }).format(new Date(`${key}T12:00:00Z`));
 
@@ -83,27 +90,29 @@ function BadgesCard({ badges, isViewer, name }: { badges: MtgBadge[]; isViewer: 
   );
 }
 
-/** A card image, shown whole: Scryfall's art is never cropped or covered. */
+/** A card image, shown whole: Scryfall's art is never cropped or covered.
+ *  Thumbnails load Scryfall's small image, a sixth the size of the normal one. */
 function CardThumb({ card, width }: { card: MtgCard; width: number }) {
+  const src = smallCardImage(card.imageNormal);
   return (
     <Box sx={{ width, flexShrink: 0, aspectRatio: "488 / 680", borderRadius: "4.5% / 3.2%", overflow: "hidden", bgcolor: "grey.100", border: "1px solid", borderColor: "divider" }}>
-      {card.imageNormal && (
+      {src && (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={card.imageNormal} alt="" loading="lazy" decoding="async" style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }} />
+        <img src={src} alt="" loading="lazy" decoding="async" width={146} height={204} style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }} />
       )}
     </Box>
   );
 }
 
-/** Card Score change since the day before: ▲ green, ▼ red, – when flat. */
+/** Card Score change since the day before: ▲ green, ▼ red, ±0 when flat, to the same decimal as the score. */
 function Trend({ value }: { value: number | null }) {
   if (value === null) return null;
   const r = Math.round(value * 10) / 10;
-  if (r === 0) return <Box component="span" sx={{ color: "text.secondary", fontWeight: 700, whiteSpace: "nowrap" }}>&nbsp;–<Box component="span" sx={srOnly}>, unchanged since the day before</Box></Box>;
+  if (r === 0) return <Box component="span" sx={{ color: "text.secondary", fontWeight: 700 }}>&nbsp;<span aria-hidden>±0</span><Box component="span" sx={srOnly}>, unchanged since the day before</Box></Box>;
   return (
-    <Box component="span" sx={{ color: r > 0 ? UP : DOWN, fontWeight: 800, whiteSpace: "nowrap" }}>
-      &nbsp;<span aria-hidden>{r > 0 ? "▲" : "▼"}{Math.abs(r).toLocaleString("en-US")}</span>
-      <Box component="span" sx={srOnly}>, {r > 0 ? "up" : "down"} {Math.abs(r)} since the day before</Box>
+    <Box component="span" sx={{ color: r > 0 ? UP : DOWN, fontWeight: 800 }}>
+      &nbsp;<span aria-hidden>{r > 0 ? "▲" : "▼"}{tenths(Math.abs(r))}</span>
+      <Box component="span" sx={srOnly}>, {r > 0 ? "up" : "down"} {tenths(Math.abs(r))} since the day before</Box>
     </Box>
   );
 }
@@ -112,18 +121,24 @@ function PickNumbers({ pick, rarity }: { pick: MtgPlayerPick; rarity: MtgRarity 
   const s = pick.stats;
   if (!s) {
     return pick.cardScore === null ? null : (
-      <Typography variant="caption" color="text.secondary" sx={{ display: "block", lineHeight: 1.4 }}>No 17Lands numbers today · a neutral 50</Typography>
+      <Typography variant="caption" color="text.secondary" sx={{ display: "block", lineHeight: 1.4 }}>
+        {pick.voided ? "Removed from scoring, so it scores 50" : "No 17Lands data yet, so it scores 50"}
+      </Typography>
     );
   }
   const ranked = s.rank !== null && s.rankedCount !== null;
   return (
     <>
       <Typography variant="caption" color="text.secondary" sx={{ display: "block", lineHeight: 1.4 }}>
-        {s.gihWr === null ? `${formatCount(s.gihGames)} games · no win rate yet` : `${formatWinRate(s.gihWr)} GIH WR · ${formatCount(s.gihGames)} games`}
+        {/* Each figure stays whole when the line wraps on a narrow phone. */}
+        {s.gihWr === null
+          ? <><Box component="span" sx={{ whiteSpace: "nowrap" }}>{formatCount(s.gihGames)} games</Box> · no win rate yet</>
+          : <><Box component="span" sx={{ whiteSpace: "nowrap" }}>{formatWinRate(s.gihWr)} GIH WR</Box> · <Box component="span" sx={{ whiteSpace: "nowrap" }}>{formatCount(s.gihGames)} games</Box></>}
       </Typography>
       <Typography variant="caption" color="text.secondary" sx={{ display: "block", lineHeight: 1.4 }}>
-        {ranked ? `${ordinal(s.rank as number)} of ${s.rankedCount} ${RARITY_PLURAL[rarity]}` : "Not ranked yet"} · Score {tenths(pick.cardScore ?? 50)}
-        <Trend value={ranked ? pick.trend : null} />
+        <Box component="span" sx={{ whiteSpace: "nowrap" }}>{ranked ? `${ordinal(s.rank as number)} of ${s.rankedCount} ${RARITY_PLURAL[rarity]}` : "Not ranked yet"}</Box> ·{" "}
+        {/* The score and its change wrap as one piece. */}
+        <Box component="span" sx={{ whiteSpace: "nowrap" }}>Score {tenths(pick.cardScore ?? 50)}<Trend value={ranked ? pick.trend : null} /></Box>
       </Typography>
     </>
   );
@@ -140,18 +155,17 @@ const SlotRow = memo(function SlotRow({ slot, pick, rarity, cardHref, comparing,
 }) {
   const multiplier = SLOT_MULTIPLIERS[slot - 1];
   return (
-    <Box component="li" sx={{ listStyle: "none", py: 1.25, borderTop: "1px solid", borderColor: "divider", "&:first-of-type": { borderTop: 0, pt: 0.25 } }}>
+    <Box component="li" sx={{ listStyle: "none", position: "relative", py: 1.25, borderTop: "1px solid", borderColor: "divider", "&:first-of-type": { borderTop: 0, pt: 0.25 }, "@media (hover: hover)": { "&:hover .pick-chevron": { color: "primary.main" } } }}>
       {!pick ? (
         <Typography variant="body2" color="text.secondary">#{slot} · ×{multiplier} · No pick</Typography>
       ) : (
-        <Box sx={{ display: "grid", gridTemplateColumns: "44px minmax(0, 1fr) auto", columnGap: 1.25, alignItems: "start" }}>
-          <Box component={NextLink} href={cardHref(pick.card.id)} aria-hidden tabIndex={-1} sx={{ display: "block" }}>
-            <CardThumb card={pick.card} width={44} />
-          </Box>
+        // The whole row opens the card's page; the chevron says so on phones, which have no hover.
+        <Box sx={{ display: "grid", gridTemplateColumns: "44px minmax(0, 1fr) auto 18px", columnGap: { xs: 1, sm: 1.25 }, alignItems: "start" }}>
+          <CardThumb card={pick.card} width={44} />
           <Box sx={{ minWidth: 0 }}>
             <Typography variant="caption" color="text.secondary" sx={{ display: "block", fontWeight: 700, lineHeight: 1.3 }}>#{slot} · ×{multiplier}</Typography>
             <Link component={NextLink} href={cardHref(pick.card.id)} underline="hover" color="text.primary" title={pick.card.name}
-              sx={{ ...clampTwo, fontWeight: 700, fontSize: "0.9375rem", lineHeight: 1.3 }}>
+              sx={{ ...clampTwo, ...stretchedLink, fontWeight: 700, fontSize: "0.9375rem", lineHeight: 1.3 }}>
               {pick.card.name}
             </Link>
             <PickNumbers pick={pick} rarity={rarity} />
@@ -159,16 +173,18 @@ const SlotRow = memo(function SlotRow({ slot, pick, rarity, cardHref, comparing,
               <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, fontStyle: "italic", overflowWrap: "anywhere", lineHeight: 1.45 }}>&ldquo;{pick.note}&rdquo;</Typography>
             )}
           </Box>
-          {pick.points !== null && (
+          {pick.points !== null ? (
             <Box sx={{ textAlign: "right" }}>
               <Typography sx={{ fontWeight: 800, fontSize: "1rem", lineHeight: 1.25, fontVariantNumeric: "tabular-nums" }}>{tenths(pick.points)}</Typography>
               <Typography variant="caption" color="text.secondary">points</Typography>
             </Box>
-          )}
+          ) : <span />}
+          <ChevronRightRoundedIcon className="pick-chevron" aria-hidden sx={{ fontSize: 18, color: "text.disabled", alignSelf: "center" }} />
         </Box>
       )}
       {comparing && (
-        <Box sx={{ mt: 1, ml: { xs: 0, sm: "56px" }, px: 1.25, py: 0.75, borderRadius: 1.5, bgcolor: "grey.50", border: "1px solid", borderColor: "divider" }}>
+        // Above the row's link, so its own link stays tappable.
+        <Box sx={{ position: "relative", zIndex: 1, mt: 1, ml: { xs: 0, sm: "56px" }, px: 1.25, py: 0.75, borderRadius: 1.5, bgcolor: "grey.50", border: "1px solid", borderColor: "divider" }}>
           <Typography variant="caption" color="text.secondary" sx={{ display: "block", lineHeight: 1.4 }}>
             <Box component="span" sx={{ fontWeight: 800, color: "text.primary" }}>You:</Box>{" "}
             {!mine ? "no pick" : mine.card.id === pick?.card.id ? "the same card" : (
@@ -182,7 +198,7 @@ const SlotRow = memo(function SlotRow({ slot, pick, rarity, cardHref, comparing,
   );
 });
 
-function TopFive({ top, picks, rarity, cardHref }: { top: MtgTopCard[]; picks: MtgPlayerPick[]; rarity: MtgRarity; cardHref: (id: string) => string }) {
+function TopFive({ top, picks, rarity, cardHref, whose }: { top: MtgTopCard[]; picks: MtgPlayerPick[]; rarity: MtgRarity; cardHref: (id: string) => string; whose: "Your" | "Their" }) {
   const [open, setOpen] = useState(false);
   if (top.length === 0) return null;
   return (
@@ -192,28 +208,30 @@ function TopFive({ top, picks, rarity, cardHref }: { top: MtgTopCard[]; picks: M
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
         endIcon={<ExpandMoreRoundedIcon sx={{ transition: "transform 0.2s", transform: open ? "rotate(180deg)" : "none" }} />}
-        sx={{ textTransform: "none", fontWeight: 700, ml: -1, minHeight: 40 }}
+        sx={{ textTransform: "none", fontWeight: 700, ml: -1, minHeight: 44 }}
       >
-        Actual top 5 right now
+        {/* One inline span: a button lays its children out as flex items, which would drop the spaces. */}
+        <span>Actual top 5<Box component="span" sx={srOnly}> {RARITY_PLURAL[rarity]}</Box> right now</span>
       </Button>
       <Collapse in={open} unmountOnExit>
-        <Stack component="ol" spacing={1} aria-label={`The top 5 ${RARITY_PLURAL[rarity]} right now`} sx={{ m: 0, p: 0, pt: 0.5 }}>
+        <Stack component="ol" spacing={0.5} aria-label={`The top 5 ${RARITY_PLURAL[rarity]} right now`} sx={{ m: 0, p: 0, pt: 0.5 }}>
           {top.map((t) => {
             const picked = picks.find((p) => p.card.id === t.card.id);
             return (
-              <Box component="li" key={t.card.id} sx={{ listStyle: "none", display: "grid", gridTemplateColumns: "18px 32px minmax(0, 1fr) auto", columnGap: 1, alignItems: "center" }}>
+              <Box component="li" key={t.card.id} sx={{ listStyle: "none", position: "relative", display: "grid", gridTemplateColumns: "18px 32px minmax(0, 1fr) auto 18px", columnGap: 1, alignItems: "center", minHeight: 48, py: 0.25 }}>
                 <Typography sx={{ fontWeight: 800, fontSize: "0.875rem", textAlign: "right" }}>{t.rank}</Typography>
                 <CardThumb card={t.card} width={32} />
                 <Box sx={{ minWidth: 0 }}>
                   <Link component={NextLink} href={cardHref(t.card.id)} underline="hover" color="text.primary" title={t.card.name}
-                    sx={{ ...clampTwo, fontWeight: 700, fontSize: "0.875rem", lineHeight: 1.3 }}>
+                    sx={{ ...clampTwo, ...stretchedLink, fontWeight: 700, fontSize: "0.875rem", lineHeight: 1.3 }}>
                     {t.card.name}
                   </Link>
                   <Typography variant="caption" color="text.secondary" sx={{ display: "block", lineHeight: 1.35 }}>
-                    {formatWinRate(t.gihWr)} · {formatCount(t.gihGames)} games
+                    {t.gihWr === null ? "no win rate yet" : `${formatWinRate(t.gihWr)} GIH WR`} · {formatCount(t.gihGames)} games
                   </Typography>
                 </Box>
-                {picked ? <Chip size="small" color="primary" variant="outlined" label={`Picked #${picked.slot}`} sx={{ fontWeight: 700 }} /> : <span />}
+                {picked ? <Chip size="small" color="primary" variant="outlined" label={`${whose} #${picked.slot}`} sx={{ fontWeight: 700 }} /> : <span />}
+                <ChevronRightRoundedIcon aria-hidden sx={{ fontSize: 18, color: "text.disabled" }} />
               </Box>
             );
           })}
@@ -236,6 +254,8 @@ export default function PlayerView() {
   const userId = params?.userId ?? "";
   const [load, setLoad] = useState<Load>({ kind: "loading" });
   const [comparing, setComparing] = useState<MtgRarity[]>([]);
+  // Bumped by Try again, which reruns the load below.
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (!slug || !userId) return;
@@ -245,23 +265,29 @@ export default function PlayerView() {
       try {
         group = await loadChallengeGroup(slug);
         if (cancelled) return;
-        if (!group) { setLoad({ kind: "error", message: "We couldn't find that challenge group.", group: null }); return; }
+        if (!group) { setLoad({ kind: "error", message: "We couldn't find that challenge group.", group: null, retry: false }); return; }
         const res = await apiFetch(`/mtg/communities/${group.id}/players/${encodeURIComponent(userId)}`, { auth: true });
         const body = await res.json();
         if (cancelled) return;
         if (res.status === 403 && body.error === "SEALED") { setLoad({ kind: "sealed", lockAt: body.lockAt ?? null, group }); return; }
-        if (res.status === 403) { setLoad({ kind: "error", message: `Join ${group.name} to see its players.`, group }); return; }
-        if (res.status === 404) { setLoad({ kind: "error", message: "That player isn't in this group.", group }); return; }
-        if (!res.ok || !body.ok) { setLoad({ kind: "error", message: "We couldn't load this player. Try again in a moment.", group }); return; }
+        if (res.status === 403) { setLoad({ kind: "error", message: `Join ${group.name} to see its players.`, group, retry: false }); return; }
+        if (res.status === 404) { setLoad({ kind: "error", message: "That player isn't in this group.", group, retry: false }); return; }
+        if (!res.ok || !body.ok) { setLoad({ kind: "error", message: "We couldn't load this player right now.", group, retry: true }); return; }
         setLoad({ kind: "ready", data: body as MtgPlayerPayload });
       } catch {
-        if (!cancelled) setLoad({ kind: "error", message: "We couldn't load this player. Check your connection and try again.", group });
+        if (!cancelled) setLoad({ kind: "error", message: "We couldn't load this player. Check your connection.", group, retry: true });
       }
     })();
     return () => { cancelled = true; };
-  }, [slug, userId]);
+  }, [slug, userId, attempt]);
 
+  const cardHref = useCallback((id: string) => `/communities/${slug}/cards/${id}`, [slug]);
   const data = load.kind === "ready" ? load.data : null;
+  const chartPoints = useMemo(
+    () => (data ? data.history.map((h) => ({ key: h.date, label: formatDayKey(h.date), value: h.total, detail: h.rank !== null ? ordinal(h.rank) : undefined })) : []),
+    [data],
+  );
+
   const groupName = data ? data.community.name : load.kind === "sealed" || load.kind === "error" ? load.group?.name : undefined;
   const back = (
     <Button component={NextLink} href={`/communities/${slug}`} variant="text" size="small" startIcon={<ArrowBackRoundedIcon />}
@@ -276,11 +302,16 @@ export default function PlayerView() {
       <Stack spacing={2}>
         <Box>{back}</Box>
         <AppCard>
-          <Typography variant="body1" fontWeight={700}>{load.kind === "sealed" ? "Picks are sealed until the lock" : load.kind === "error" ? load.message : ""}</Typography>
+          <Typography variant="body1" fontWeight={700}>{load.kind === "sealed" ? "Other players' picks show here once picks lock" : load.kind === "error" ? load.message : ""}</Typography>
           {load.kind === "sealed" && (
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-              Everyone&apos;s picks in {load.group.name} are revealed when picks lock{load.lockAt ? `, ${formatWhen(load.lockAt)}` : ""}.
+              {load.lockAt ? `Picks lock ${formatWhen(load.lockAt)}. ` : ""}Then everyone&apos;s picks in {load.group.name} are revealed.
             </Typography>
+          )}
+          {load.kind === "error" && load.retry && (
+            <Button variant="outlined" onClick={() => { setLoad({ kind: "loading" }); setAttempt((n) => n + 1); }} sx={{ mt: 1.5, textTransform: "none", fontWeight: 700, borderRadius: 2.5, minHeight: 44 }}>
+              Try again
+            </Button>
           )}
         </AppCard>
       </Stack>
@@ -289,7 +320,6 @@ export default function PlayerView() {
 
   const { player, standing } = data;
   const name = displayName(player);
-  const cardHref = (id: string) => `/communities/${slug}/cards/${id}`;
   const moved = standing && standing.previousRank !== null ? standing.previousRank - standing.rank : 0;
   const sinceLabel = standing && standing.previousDate && shiftDay(standing.previousDate, 1) !== standing.date ? `since ${weekday(standing.previousDate)}` : "today";
   const lastPoint = data.history[data.history.length - 1];
@@ -355,20 +385,22 @@ export default function PlayerView() {
           <HistoryLineChart
             valueName="Points"
             detailName="Group rank"
-            points={data.history.map((h) => ({ key: h.date, label: formatDayKey(h.date), value: h.total, detail: h.rank !== null ? ordinal(h.rank) : undefined }))}
+            points={chartPoints}
             format={whole}
             reference={{ value: 1000, label: "Random picks ≈ 1,000" }}
-            summary={`${name}'s points on each of ${data.history.length} ${data.history.length === 1 ? "day" : "days"}, ${whole(lastPoint.total)} on the latest.`}
+            summary={`${name}'s points on ${days(data.history.length)}, ${whole(lastPoint.total)} on the latest.`}
           />
         </AppCard>
       )}
 
       {data.badges.length > 0 && <BadgesCard badges={data.badges} isViewer={player.isViewer} name={name} />}
 
-      {!player.hasEntry ? (
+      {!player.hasEntry || player.pickCount === 0 ? (
         <AppCard>
           <Typography variant="body2" color="text.secondary">
-            {player.isViewer ? "You haven't made any picks this season." : `${name} didn't lock in picks this season, so they're following along.`}
+            {data.set.phase === "upcoming" || data.set.phase === "previews" || data.set.phase === "open"
+              ? player.isViewer ? "You haven't made any picks yet." : `${name} hasn't made any picks yet.`
+              : player.isViewer ? "You didn't make picks this season, so you're following along." : `${name} didn't make picks this season, so they're following along.`}
           </Typography>
           {player.isViewer && data.set.phase !== "locked" && data.set.phase !== "live" && data.set.phase !== "final" && (
             <Button component={NextLink} href={`/communities/${slug}/picks`} variant="contained" sx={{ mt: 1.5, textTransform: "none", fontWeight: 700, borderRadius: 2.5, boxShadow: "none" }}>
@@ -381,9 +413,9 @@ export default function PlayerView() {
           {!standing && (
             <AppCard>
               <Typography variant="body2" color="text.secondary">
-                {data.set.phase === "locked" || data.set.phase === "live"
-                  ? "Card numbers and points arrive with the first standings, the morning after the Arena launch."
-                  : "Your picks stay private until the lock. Card numbers and points start the morning after the Arena launch."}
+                {data.set.phase === "upcoming" || data.set.phase === "previews" || data.set.phase === "open"
+                  ? "Only you can see your picks until picks lock. Card numbers and points start the morning after the Arena launch."
+                  : "Card numbers and points arrive with the first standings, the morning after the Arena launch."}
               </Typography>
             </AppCard>
           )}
@@ -407,8 +439,8 @@ export default function PlayerView() {
                   {data.compare && (
                     <FormControlLabel
                       control={<Switch size="small" checked={on} onChange={(e) => setComparing((cur) => (e.target.checked ? [...cur, rarity] : cur.filter((r) => r !== rarity)))} />}
-                      label="Compare with me"
-                      sx={{ mr: 0, minHeight: 40, "& .MuiFormControlLabel-label": { fontSize: "0.8125rem", fontWeight: 600 } }}
+                      label={<>Compare<Box component="span" sx={srOnly}> {RARITY_PLURAL[rarity]}</Box> with me</>}
+                      sx={{ mr: 0, minHeight: 44, "& .MuiFormControlLabel-label": { fontSize: "0.8125rem", fontWeight: 600 } }}
                     />
                   )}
                 </Stack>
@@ -425,14 +457,14 @@ export default function PlayerView() {
                     />
                   ))}
                 </Box>
-                <TopFive top={data.top[rarity]} picks={picks} rarity={rarity} cardHref={cardHref} />
+                <TopFive top={data.top[rarity]} picks={picks} rarity={rarity} cardHref={cardHref} whose={player.isViewer ? "Your" : "Their"} />
               </AppCard>
             );
           })}
         </>
       )}
 
-      <Typography variant="caption" color="text.disabled" sx={{ display: "block", lineHeight: 1.5, px: 0.5 }}>{MTG_ATTRIBUTION}</Typography>
+      <Typography variant="caption" color="text.secondary" sx={{ display: "block", lineHeight: 1.5, px: 0.5 }}>{MTG_ATTRIBUTION}</Typography>
     </Stack>
   );
 }

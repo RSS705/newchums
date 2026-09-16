@@ -10,6 +10,7 @@ import Link from "@mui/material/Link";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import ArrowBackRoundedIcon from "@mui/icons-material/ArrowBackRounded";
+import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
 import FlipRoundedIcon from "@mui/icons-material/FlipRounded";
 import GroupsRoundedIcon from "@mui/icons-material/GroupsRounded";
 import OpenInNewRoundedIcon from "@mui/icons-material/OpenInNewRounded";
@@ -19,7 +20,7 @@ import { AppCard } from "@/components/ui";
 import { apiFetch, getAvatarBaseUrl } from "@/lib/apiClient";
 import HistoryLineChart from "../charts/HistoryLineChart";
 import { loadChallengeGroup, type ChallengeGroupRef } from "../challengeGroup";
-import { IconTitle, StatTile } from "../pageBits";
+import { IconTitle, StatTile, srOnly } from "../pageBits";
 import {
   MTG_ATTRIBUTION, RARITY_PLURAL, RARITY_SINGULAR, SLOT_MULTIPLIERS,
   formatCount, formatDayKey, formatWinRate, ordinal, type MtgCardPagePayload,
@@ -27,7 +28,7 @@ import {
 
 type Load =
   | { kind: "loading" }
-  | { kind: "error"; message: string; group: ChallengeGroupRef | null }
+  | { kind: "error"; message: string; group: ChallengeGroupRef | null; retry: boolean }
   | { kind: "ready"; data: MtgCardPagePayload };
 
 const displayName = (p: { name: string | null; username: string | null }) => p.name || (p.username ? `@${p.username}` : "Member");
@@ -46,6 +47,8 @@ export default function CardPageView() {
   const cardId = params?.cardId ?? "";
   const [load, setLoad] = useState<Load>({ kind: "loading" });
   const [showBack, setShowBack] = useState(false);
+  // Bumped by Try again, which reruns the load below.
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (!slug || !cardId) return;
@@ -55,20 +58,20 @@ export default function CardPageView() {
       try {
         group = await loadChallengeGroup(slug);
         if (cancelled) return;
-        if (!group) { setLoad({ kind: "error", message: "We couldn't find that challenge group.", group: null }); return; }
+        if (!group) { setLoad({ kind: "error", message: "We couldn't find that challenge group.", group: null, retry: false }); return; }
         const res = await apiFetch(`/mtg/communities/${group.id}/cards/${encodeURIComponent(cardId)}`, { auth: true });
         const body = await res.json();
         if (cancelled) return;
-        if (res.status === 403) { setLoad({ kind: "error", message: `Join ${group.name} to see its cards.`, group }); return; }
-        if (res.status === 404) { setLoad({ kind: "error", message: "That card isn't in this season.", group }); return; }
-        if (!res.ok || !body.ok) { setLoad({ kind: "error", message: "We couldn't load this card. Try again in a moment.", group }); return; }
+        if (res.status === 403) { setLoad({ kind: "error", message: `Join ${group.name} to see its cards.`, group, retry: false }); return; }
+        if (res.status === 404) { setLoad({ kind: "error", message: "That card isn't in this season.", group, retry: false }); return; }
+        if (!res.ok || !body.ok) { setLoad({ kind: "error", message: "We couldn't load this card right now.", group, retry: true }); return; }
         setLoad({ kind: "ready", data: body as MtgCardPagePayload });
       } catch {
-        if (!cancelled) setLoad({ kind: "error", message: "We couldn't load this card. Check your connection and try again.", group });
+        if (!cancelled) setLoad({ kind: "error", message: "We couldn't load this card. Check your connection.", group, retry: true });
       }
     })();
     return () => { cancelled = true; };
-  }, [slug, cardId]);
+  }, [slug, cardId, attempt]);
 
   const data = load.kind === "ready" ? load.data : null;
   const groupName = data ? data.community.name : load.kind === "error" ? load.group?.name : undefined;
@@ -84,14 +87,24 @@ export default function CardPageView() {
     return (
       <Stack spacing={2}>
         <Box>{back}</Box>
-        <AppCard><Typography variant="body1" fontWeight={700}>{load.kind === "error" ? load.message : ""}</Typography></AppCard>
+        <AppCard>
+          <Typography variant="body1" fontWeight={700}>{load.kind === "error" ? load.message : ""}</Typography>
+          {load.kind === "error" && load.retry && (
+            <Button variant="outlined" onClick={() => { setLoad({ kind: "loading" }); setAttempt((n) => n + 1); }} sx={{ mt: 1.5, textTransform: "none", fontWeight: 700, borderRadius: 2.5, minHeight: 44 }}>
+              Try again
+            </Button>
+          )}
+        </AppCard>
       </Stack>
     );
   }
 
   const { card, latest } = data;
   const rarity = card.rarity;
-  const image = showBack ? card.imageBackLarge ?? card.imageBackNormal : card.imageLarge ?? card.imageNormal;
+  // The normal scan (488 px) covers the 220 to 260 px image on most screens; the large one (672 px) is there for sharper ones.
+  const normal = showBack ? card.imageBackNormal ?? card.imageBackLarge : card.imageNormal ?? card.imageLarge;
+  const large = showBack ? card.imageBackLarge : card.imageLarge;
+  const image = normal ?? large;
   const hasBack = !!(card.imageBackLarge || card.imageBackNormal);
   const rankedDays = data.history.filter((h) => h.rank !== null);
   const mostRanked = Math.max(1, ...data.history.map((h) => h.rankedCount ?? 0));
@@ -103,7 +116,7 @@ export default function CardPageView() {
         {back}
         <Typography component="h1" sx={{ fontWeight: 800, fontSize: { xs: "1.5rem", sm: "2rem" }, lineHeight: 1.15, overflowWrap: "anywhere" }}>{card.name}</Typography>
         <Typography variant="body2" color="text.secondary">
-          {capitalize(RARITY_SINGULAR[rarity])}{card.typeLine ? ` · ${card.typeLine}` : ""} · {data.set.name}{card.voided ? " · Voided" : ""}
+          {capitalize(RARITY_SINGULAR[rarity])}{card.typeLine ? ` · ${card.typeLine}` : ""} · {data.set.name}{card.voided ? " · Removed from scoring" : ""}
         </Typography>
       </Box>
 
@@ -113,7 +126,15 @@ export default function CardPageView() {
             {image && (
               // Scryfall art is shown whole, never cropped or covered.
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={image} alt={showBack ? `${card.name}, back face` : card.name} style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }} />
+              <img
+                src={image}
+                srcSet={normal && large && normal !== large ? `${normal} 488w, ${large} 672w` : undefined}
+                sizes="(min-width: 900px) 260px, (min-width: 600px) 220px, 260px"
+                alt={showBack ? `${card.name}, back face` : card.name}
+                width={488}
+                height={680}
+                style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }}
+              />
             )}
           </Box>
           {hasBack && (
@@ -133,14 +154,17 @@ export default function CardPageView() {
             <Box sx={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: { xs: 0.75, sm: 1.25 } }}>
               <StatTile label="Rank" value={latest.rank !== null ? ordinal(latest.rank) : "–"} sub={latest.rank !== null && latest.rankedCount !== null ? `of ${latest.rankedCount} ${RARITY_PLURAL[rarity]}` : "not ranked yet"} />
               <StatTile label="Card Score" value={tenths(latest.cardScore)} sub="out of 100" />
-              <StatTile label="GIH WR" value={formatWinRate(latest.gihWr)} sub={latest.gihWr === null ? "no win rate yet" : "win rate in hand"} />
+              <StatTile label="Win rate in hand" value={formatWinRate(latest.gihWr)} sub={latest.gihWr === null ? "not published yet" : "GIH WR"} />
               <StatTile label="Games in hand" value={formatCount(latest.gihGames)} sub="games" />
-              <StatTile label="ALSA" value={latest.alsa === null ? "–" : latest.alsa.toFixed(2)} sub="average pick last seen" />
+              {/* The fifth tile spans the row, so no empty cell sits beside it. */}
+              <Box sx={{ gridColumn: "1 / -1", display: "grid" }}>
+                <StatTile label="Last seen in packs" value={latest.alsa === null ? "–" : `Pick ${latest.alsa.toFixed(1)}`} sub="on average (ALSA); later means drafters pass it" />
+              </Box>
             </Box>
           ) : (
             <Typography variant="body2" color="text.secondary">
               {card.voided
-                ? "This card was voided, so it has no numbers now. A locked pick of it scores a neutral 50."
+                ? "This card was removed from scoring, so it has no numbers. A pick of it scores 50."
                 : !card.inPool
                   ? "This card isn't in the pool this season, so it isn't scored."
                   : data.history.length > 0
@@ -150,12 +174,12 @@ export default function CardPageView() {
           )}
           <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={{ mt: 2 }}>
             <Button component="a" href={data.links.scryfall} target="_blank" rel="noopener noreferrer" variant="outlined" size="small" endIcon={<OpenInNewRoundedIcon />}
-              sx={{ textTransform: "none", fontWeight: 700, borderRadius: 2, minHeight: 40 }}>
-              Scryfall
+              sx={{ textTransform: "none", fontWeight: 700, borderRadius: 2, minHeight: 44 }}>
+              Scryfall<Box component="span" sx={srOnly}> (opens in a new tab)</Box>
             </Button>
             <Button component="a" href={data.links.seventeenLands} target="_blank" rel="noopener noreferrer" variant="outlined" size="small" endIcon={<OpenInNewRoundedIcon />}
-              sx={{ textTransform: "none", fontWeight: 700, borderRadius: 2, minHeight: 40 }}>
-              17Lands card data
+              sx={{ textTransform: "none", fontWeight: 700, borderRadius: 2, minHeight: 44 }}>
+              17Lands card data<Box component="span" sx={srOnly}> (opens in a new tab)</Box>
             </Button>
           </Stack>
         </AppCard>
@@ -172,7 +196,7 @@ export default function CardPageView() {
               format={(v) => `#${Math.round(v)}`}
               invert
               domain={[1, mostRanked]}
-              summary={`${card.name}'s rank among ${RARITY_PLURAL[rarity]} on each of ${rankedDays.length} ${rankedDays.length === 1 ? "day" : "days"}, ${ordinal(lastRanked.rank as number)} on the latest.`}
+              summary={`${card.name}'s rank among ${RARITY_PLURAL[rarity]} on ${rankedDays.length === 1 ? "1 day" : `each of ${rankedDays.length} days`}, ${ordinal(lastRanked.rank as number)} on the latest.`}
             />
           ) : (
             <Typography variant="body2" color="text.secondary">Not ranked on any day yet: 17Lands doesn&apos;t publish a win rate until a card has enough games in hand.</Typography>
@@ -183,20 +207,22 @@ export default function CardPageView() {
       <AppCard>
         <IconTitle icon={<GroupsRoundedIcon sx={{ fontSize: 18 }} />} title="Picked by" caption={`In ${data.community.name}`} />
         {data.pickedBy === null ? (
-          <Typography variant="body2" color="text.secondary">Picks are sealed until the lock.</Typography>
+          <Typography variant="body2" color="text.secondary">Who picked this card shows here once picks lock.</Typography>
         ) : data.pickedBy.length === 0 ? (
           <Typography variant="body2" color="text.secondary">Nobody in {data.community.name} picked this card.</Typography>
         ) : (
-          <Stack component="ul" spacing={1.25} sx={{ m: 0, p: 0 }}>
+          <Stack component="ul" spacing={0.5} sx={{ m: 0, p: 0 }}>
             {data.pickedBy.map((p) => {
               const who = p.isViewer ? "You" : displayName(p);
               return (
-                <Box component="li" key={p.userId} sx={{ listStyle: "none", display: "flex", gap: 1.25, alignItems: "flex-start", minWidth: 0 }}>
+                // The whole row opens the player's page.
+                <Box component="li" key={p.userId} sx={{ listStyle: "none", position: "relative", display: "flex", gap: 1.25, alignItems: "flex-start", minWidth: 0, minHeight: 48, py: 0.75 }}>
                   <Avatar src={p.avatarUrl ? `${getAvatarBaseUrl()}${p.avatarUrl}` : undefined} sx={{ width: 32, height: 32, fontSize: "0.875rem", bgcolor: "grey.300" }}>
                     {who.replace(/^@/, "").charAt(0).toUpperCase()}
                   </Avatar>
                   <Box sx={{ minWidth: 0, flex: 1 }}>
-                    <Link component={NextLink} href={`/communities/${slug}/players/${p.userId}`} underline="hover" color="text.primary" sx={{ fontWeight: 700, overflowWrap: "anywhere" }}>
+                    <Link component={NextLink} href={`/communities/${slug}/players/${p.userId}`} underline="hover" color="text.primary"
+                      sx={{ fontWeight: 700, fontSize: "0.9375rem", overflowWrap: "anywhere", "&::after": { content: '""', position: "absolute", inset: 0, borderRadius: 1.5 }, "&:focus-visible": { outline: "none" }, "&:focus-visible::after": { outline: "2px solid", outlineColor: "primary.main", outlineOffset: -2 } }}>
                       {who}
                     </Link>
                     <Typography variant="caption" color="text.secondary" sx={{ display: "block", lineHeight: 1.35 }}>
@@ -204,6 +230,7 @@ export default function CardPageView() {
                     </Typography>
                     {p.note && <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25, fontStyle: "italic", overflowWrap: "anywhere" }}>&ldquo;{p.note}&rdquo;</Typography>}
                   </Box>
+                  <ChevronRightRoundedIcon aria-hidden sx={{ fontSize: 18, color: "text.disabled", alignSelf: "center", flexShrink: 0 }} />
                 </Box>
               );
             })}
@@ -211,7 +238,7 @@ export default function CardPageView() {
         )}
       </AppCard>
 
-      <Typography variant="caption" color="text.disabled" sx={{ display: "block", lineHeight: 1.5, px: 0.5 }}>{MTG_ATTRIBUTION}</Typography>
+      <Typography variant="caption" color="text.secondary" sx={{ display: "block", lineHeight: 1.5, px: 0.5 }}>{MTG_ATTRIBUTION}</Typography>
     </Stack>
   );
 }

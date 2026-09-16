@@ -19,6 +19,7 @@ import PsychologyAltRoundedIcon from "@mui/icons-material/PsychologyAltRounded";
 import { AppCard } from "@/components/ui";
 import { apiFetch, getAvatarBaseUrl } from "@/lib/apiClient";
 import { BadgeIcon } from "../badgeIcons";
+import { srOnly } from "../pageBits";
 import BadgeChip from "../reveal/BadgeChip";
 import EveryoneBoard from "./EveryoneBoard";
 import { MTG_RARITIES, RARITY_LABEL, type MtgLeaderboardPayload, type MtgLeaderboardRow } from "../mtgTypes";
@@ -33,6 +34,7 @@ const DOWN = "#B91C1C";
 const REFRESH_MS = 30 * 60 * 1000;
 
 const points = (n: number) => Math.round(n).toLocaleString("en-US");
+const tenths = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 const signed = (n: number) => (Math.round(n) > 0 ? `+${points(n)}` : Math.round(n) < 0 ? `−${points(-n)}` : "±0");
 const displayName = (p: { name: string | null; username: string | null; isViewer: boolean }) => (p.isViewer ? "You" : p.name || (p.username ? `@${p.username}` : "Member"));
 
@@ -71,29 +73,25 @@ function Movement({ row }: { row: MtgLeaderboardRow }) {
 }
 
 /** The row's three best badges as icons in their tier colors, and a count for
- *  the rest (spec 10.5). On phones the icons overlap, best on top, so a name
- *  keeps the room it had beside the old tier dots. */
+ *  the rest (spec 10.5). Phones show only the best icon and count the others,
+ *  since most rows carry three or more badges from the lock and a 320 px row
+ *  would otherwise leave a name about four letters. */
 function BadgeHints({ row }: { row: MtgLeaderboardRow }) {
   if (row.badges.length === 0) return null;
-  const extra = row.badgeCount - row.badges.length;
+  const extraWide = row.badgeCount - row.badges.length;
+  const extraPhone = row.badgeCount - 1;
+  const count = (n: number, display: Record<string, string>) => (n > 0 ? (
+    <Typography component="span" sx={{ display, fontSize: "0.6875rem", fontWeight: 700, color: "text.secondary", ml: "2px" }}>+{n}</Typography>
+  ) : null);
   return (
-    <Stack direction="row" alignItems="center" aria-hidden sx={{ flexShrink: 0, gap: { xs: 0, sm: "4px" } }}>
+    <Stack direction="row" alignItems="center" aria-hidden sx={{ flexShrink: 0, gap: "4px" }}>
       {row.badges.map((b, i) => (
-        <Box
-          key={`${b.code}-${b.name}`}
-          sx={(theme) => ({
-            position: "relative",
-            zIndex: row.badges.length - i,
-            borderRadius: "50%",
-            ml: i === 0 ? 0 : "-5px",
-            boxShadow: `0 0 0 1.5px ${theme.palette.background.paper}`,
-            [theme.breakpoints.up("sm")]: { ml: 0, boxShadow: "none" },
-          })}
-        >
+        <Box key={`${b.code}-${b.name}`} sx={{ display: i === 0 ? "block" : { xs: "none", sm: "block" } }}>
           <BadgeIcon badge={b} size={{ xs: 20, sm: 24 }} />
         </Box>
       ))}
-      {extra > 0 && <Typography component="span" sx={{ fontSize: "0.6875rem", fontWeight: 700, color: "text.secondary", ml: "3px" }}>+{extra}</Typography>}
+      {count(extraPhone, { xs: "inline", sm: "none" })}
+      {count(extraWide, { xs: "none", sm: "inline" })}
     </Stack>
   );
 }
@@ -162,7 +160,7 @@ function PlayerRow({ row, open, onToggle, sinceLabel, href }: { row: MtgLeaderbo
             ))}
           </Box>
           <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.75 }}>
-            {row.total.toFixed(1)} points in all{row.rank > 1 ? `, ${row.behind.toFixed(1)} behind the leader` : ""}.
+            {tenths(row.total)} points in all{row.rank > 1 ? `, ${tenths(row.behind)} behind the leader` : ""}.
           </Typography>
           {row.badges.length > 0 && (
             <Stack direction="row" spacing={0.5} useFlexGap flexWrap="wrap" sx={{ mt: 1 }}>
@@ -185,7 +183,9 @@ function GroupMindRow({ mind, sinceLabel }: { mind: NonNullable<Standings["group
   const label = `Group Mind, the group's consensus picks, ${points(mind.total)} points${mind.change !== null ? `, ${signed(mind.change)} ${sinceLabel}` : ""}`;
   const changeColor = mind.change === null ? "text.secondary" : Math.round(mind.change) > 0 ? UP : Math.round(mind.change) < 0 ? DOWN : "text.secondary";
   return (
-    <Box component="li" aria-label={label} sx={{ listStyle: "none", display: "flex", alignItems: "center", gap: { xs: 1, sm: 1.5 }, px: { xs: 1, sm: 1.5 }, py: 1, borderRadius: 2, border: "1px dashed", borderColor: "text.disabled", minHeight: 56 }}>
+    <Box component="li" sx={{ listStyle: "none", position: "relative", display: "flex", alignItems: "center", gap: { xs: 1, sm: 1.5 }, px: { xs: 1, sm: 1.5 }, py: 1, borderRadius: 2, border: "1px dashed", borderColor: "text.disabled", minHeight: 56 }}>
+      {/* Read as one sentence; the visible parts are hidden from screen readers. */}
+      <Box component="span" sx={srOnly}>{label}</Box>
       <Box aria-hidden sx={{ width: 28, flexShrink: 0 }} />
       <Box aria-hidden sx={{ width: 32, height: 32, borderRadius: "50%", bgcolor: "primary.light", color: "primary.dark", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
         <PsychologyAltRoundedIcon sx={{ fontSize: 18 }} />
@@ -205,8 +205,9 @@ function GroupMindRow({ mind, sinceLabel }: { mind: NonNullable<Standings["group
 
 function RandomPicksLine({ value }: { value: number }) {
   return (
-    <Box component="li" sx={{ listStyle: "none" }}>
-      <Stack direction="row" alignItems="center" spacing={1} sx={{ px: 1 }} role="note" aria-label={`Random picks average about ${points(value)} points`}>
+    <Box component="li" sx={{ listStyle: "none", position: "relative" }}>
+      <Box component="span" sx={srOnly}>Random picks average about {points(value)} points</Box>
+      <Stack direction="row" alignItems="center" spacing={1} sx={{ px: 1 }}>
         <Box aria-hidden sx={{ flex: 1, borderTop: "2px dashed", borderColor: "divider" }} />
         <Typography aria-hidden variant="caption" color="text.secondary" fontWeight={700} sx={{ whiteSpace: "nowrap" }}>Random picks ≈ {points(value)}</Typography>
         <Box aria-hidden sx={{ flex: 1, borderTop: "2px dashed", borderColor: "divider" }} />
@@ -221,13 +222,17 @@ function UpdatedLine({ standings, nowMs }: { standings: Standings; nowMs: number
   const today = easternNow(nowMs);
   const seasonOver = standings.isFinal || (standings.day !== null && standings.totalDays !== null && standings.day >= standings.totalDays);
   const stale = !seasonOver && (standings.date < shiftDay(today.date, -1) || (standings.date < today.date && today.hour >= 10));
-  const when = stale
-    ? `Last updated ${new Intl.DateTimeFormat("en-US", { timeZone: "UTC", weekday: "short", month: "short", day: "numeric" }).format(new Date(`${standings.date}T12:00:00Z`))}`
-    : `Updated ${new Intl.DateTimeFormat("en-US", { timeZone: EASTERN, weekday: "short", hour: "numeric", minute: "2-digit" }).format(new Date(standings.takenAt)).replace(",", "")} ET`;
+  const dayLabel = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", weekday: "short", month: "short", day: "numeric" }).format(new Date(`${standings.date}T12:00:00Z`));
+  // Once the season is over a weekday alone would be ambiguous weeks later, so name the date.
+  const when = seasonOver
+    ? `Final standings from ${dayLabel}`
+    : stale
+      ? `Last updated ${dayLabel}`
+      : `Updated ${new Intl.DateTimeFormat("en-US", { timeZone: EASTERN, weekday: "short", hour: "numeric", minute: "2-digit" }).format(new Date(standings.takenAt)).replace(",", "")} ET`;
   const day = standings.day !== null && standings.totalDays !== null ? ` · Day ${standings.day} of ${standings.totalDays}` : "";
   return (
     <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
-      {when}{day}{standings.isFinal ? " · Final" : ""} · 17Lands Premier Draft
+      {when}{day} · 17Lands Premier Draft
     </Typography>
   );
 }
@@ -242,11 +247,14 @@ type Item = { kind: "player"; row: MtgLeaderboardRow } | { kind: "mind" } | { ki
  * ranks the whole season by handle. The board refreshes when the tab comes
  * back into view, and every half hour while it stays open.
  */
-export default function Leaderboard({ communityId, slug, setCode, nowMs }: { communityId: string; slug: string; setCode: string; nowMs: number }) {
+export default function Leaderboard({ communityId, slug, setCode, nowMs, firstStandingsAt }: { communityId: string; slug: string; setCode: string; nowMs: number; firstStandingsAt: string | null }) {
   const [data, setData] = useState<MtgLeaderboardPayload | null>(null);
   const [failed, setFailed] = useState(false);
   const [openRow, setOpenRow] = useState<string | null>(null);
   const [tab, setTab] = useState<"group" | "everyone">("group");
+  // The Everyone board mounts the first time its tab opens and then stays
+  // mounted, hidden, so switching back and forth doesn't reload it.
+  const [everyoneOpened, setEveryoneOpened] = useState(false);
   const lastFetch = useRef(0);
 
   const load = useCallback(async () => {
@@ -309,7 +317,10 @@ export default function Leaderboard({ communityId, slug, setCode, nowMs }: { com
   const tabs = (
     <Tabs
       value={tab}
-      onChange={(_, v) => setTab(v as "group" | "everyone")}
+      onChange={(_, v) => {
+        setTab(v as "group" | "everyone");
+        if (v === "everyone") setEveryoneOpened(true);
+      }}
       aria-label="Which standings"
       sx={{ minHeight: 40, mb: 1.5, borderBottom: "1px solid", borderColor: "divider", "& .MuiTab-root": { textTransform: "none", fontWeight: 700, minHeight: 40, px: 1.5 } }}
     >
@@ -333,13 +344,24 @@ export default function Leaderboard({ communityId, slug, setCode, nowMs }: { com
       </AppCard>
     );
   }
+  const everyone = everyoneOpened ? (
+    <Box sx={{ display: tab === "everyone" ? "block" : "none" }}><EveryoneBoard setCode={setCode} standingsDate={data?.standings?.date ?? null} /></Box>
+  ) : null;
+
   if (!s) {
+    // An hour past the first standings' usual time, say they're late rather than repeating the plan.
+    const late = firstStandingsAt !== null && nowMs >= Date.parse(firstStandingsAt) + 3600000;
     return (
       <AppCard>
         {header}
         {tabs}
-        {tab === "everyone" ? <EveryoneBoard setCode={setCode} /> : (
-          <Typography variant="body2" color="text.secondary">The first standings arrive the morning after the Arena launch, around 9 AM ET.</Typography>
+        {everyone}
+        {tab === "group" && (
+          <Typography variant="body2" color="text.secondary">
+            {late
+              ? "The first standings are running late. They'll appear here as soon as 17Lands' data comes in."
+              : "The first standings arrive the morning after the Arena launch, around 9 AM ET."}
+          </Typography>
         )}
       </AppCard>
     );
@@ -353,7 +375,8 @@ export default function Leaderboard({ communityId, slug, setCode, nowMs }: { com
     <AppCard>
       {header}
       {tabs}
-      {tab === "everyone" ? <EveryoneBoard setCode={setCode} /> : (
+      {everyone}
+      {tab === "group" && (
         <>
         {failed && (
           <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
