@@ -63,20 +63,9 @@
               </p>
               {{#hasEntry}}
               <p style="margin: 0 0 20px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 14px; color: #1F2937; line-height: 1.6; background-color: #F3F4F6; border-radius: 10px; padding: 12px 14px;">
-                You already have {{picked}} of 20 picks, and they count in this group too. One entry plays in every group you're in.
+                You already have {{picked}} of 20 picks, and they count in this group too.
               </p>
               {{/hasEntry}}
-              {{#inviteUrl}}
-              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-bottom: 22px; border: 1px solid #F3C9AF; border-radius: 10px; background-color: #FFF7F2;">
-                <tr>
-                  <td style="padding: 14px 16px;">
-                    <p style="margin: 0 0 4px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 13px; font-weight: 700; color: #9A3A0A;">Your invite link</p>
-                    <p style="margin: 0 0 6px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 13px; color: #4B5563; line-height: 1.5;">{{inviteHelp}}</p>
-                    <a href="{{.}}" style="font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 13px; color: #E65B13; word-break: break-all; text-decoration: underline;">{{.}}</a>
-                  </td>
-                </tr>
-              </table>
-              {{/inviteUrl}}
               <p style="margin: 0 0 8px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 13px; font-weight: 700; color: #1F2937; text-transform: uppercase; letter-spacing: 0.04em;">Key dates</p>
               <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-bottom: 24px; border-left: 3px solid #E65B13;">
                 {{#keyDates}}

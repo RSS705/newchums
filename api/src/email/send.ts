@@ -1141,18 +1141,15 @@ export const sendPlanWrapUpEmail = async (
 export type MtgKeyDate = { label: string; when: string };
 
 /** MTG Card Evaluation Challenge welcome (spec section 8, email 1): sent when a
- *  player creates or joins their first challenge group for a set. The
- *  creator gets the invite link to share; everyone gets the lock time, the
- *  key dates in Eastern time, and a button to their picks. */
+ *  player joins their first challenge group for a set, never to the group's
+ *  creator. It gives the lock time, the key dates in Eastern time, and a
+ *  button to their picks. */
 export const sendMtgWelcomeEmail = async (
   env: Bindings,
   p: {
     to: string;
     recipientName: string;
     communityName: string;
-    isCreator: boolean;
-    inviteUrl: string | null;
-    inviteHelp: string;
     setName: string;
     lockAtLabel: string;
     keyDates: MtgKeyDate[];
@@ -1169,17 +1166,13 @@ export const sendMtgWelcomeEmail = async (
     p.to,
     "mtgWelcome",
     {
-      heading: p.isCreator ? `${p.communityName} is ready` : `You're in ${p.communityName}`,
+      heading: `You're in ${p.communityName}`,
       greeting: `Hi ${p.recipientName},`,
-      bodyText: p.isCreator
-        ? `Your MTG Card Evaluation Challenge group for ${p.setName} is set up. Share the invite link with your friends, then pick the five cards you think will perform best at each rarity, in order.`
-        : `You've joined an MTG Card Evaluation Challenge group for ${p.setName}. Pick the five cards you think will perform best at each rarity, in order, and 17Lands data keeps score once the set is on Arena.`,
+      bodyText: `You've joined an MTG Card Evaluation Challenge group for ${p.setName}. Pick the five cards you think will perform best at each rarity, in order, and 17Lands data keeps score once the set is on Arena.`,
       communityName: p.communityName,
       setName: p.setName,
       hasEntry: p.picked > 0,
       picked: p.picked,
-      inviteUrl: p.isCreator && hasContent(p.inviteUrl) ? p.inviteUrl : null,
-      inviteHelp: p.inviteHelp,
       keyDates: p.keyDates,
       ctaText: p.picked > 0 ? "Review your picks" : "Make your picks",
       ctaUrl: p.picksUrl,
@@ -1188,7 +1181,7 @@ export const sendMtgWelcomeEmail = async (
       lockCalendarUrl: p.lockCalendarUrl,
       unsubscribeUrl: hasContent(p.unsubscribeUrl) ? p.unsubscribeUrl : null,
     },
-    { subjectKey: p.isCreator ? "mtgWelcome_creator" : "mtgWelcome", idempotencyKey: p.idempotencyKey },
+    { subjectKey: "mtgWelcome", idempotencyKey: p.idempotencyKey },
   );
 
 /** MTG Card Evaluation Challenge lock warning (spec section 8, email 2): 10 AM ET

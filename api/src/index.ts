@@ -1533,8 +1533,10 @@ function mtgEmailLinks(env: Bindings, setCode: string) {
  * challenge community, if this is their first group for the current set
  * (spec section 8, email 1). mtg_email_log is the guarantee: joining a
  * second group is confirmed in the app only. Nothing is sent after the lock,
- * when there is nothing left to pick. Returns true when the welcome went
- * out, so a caller can drop a generic email that would say the same thing.
+ * when there is nothing left to pick, and never to the community's owner:
+ * whoever creates a group already knows it's ready. Returns true when the
+ * welcome went out, so a caller can drop a generic email that would say the
+ * same thing.
  */
 async function sendMtgWelcomeIfFirst(
   sql: ReturnType<typeof getSql>,
@@ -1547,13 +1549,14 @@ async function sendMtgWelcomeIfFirst(
 ): Promise<boolean> {
   try {
     const communityRows = (await sql`
-      SELECT id, name, slug, specialization, join_mode, invite_code, owner_user_id
+      SELECT id, name, slug, specialization, owner_user_id
       FROM newchums.communities
       WHERE id = ${communityId} AND COALESCE(status, 'active') = 'active'
       LIMIT 1
-    `) as { id: string; name: string; slug: string; specialization: string | null; join_mode: string; invite_code: string | null; owner_user_id: string }[];
+    `) as { id: string; name: string; slug: string; specialization: string | null; owner_user_id: string }[];
     const community = communityRows[0];
     if (!community || community.specialization !== MTG_SPECIALIZATION) return false;
+    if (community.owner_user_id === userId) return false;
     const set = await loadMtgSet(sql, null);
     if (!set || set.status !== "active") return false;
     const now = new Date();
@@ -1581,22 +1584,11 @@ async function sendMtgWelcomeIfFirst(
       WHERE e.user_id = ${userId} AND e.set_id = ${set.id}
     `) as { n: number }[];
     const web = env.WEB_BASE_URL;
-    const isCreator = community.owner_user_id === userId;
     const timeline = mtgTimeline(set, now);
     const keyDates = ["lock", "arena", "first_standings", "final"]
       .map((k) => timeline.find((t) => t.key === k))
       .filter((t): t is NonNullable<typeof t> => !!t)
       .map((t) => ({ label: t.label, when: formatEasternShort(t.at) }));
-    const inviteUrl = !isCreator
-      ? null
-      : community.join_mode === "invite_only" && community.invite_code
-        ? `${web}/communities/${community.slug}?invite=${community.invite_code}`
-        : `${web}/communities/${community.slug}`;
-    const inviteHelp = community.join_mode === "invite_only"
-      ? "Anyone with it joins straight away. You can reset it any time from Edit."
-      : community.join_mode === "approval_required"
-        ? "People who open it can ask to join, and you approve each one."
-        : "Anyone with it can join the group.";
     let unsubscribeUrl = "";
     try {
       if (env.NEXTAUTH_SECRET) {
@@ -1609,9 +1601,6 @@ async function sendMtgWelcomeIfFirst(
         to: user.email,
         recipientName: user.name?.trim() || "there",
         communityName: community.name,
-        isCreator,
-        inviteUrl,
-        inviteHelp,
         setName: set.name,
         lockAtLabel: formatEasternLong(set.lock_at),
         keyDates,
@@ -11961,7 +11950,8 @@ app.post("/communities", async (c) => {
     const community = rows[0];
 
     await sql`INSERT INTO newchums.community_members (community_id, user_id, role, status) VALUES (${community.id}, ${userId}, 'owner', 'active')`;
-    if (specialization) await sendMtgWelcomeIfFirst(sql, c.env, c.executionCtx, userId, community.id);
+    // No welcome email for a challenge community's creator: they already know
+    // it's ready. Players who join get one (sendMtgWelcomeIfFirst).
 
     // Link hobbies/interests
     if (interestItems.length > 0) {

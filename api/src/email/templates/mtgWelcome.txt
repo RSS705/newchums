@@ -5,10 +5,8 @@
 {{bodyText}}
 {{#hasEntry}}
 You already have {{picked}} of 20 picks, and they count in this group too.
-{{/hasEntry}}{{#inviteUrl}}
-Your invite link. {{inviteHelp}}
-{{.}}
-{{/inviteUrl}}
+{{/hasEntry}}
+
 ---
 
 Key dates
