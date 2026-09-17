@@ -37,7 +37,6 @@ type Props = {
   communityName: string;
   slug: string;
   isMember: boolean;
-  isOwner: boolean;
   isAuthenticated: boolean | null;
 };
 
@@ -118,8 +117,9 @@ function BlankStandings({ firstStandingsAt, picksOpen }: { firstStandingsAt: str
 }
 
 /**
- * The challenge view that replaces a specialized community's body (the
- * community header stays above it): the phase card with the lock countdown,
+ * The challenge view on a specialized community's Challenge tab, in place of
+ * Plans (the community header, and the Members and Requests tabs, stay
+ * around it): the phase card with the lock countdown,
  * the picks and scoring buttons, and until the season goes live a blank
  * leaderboard; every member's pick status (counts only, never cards) or,
  * after the lock, the Reveal summary (below the standings once they start);
@@ -128,6 +128,12 @@ function BlankStandings({ firstStandingsAt, picksOpen }: { firstStandingsAt: str
 export default function MtgChallengeHome({ communityId, communityName, slug, isMember, isAuthenticated }: Props) {
   const [set, setSet] = useState<MtgSetPayload | null>(null);
   const [loading, setLoading] = useState(true);
+  // The season didn't load (a network or server error), as opposed to there
+  // being no season yet, which the API answers with a 404.
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [retrying, setRetrying] = useState(false);
+  // Bumped by Try again, which reruns the season load below.
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => { rememberChallengeGroup({ id: communityId, name: communityName, slug }); }, [communityId, communityName, slug]);
   const [rarity, setRarity] = useState<MtgRarity>("common");
   // Every rarity at once, so switching tabs never waits on the network.
@@ -142,13 +148,25 @@ export default function MtgChallengeHome({ communityId, communityName, slug, isM
 
   useEffect(() => {
     let cancelled = false;
-    apiFetch("/mtg/sets/current", { auth: !!isAuthenticated })
-      .then((r) => r.json())
-      .then((d: { ok?: boolean; set?: MtgSetPayload }) => { if (!cancelled) setSet(d.ok && d.set ? d.set : null); })
-      .catch(() => { if (!cancelled) setSet(null); })
-      .finally(() => { if (!cancelled) setLoading(false); });
+    (async () => {
+      try {
+        const res = await apiFetch("/mtg/sets/current", { auth: !!isAuthenticated });
+        const d = (await res.json()) as { ok?: boolean; set?: MtgSetPayload | null; error?: string };
+        if (cancelled) return;
+        if (d.ok || (res.status === 404 && d.error === "NOT_FOUND")) {
+          setSet(d.ok && d.set ? d.set : null);
+          setLoadFailed(false);
+        } else {
+          setLoadFailed(true);
+        }
+      } catch {
+        if (!cancelled) setLoadFailed(true);
+      } finally {
+        if (!cancelled) { setLoading(false); setRetrying(false); }
+      }
+    })();
     return () => { cancelled = true; };
-  }, [isAuthenticated]);
+  }, [isAuthenticated, attempt]);
 
   // Live countdown to the lock, ticking once a minute, and every second in
   // the last two minutes so the page switches to the Reveal at the lock itself.
@@ -214,6 +232,22 @@ export default function MtgChallengeHome({ communityId, communityName, slug, isM
   const lockIn = useMemo(() => (set ? countdown(set.dates.lockAt, nowMs) : null), [set, nowMs]);
 
   if (loading) return null;
+  if (!set && loadFailed) {
+    return (
+      <AppCard>
+        <Typography variant="body1" fontWeight={600} role="alert">We couldn&apos;t load the challenge.</Typography>
+        {/* The button stays put while it retries, so keyboard focus stays on it. */}
+        <Button
+          variant="outlined"
+          aria-disabled={retrying}
+          onClick={() => { if (retrying) return; setRetrying(true); setAttempt((n) => n + 1); }}
+          sx={{ ...buttonSx, mt: 1.5, minHeight: 44 }}
+        >
+          {retrying ? "Trying again…" : "Try again"}
+        </Button>
+      </AppCard>
+    );
+  }
   if (!set) {
     return (
       <AppCard>

@@ -19,7 +19,7 @@ import { apiFetch, getAvatarBaseUrl } from "@/lib/apiClient";
 import CardViewer from "../picks/CardViewer";
 import {
   MTG_ATTRIBUTION, MTG_RARITIES, MTG_SLOTS_PER_RARITY, RARITY_LABEL, RARITY_PLURAL,
-  type MtgCard, type MtgRarity, type MtgRevealPayload, type MtgRevealPlayer, formatWhen, seasonFromSearch, seasonQuery,
+  type MtgCard, type MtgRarity, type MtgRevealPayload, type MtgRevealPlayer, formatWhenZoned, seasonFromSearch, seasonQuery,
 } from "../mtgTypes";
 import BadgeChip from "./BadgeChip";
 
@@ -240,7 +240,7 @@ export default function RevealView() {
           {load.kind === "sealed" && (
             <>
               <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                Everyone&apos;s picks in {load.group.name} are revealed when picks lock{load.lockAt ? `, ${formatWhen(load.lockAt)}` : ""}.
+                Everyone&apos;s picks in {load.group.name} are revealed when picks lock{load.lockAt ? `, ${formatWhenZoned(load.lockAt)}` : ""}.
               </Typography>
               <Button component={Link} href={`/communities/${slug}/picks`} variant="contained" sx={{ mt: 2, textTransform: "none", fontWeight: 700, borderRadius: 2.5, boxShadow: "none" }}>
                 Make your picks
@@ -265,7 +265,7 @@ export default function RevealView() {
         {back}
         <Typography component="h1" sx={{ fontWeight: 800, fontSize: { xs: "1.75rem", sm: "2.25rem" }, lineHeight: 1.1 }}>The Reveal</Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-          The picks are in for {data.set.name}: {plural(data.entries, "player", "players")} in {data.community.name}, locked {formatWhen(data.set.lockAt)}.
+          The picks are in for {data.set.name}: {plural(data.entries, "player", "players")} in {data.community.name}, locked {formatWhenZoned(data.set.lockAt)}.
         </Typography>
       </Box>
 

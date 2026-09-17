@@ -1217,7 +1217,7 @@ export const sendMtgLockWarningEmail = async (
       greeting: `Hi ${p.recipientName},`,
       bodyText: `Picks for ${p.setName} lock ${p.lockAtLabel}. After that nothing can change, and everyone's picks are revealed to their groups.`,
       progressLine: complete
-        ? "Your entry is complete. You can still change anything until the lock."
+        ? `All ${p.total} of your picks are in. You can still change any of them until picks lock.`
         : p.picked === 0
           ? `You haven't made any picks yet. Empty slots score 0.`
           : `You've made ${p.picked} of ${p.total} picks. Empty slots score 0.`,

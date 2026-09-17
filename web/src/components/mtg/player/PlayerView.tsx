@@ -27,7 +27,7 @@ import { IconTitle, StatTile, srOnly } from "../pageBits";
 import BadgeChip from "../reveal/BadgeChip";
 import {
   MTG_ATTRIBUTION, MTG_RARITIES, MTG_SLOTS_PER_RARITY, MTG_TOTAL_PICKS, RARITY_LABEL, RARITY_PLURAL, SLOT_MULTIPLIERS,
-  formatCount, formatDayKey, formatWhen, formatWinRate, ordinal, seasonFromSearch, seasonQuery, smallCardImage,
+  formatCount, formatDayKey, formatWhenZoned, formatWinRate, ordinal, seasonFromSearch, seasonQuery, smallCardImage,
   type MtgBadge, type MtgCard, type MtgPlayerPayload, type MtgPlayerPick, type MtgRarity, type MtgTopCard,
 } from "../mtgTypes";
 
@@ -308,7 +308,7 @@ export default function PlayerView() {
           <Typography variant="body1" fontWeight={700}>{load.kind === "sealed" ? "Other players' picks show here once picks lock" : load.kind === "error" ? load.message : ""}</Typography>
           {load.kind === "sealed" && (
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-              {load.lockAt ? `Picks lock ${formatWhen(load.lockAt)}. ` : ""}Then everyone&apos;s picks in {load.group.name} are revealed.
+              {load.lockAt ? `Picks lock ${formatWhenZoned(load.lockAt)}. ` : ""}Then everyone&apos;s picks in {load.group.name} are revealed.
             </Typography>
           )}
           {load.kind === "error" && load.retry && (

@@ -89,14 +89,30 @@ export function totalPicked(p: PickState): number {
   return MTG_RARITIES.reduce((n, r) => n + p[r].length, 0);
 }
 
-/** Trim a note to the limit in characters, not UTF-16 units. */
-export function clampNote(note: string): string {
-  const chars = [...note];
-  return chars.length > MTG_NOTE_MAX ? chars.slice(0, MTG_NOTE_MAX).join("") : note;
-}
-
 export function noteLength(note: string): number {
   return [...note].length;
+}
+
+/**
+ * A note edit kept within the limit, counted in characters (code points, as
+ * the server counts them). Typing or pasting into the middle of a full note
+ * is refused rather than cutting words off its end; a paste at the end is
+ * trimmed to fit, a whole emoji or letter at a time.
+ */
+export function fitNote(prev: string, next: string): string {
+  if (noteLength(next) <= MTG_NOTE_MAX) return next;
+  const room = MTG_NOTE_MAX - noteLength(prev);
+  if (!next.startsWith(prev) || room <= 0) return prev;
+  const added = next.slice(prev.length);
+  const pieces = typeof Intl !== "undefined" && "Segmenter" in Intl
+    ? Array.from(new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(added), (s) => s.segment)
+    : [...added];
+  let kept = "";
+  for (const piece of pieces) {
+    if (noteLength(kept) + noteLength(piece) > room) break;
+    kept += piece;
+  }
+  return prev + kept;
 }
 
 /** Full-replace body for PUT /mtg/sets/:code/entry. Slots follow list order,

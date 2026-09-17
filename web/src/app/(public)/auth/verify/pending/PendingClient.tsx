@@ -7,6 +7,7 @@ import Typography from "@mui/material/Typography";
 import AuthSplitLayout from "@/components/layout/AuthSplitLayout";
 import { AppButton, AppCard } from "@/components/ui";
 import { apiFetch } from "@/lib/apiClient";
+import { getSafeRedirectPath, withNextParam } from "@/lib/authRedirect";
 
 const POLL_INTERVAL_MS = 3000;
 const TIMEOUT_MS = 10 * 60 * 1000;
@@ -14,6 +15,8 @@ const TIMEOUT_MS = 10 * 60 * 1000;
 export default function PendingClient() {
   const params = useSearchParams();
   const email = params.get("email") ?? "";
+  const next = params.get("next");
+  const loginHref = withNextParam(email ? `/login?email=${encodeURIComponent(email)}` : "/login", next);
   const [verified, setVerified] = React.useState(false);
   const [timedOut, setTimedOut] = React.useState(false);
   const [resending, setResending] = React.useState(false);
@@ -45,7 +48,7 @@ export default function PendingClient() {
     setResending(true);
     await apiFetch("/auth/email-verify/request", {
       method: "POST",
-      body: JSON.stringify({ email }),
+      body: JSON.stringify({ email, next: next ? getSafeRedirectPath(next) : undefined }),
     });
     setResending(false);
     setTimedOut(false);
@@ -58,7 +61,7 @@ export default function PendingClient() {
           <Typography color="text.secondary">
             No email specified. Please complete signup to receive a verification link.
           </Typography>
-          <AppButton href="/signup" sx={{ mt: 2 }} fullWidth>
+          <AppButton href={withNextParam("/signup", next)} sx={{ mt: 2 }} fullWidth>
             Sign up
           </AppButton>
         </AppCard>
@@ -77,7 +80,7 @@ export default function PendingClient() {
             <Typography variant="body1" color="text.secondary">
               Your email has been verified. You can now sign in.
             </Typography>
-            <AppButton variant="contained" href="/login" fullWidth>
+            <AppButton variant="contained" href={loginHref} fullWidth>
               Continue to sign in
             </AppButton>
           </Stack>
@@ -100,7 +103,7 @@ export default function PendingClient() {
             <AppButton variant="contained" onClick={handleResend} disabled={resending} fullWidth>
               {resending ? "Sending…" : "Resend verification email"}
             </AppButton>
-            <AppButton href="/login" fullWidth>
+            <AppButton href={loginHref} fullWidth>
               Back to sign in
             </AppButton>
           </Stack>
@@ -127,7 +130,7 @@ export default function PendingClient() {
           <AppButton variant="outlined" onClick={handleResend} disabled={resending} fullWidth>
             {resending ? "Sending…" : "Resend verification email"}
           </AppButton>
-          <AppButton href="/login" fullWidth>
+          <AppButton href={loginHref} fullWidth>
             Back to sign in
           </AppButton>
         </Stack>

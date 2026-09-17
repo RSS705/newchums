@@ -51,6 +51,8 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
         banner_key?: string | null;
         is_online?: boolean;
         location_name?: string | null;
+        /** Also on the restricted response, so it's no extra exposure. */
+        specialization?: string | null;
       };
     };
     const c = data.ok ? data.community : null;
@@ -72,17 +74,22 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     // banner/avatar), but a conservative posture for private
     // communities means the owner's description text never leaks into
     // third-party caches, social scrapers, or unfurl services. Public
-    // communities use their real description.
+    // communities use their real description. A challenge community's
+    // generic line names the game, which is what the link invites people to.
     const rawDescription = (c.description || "").trim();
+    const challengeDescription = c.specialization === "mtg_prediction_challenge"
+      ? "Join this group's MTG Card Evaluation Challenge on NewChums."
+      : null;
     const description = isPrivate
-      ? "View this private community on NewChums."
+      ? challengeDescription ?? "View this private community on NewChums."
       : rawDescription
         ? rawDescription.slice(0, 240)
-        : c.is_online
-          ? `${name} is an online community on NewChums.`
-          : c.location_name
-            ? `${name} is a community on NewChums based in ${c.location_name}.`
-            : `${name} is a community on NewChums.`;
+        : challengeDescription
+          ?? (c.is_online
+            ? `${name} is an online community on NewChums.`
+            : c.location_name
+              ? `${name} is a community on NewChums based in ${c.location_name}.`
+              : `${name} is a community on NewChums.`);
 
     const canonicalPath = `/communities/${encodeURIComponent(slug)}`;
     const communityId = c.id;

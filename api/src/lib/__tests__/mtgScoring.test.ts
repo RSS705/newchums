@@ -88,7 +88,7 @@ describe("checkSnapshot", () => {
 
   it("refuses shrinking totals or too many shrinking cards, and waits on identical or empty data", () => {
     expect(checkSnapshot({ matched: m(Array(20).fill(80)), poolSize: 20, previous: prev(Array(20).fill(90)) }).reason).toBe("Games in hand went down, from 1800 to 1600");
-    const sixDown = [...Array(6).fill(89), ...Array(14).fill(200)];
+    const sixDown = [...Array(6).fill(40), ...Array(14).fill(200)];
     expect(checkSnapshot({ matched: m(sixDown), poolSize: 20, previous: prev(Array(20).fill(90)) }).reason).toBe("6 cards lost games since the last standings");
     expect(checkSnapshot({ matched: m(Array(20).fill(90)), poolSize: 20, previous: prev(Array(20).fill(90)) }).outcome).toBe("not_newer");
     expect(checkSnapshot({ matched: m(Array(20).fill(0)), poolSize: 20, previous: null }).outcome).toBe("not_newer");
@@ -102,6 +102,35 @@ describe("checkSnapshot", () => {
   it("compares growth only over cards in both days", () => {
     expect(checkSnapshot({ matched: m(Array(20).fill(100)), poolSize: 20, previous: prev(Array(21).fill(90)) }).outcome).toBe("published");
     expect(checkSnapshot({ matched: m(Array(20).fill(90)), poolSize: 20, previous: prev([...Array(20).fill(90), 5000]) }).outcome).toBe("not_newer");
+  });
+
+  it("shrugs off a card losing a handful of games, and waits when the total dips a little", () => {
+    const fewLost = [...Array(6).fill(81), ...Array(14).fill(200)];
+    expect(checkSnapshot({ matched: m(fewLost), poolSize: 20, previous: prev(Array(20).fill(90)) }).outcome).toBe("published");
+    expect(checkSnapshot({ matched: m([...Array(19).fill(10000), 9990]), poolSize: 20, previous: prev(Array(20).fill(10000)) }).outcome).toBe("not_newer");
+  });
+
+  it("counts a card that matched last time and doesn't now as losing games", () => {
+    const names = new Map(Array.from({ length: 200 }, (_, i) => [`c${i}`, `Card ${i}`]));
+    const previous = prev(Array(200).fill(90));
+    // Six of yesterday's cards no longer match (a name listed twice, say); 194 of 200 still clears 95%.
+    const today = new Map([...m(Array(200).fill(100))].filter(([id]) => Number(id.slice(1)) >= 6));
+    const r = checkSnapshot({ matched: today, poolSize: 200, previous, poolNames: names });
+    expect(r.outcome).toBe("failed_validation");
+    expect(r.reason).toBe("6 cards lost games since the last standings, including 6 that matched last time and don't now (Card 0, Card 1, Card 2 and 3 more)");
+    // A card that left the pool isn't counted.
+    const fewer = new Map([...names].filter(([id]) => Number(id.slice(1)) >= 6));
+    expect(checkSnapshot({ matched: today, poolSize: 194, previous, poolNames: fewer }).outcome).toBe("published");
+  });
+
+  it("refuses a day where a picked card didn't match", () => {
+    const names = new Map(Array.from({ length: 20 }, (_, i) => [`c${i}`, `Card ${i}`]));
+    const today = new Map([...m(Array(20).fill(100))].filter(([id]) => id !== "c7"));
+    const r = checkSnapshot({ matched: today, poolSize: 20, previous: null, poolNames: names, pickedIds: new Set(["c1", "c7"]) });
+    expect(r).toMatchObject({ outcome: "failed_validation", reason: "1 picked card didn't match the feed (Card 7), so its picks would score a neutral 50. Match it on MTG Seasons, or publish anyway" });
+    // Unpicked, the same gap is within the 95% allowance; forced, it publishes.
+    expect(checkSnapshot({ matched: today, poolSize: 20, previous: null, poolNames: names, pickedIds: new Set(["c1"]) }).outcome).toBe("published");
+    expect(checkSnapshot({ matched: today, poolSize: 20, previous: null, poolNames: names, pickedIds: new Set(["c7"]), force: true }).outcome).toBe("published");
   });
 
   it("lets an admin force past everything but an empty match", () => {

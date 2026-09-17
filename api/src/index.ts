@@ -73,7 +73,7 @@ import { MTG_USER_AGENT, MTG_SPECIALIZATION, MTG_RARITIES, MTG_SLOTS_PER_RARITY,
 import { MTG_SLOT_WEIGHTS,
   checkSnapshot, computeCardScores, isDateKey, matchFeed, mtgIngestSlot, mtgIngestDateAllowed,
   mtgIngestWindow, mtgStandingsDay, parseCardDataFeed, rankGroupDay,
-  rankStandings, scoreEntry, type FeedRecord, type PoolCard } from "./lib/mtgScoring";
+  rankStandings, scoreEntry, shiftDateKey, type FeedRecord, type PoolCard } from "./lib/mtgScoring";
 import { MTG_BADGE_MIN_RANKED, computeSeasonBadges, type SeasonBadge, type SeasonEntry, type SeasonGroup, type SeasonPick } from "./lib/mtgBadges";
 import { checkDbRateLimit, isDbRateLimited, recordDbRateEvent } from "./lib/dbRateLimit";
 import {
@@ -775,6 +775,18 @@ app.get("/public/users/:handle/mtg-badges", async (c) => {
       ORDER BY s.lock_at DESC
     `) as (MtgBadgeRow & { set_code: string; set_name: string; set_status: string; finalized_at: string | null; lock_at: string; community_name: string | null; community_slug: string | null; community_listed: boolean | null; viewer_member: boolean })[];
     const privileged = !!viewer && (viewer.id === target.id || viewer.role === "super_admin");
+    // Many badge reasons name picks ("<card>, the #1 mythic pick…"), and after
+    // the lock picks are shown only to members of the player's challenge groups
+    // (spec 12.6). Everyone else reads each badge's general description.
+    const detailed = privileged || (!!viewer && ((await sql`
+      SELECT EXISTS (
+        SELECT 1 FROM newchums.community_members theirs
+        JOIN newchums.community_members mine ON mine.community_id = theirs.community_id AND mine.user_id = ${viewer.id} AND mine.status = 'active'
+        JOIN newchums.communities g ON g.id = theirs.community_id
+        WHERE theirs.user_id = ${target.id} AND theirs.status = 'active'
+          AND g.specialization = ${MTG_SPECIALIZATION} AND COALESCE(g.status, 'active') = 'active'
+      ) AS shares
+    `) as { shares: boolean }[])[0]?.shares === true);
     const seasons: Array<{ set: { code: string; name: string; final: boolean }; badges: Array<ReturnType<typeof mtgBadgeList>[number] & { group: { name: string; slug: string } | { private: true } | null }> }> = [];
     for (const code of [...new Set(rows.map((r) => r.set_code))]) {
       const inSet = rows.filter((r) => r.set_code === code);
@@ -787,7 +799,11 @@ app.get("/public/users/:handle/mtg-badges", async (c) => {
           : (privileged || first.viewer_member || (!target.is_hidden_communities && first.community_listed))
             ? { name: first.community_name, slug: first.community_slug as string }
             : { private: true as const };
-        return mtgBadgeList(scoped).map((b) => ({ ...b, group }));
+        return mtgBadgeList(scoped).map((b) => ({
+          ...b,
+          ...(detailed ? {} : { name: MTG_BADGES[b.code]?.name ?? b.name, description: MTG_BADGES[b.code]?.description ?? "" }),
+          group,
+        }));
       }).sort((a, b) => compareBadges(a.code, b.code));
       seasons.push({ set: { code, name: inSet[0].set_name, final: inSet[0].set_status !== "active" && !!inSet[0].finalized_at }, badges });
     }
@@ -1175,6 +1191,8 @@ app.get("/mtg/sets/:code", async (c) => {
 });
 
 const MTG_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** The largest picks save read, in characters: twenty picks with full notes are about 8 KB. */
+const MTG_ENTRY_BODY_MAX = 32000;
 
 /** Card fields the pick screens use, shared by the pool and entry routes. */
 function mapMtgCard(r: Record<string, unknown>) {
@@ -1266,18 +1284,39 @@ app.post("/mtg/sets/:code/reviewed", async (c) => {
 /**
  * Replace an entry's picks in one transaction. `playerChange` is true for a
  * save by the player (it moves updated_at, the tie-break input) and false
- * for housekeeping such as dropping a card that left the pool.
+ * for housekeeping such as dropping a card that left the pool. Either way the
+ * entry's revision moves on, so a page that loaded the older picks can't save
+ * over these. With `expectRevision` the write only happens while the entry is
+ * still at that revision (isMtgStaleWrite tells that refusal apart).
+ *
  * completed_at records when the entry most recently became complete: kept
- * while it stays at twenty, cleared when it drops below.
+ * while it stays at twenty, cleared when it drops below. Back at twenty within
+ * 30 minutes of the player's change that dropped it, or at any time after a
+ * card leaving the pool dropped it, the entry gets its earlier completion time
+ * back, so swapping a card by removing one and adding another counts like
+ * Replace, and a retracted card doesn't cost the player their time.
  */
-async function writeMtgPicks(sql: ReturnType<typeof getSql>, entryId: string, picks: ValidatedPick[], playerChange: boolean, setId: string, lockCleanup = false) {
+async function writeMtgPicks(
+  sql: ReturnType<typeof getSql>,
+  entryId: string,
+  picks: ValidatedPick[],
+  opts: { playerChange: boolean; setId: string; lockCleanup?: boolean; expectRevision?: number },
+) {
   const complete = picks.length === MTG_RARITIES.length * MTG_SLOTS_PER_RARITY;
   const queries = [
     // The lock, checked inside the transaction so a save that started just
     // before lock_at cannot commit after it. Dividing by zero is the simplest
     // way to abort a non-interactive transaction; callers map it to 423.
     // Only the lock job's own clean-up skips it.
-    ...(lockCleanup ? [] : [sql`SELECT 1 / (CASE WHEN now() < s.lock_at AND s.status = 'active' THEN 1 ELSE 0 END) FROM newchums.mtg_sets s WHERE s.id = ${setId}`]),
+    ...(opts.lockCleanup ? [] : [sql`SELECT 1 / (CASE WHEN now() < s.lock_at AND s.status = 'active' THEN 1 ELSE 0 END) FROM newchums.mtg_sets s WHERE s.id = ${opts.setId}`]),
+    // Lock the entry first, so two writes to it run one after the other: the
+    // second one's delete then sees the first one's picks, instead of both
+    // inserting into the same slots. With `expectRevision`, the locked read
+    // sees any write that got there first, and the logarithm of zero aborts
+    // with its own message, so callers can tell a stale save from the lock.
+    opts.expectRevision === undefined
+      ? sql`SELECT 1 FROM newchums.mtg_entries e WHERE e.id = ${entryId} FOR UPDATE`
+      : sql`SELECT ln(CASE WHEN e.revision = ${opts.expectRevision} THEN 1 ELSE 0 END) FROM newchums.mtg_entries e WHERE e.id = ${entryId} FOR UPDATE`,
     sql`DELETE FROM newchums.mtg_picks WHERE entry_id = ${entryId}`,
   ];
   if (picks.length > 0) {
@@ -1292,11 +1331,30 @@ async function writeMtgPicks(sql: ReturnType<typeof getSql>, entryId: string, pi
       ) AS x(rarity, slot, card_id, note)
     `);
   }
-  queries.push(playerChange
-    ? sql`UPDATE newchums.mtg_entries SET updated_at = now(), completed_at = CASE WHEN ${complete} THEN COALESCE(completed_at, now()) ELSE NULL END WHERE id = ${entryId}`
-    : sql`UPDATE newchums.mtg_entries SET completed_at = CASE WHEN ${complete} THEN completed_at ELSE NULL END WHERE id = ${entryId}`);
+  queries.push(opts.playerChange
+    ? sql`
+      UPDATE newchums.mtg_entries SET
+        updated_at = now(),
+        revision = revision + 1,
+        completed_at = CASE
+          WHEN NOT ${complete} THEN NULL
+          WHEN completed_at IS NOT NULL THEN completed_at
+          WHEN prior_completed_at IS NOT NULL AND (incomplete_since IS NULL OR incomplete_since > now() - interval '30 minutes') THEN prior_completed_at
+          ELSE now() END,
+        prior_completed_at = CASE WHEN ${complete} THEN NULL ELSE COALESCE(completed_at, prior_completed_at) END,
+        incomplete_since = CASE WHEN ${complete} THEN NULL WHEN completed_at IS NOT NULL THEN now() ELSE incomplete_since END
+      WHERE id = ${entryId}`
+    : sql`
+      UPDATE newchums.mtg_entries SET
+        revision = revision + 1,
+        completed_at = CASE WHEN ${complete} THEN completed_at ELSE NULL END,
+        prior_completed_at = CASE WHEN ${complete} THEN prior_completed_at ELSE COALESCE(completed_at, prior_completed_at) END
+      WHERE id = ${entryId}`);
   await sql.transaction(queries);
 }
+
+const isMtgLockedWrite = (err: unknown) => err instanceof Error && /division by zero/i.test(err.message);
+const isMtgStaleWrite = (err: unknown) => err instanceof Error && /logarithm of zero/i.test(err.message);
 
 /** GET /mtg/sets/:code/entry, the caller's own entry. Other players' picks
  *  never leave the server before the lock (spec 12.6), so this route only
@@ -1318,37 +1376,52 @@ app.get("/mtg/sets/:code/entry", async (c) => {
       code: set.code, name: set.name, phase: summary.phase, lockAt: set.lock_at, locked,
       picksOpen: mtgPicksOpen(set, now), pool: summary.pool,
     };
-    const entries = (await sql`
-      SELECT id, updated_at, completed_at FROM newchums.mtg_entries WHERE user_id = ${userId} AND set_id = ${set.id} LIMIT 1
-    `) as { id: string; updated_at: string; completed_at: string | null }[];
-    const entry = entries[0];
+    type EntryRow = { id: string; updated_at: string; completed_at: string | null; revision: number };
+    const readEntry = async () => ((await sql`
+      SELECT id, updated_at, completed_at, revision FROM newchums.mtg_entries WHERE user_id = ${userId} AND set_id = ${set.id} LIMIT 1
+    `) as EntryRow[])[0];
+    let entry = await readEntry();
     if (!entry) return c.json({ ok: true, set: setOut, entry: null });
 
-    const rows = (await sql`
-      SELECT p.rarity AS pick_rarity, p.slot, p.note, (c.in_pool AND NOT c.voided AND c.rarity = p.rarity) AS valid,
-             c.id, c.scryfall_id, c.arena_id, c.name, c.rarity, c.collector_number, c.layout, c.colors, c.mana_cost, c.mana_value,
-             c.type_line, c.oracle_text, c.image_normal, c.image_large, c.image_back_normal, c.image_back_large, c.image_status,
-             c.previewed_at, c.preview_source, c.preview_source_uri, c.first_seen_at
-      FROM newchums.mtg_picks p
-      JOIN newchums.mtg_cards c ON c.id = p.card_id
-      WHERE p.entry_id = ${entry.id}
-      ORDER BY p.rarity, p.slot
-    `) as Record<string, unknown>[];
-
+    let keep: Record<string, unknown>[] = [];
     const dropped: { name: string; rarity: string }[] = [];
-    const keep = locked ? rows : rows.filter((r) => {
-      if (r.valid === true) return true;
-      dropped.push({ name: String(r.name), rarity: String(r.pick_rarity) });
-      return false;
-    });
-    if (dropped.length > 0) {
+    // A save that lands between this read and the clean-up wins: the clean-up
+    // is refused, and the second pass shows what that save stored.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (attempt > 0) {
+        entry = await readEntry();
+        if (!entry) return c.json({ ok: true, set: setOut, entry: null });
+      }
+      const rows = (await sql`
+        SELECT p.rarity AS pick_rarity, p.slot, p.note, (c.in_pool AND NOT c.voided AND c.rarity = p.rarity) AS valid,
+               c.id, c.scryfall_id, c.arena_id, c.name, c.rarity, c.collector_number, c.layout, c.colors, c.mana_cost, c.mana_value,
+               c.type_line, c.oracle_text, c.image_normal, c.image_large, c.image_back_normal, c.image_back_large, c.image_status,
+               c.previewed_at, c.preview_source, c.preview_source_uri, c.first_seen_at
+        FROM newchums.mtg_picks p
+        JOIN newchums.mtg_cards c ON c.id = p.card_id
+        WHERE p.entry_id = ${entry.id}
+        ORDER BY p.rarity, p.slot
+      `) as Record<string, unknown>[];
+      dropped.length = 0;
+      keep = locked ? rows : rows.filter((r) => {
+        if (r.valid === true) return true;
+        dropped.push({ name: String(r.name), rarity: String(r.pick_rarity) });
+        return false;
+      });
+      if (dropped.length === 0 || attempt > 0) break;
       const renumbered: ValidatedPick[] = [];
       for (const rarity of MTG_RARITIES) {
         keep.filter((r) => r.pick_rarity === rarity).forEach((r, i) => {
           renumbered.push({ rarity, slot: i + 1, cardId: String(r.id), note: (r.note as string | null) ?? null });
         });
       }
-      await writeMtgPicks(sql, entry.id, renumbered, false, set.id);
+      try {
+        await writeMtgPicks(sql, entry.id, renumbered, { playerChange: false, setId: set.id, expectRevision: entry.revision });
+        entry = (await readEntry()) ?? entry;
+        break;
+      } catch (err) {
+        if (!isMtgStaleWrite(err) && !isMtgLockedWrite(err)) throw err;
+      }
     }
 
     const picks: Record<string, Array<{ slot: number; note: string | null; card: ReturnType<typeof mapMtgCard> }>> = { common: [], uncommon: [], rare: [], mythic: [] };
@@ -1357,13 +1430,10 @@ app.get("/mtg/sets/:code/entry", async (c) => {
         picks[rarity].push({ slot: dropped.length > 0 ? i + 1 : Number(r.slot), note: (r.note as string | null) ?? null, card: mapMtgCard(r) });
       });
     }
-    const fresh = dropped.length > 0
-      ? ((await sql`SELECT updated_at, completed_at FROM newchums.mtg_entries WHERE id = ${entry.id}`) as { updated_at: string; completed_at: string | null }[])[0]
-      : entry;
     return c.json({
       ok: true,
       set: setOut,
-      entry: { updatedAt: fresh.updated_at, completedAt: fresh.completed_at, picks, dropped },
+      entry: { updatedAt: entry.updated_at, completedAt: entry.completed_at, revision: Number(entry.revision), picks, dropped },
     });
   } catch (err) {
     console.error("[GET /mtg/sets/:code/entry]", err);
@@ -1371,14 +1441,40 @@ app.get("/mtg/sets/:code/entry", async (c) => {
   }
 });
 
-/** PUT /mtg/sets/:code/entry { picks: { common: [{ cardId, slot, note }], ... } }
+/** PUT /mtg/sets/:code/entry { picks: { common: [{ cardId, slot, note }], ... }, baseRevision }
  *  Full replace of the caller's entry. The server clock is the lock: 423
- *  after lock_at, whatever the page thinks. 409 before picks open. */
+ *  after lock_at, whatever the page thinks. 409 before picks open.
+ *  `baseRevision` is the revision the page last loaded or saved; when the
+ *  entry has moved on since (another tab or device saved), the save is
+ *  refused with 409 STALE so the page can load the newer picks instead of
+ *  erasing them. Pages from before revisions existed send none and aren't
+ *  checked. */
 app.put("/mtg/sets/:code/entry", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email) return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  // A full set of picks with notes is a few kilobytes; nothing bigger is read.
+  if (Number(c.req.header("content-length") ?? 0) > MTG_ENTRY_BODY_MAX)
+    return c.json({ ok: false, error: "TOO_LARGE", message: "That's too much to save" }, 413);
   let body: Record<string, unknown>;
-  try { body = await c.req.json(); } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
+  try {
+    const raw = await c.req.text();
+    if (raw.length > MTG_ENTRY_BODY_MAX) return c.json({ ok: false, error: "TOO_LARGE", message: "That's too much to save" }, 413);
+    body = JSON.parse(raw);
+  } catch { return c.json({ ok: false, error: "INVALID_JSON" }, 400); }
+  if (!body || typeof body !== "object" || Array.isArray(body)) return c.json({ ok: false, error: "INVALID_JSON" }, 400);
+  // The shape is checked before any query, so an oversized list costs nothing.
+  const shape = body.picks;
+  if (!shape || typeof shape !== "object" || Array.isArray(shape))
+    return c.json({ ok: false, error: "VALIDATION", message: "Picks must be grouped by rarity" }, 400);
+  for (const [key, list] of Object.entries(shape as Record<string, unknown>)) {
+    if (!(MTG_RARITIES as readonly string[]).includes(key)) return c.json({ ok: false, error: "VALIDATION", message: `Unknown rarity "${key}"` }, 400);
+    if (Array.isArray(list) && list.length > MTG_SLOTS_PER_RARITY)
+      return c.json({ ok: false, error: "VALIDATION", message: `At most ${MTG_SLOTS_PER_RARITY} ${key} picks` }, 400);
+  }
+  const base = body.baseRevision;
+  if (base !== undefined && base !== null && !(typeof base === "number" && Number.isInteger(base) && base >= 0))
+    return c.json({ ok: false, error: "VALIDATION", message: "baseRevision must be a whole number" }, 400);
+  const baseRevision = typeof base === "number" ? base : undefined;
   const sql = getSql(c.env);
   try {
     const set = await loadMtgSet(sql, c.req.param("code"));
@@ -1412,83 +1508,83 @@ app.put("/mtg/sets/:code/entry", async (c) => {
     const full = MTG_RARITIES.length * MTG_SLOTS_PER_RARITY;
     const dropped: { name: string; rarity: MtgRarity }[] = [];
     const pool = new Map<string, MtgRarity>();
-    let candidate: unknown = body.picks;
-    if (body.picks && typeof body.picks === "object" && !Array.isArray(body.picks)) {
-      const incoming = body.picks as Record<string, unknown>;
-      const ids = new Set<string>();
-      for (const list of Object.values(incoming)) {
-        if (!Array.isArray(list)) continue;
-        for (const item of list) {
-          const id = (item as { cardId?: unknown } | null)?.cardId;
-          if (typeof id === "string" && MTG_UUID_RE.test(id)) ids.add(id);
-        }
+    const incoming = shape as Record<string, unknown>;
+    const ids = new Set<string>();
+    for (const list of Object.values(incoming)) {
+      if (!Array.isArray(list)) continue;
+      for (const item of list) {
+        const id = (item as { cardId?: unknown } | null)?.cardId;
+        if (typeof id === "string" && MTG_UUID_RE.test(id)) ids.add(id);
       }
-      const known = ids.size === 0 ? [] : ((await sql`
-        SELECT id, name, rarity, (in_pool AND NOT voided) AS live
-        FROM newchums.mtg_cards WHERE set_id = ${set.id} AND id = ANY(${[...ids]}::uuid[])
-      `) as { id: string; name: string; rarity: MtgRarity; live: boolean }[]);
-      const byId = new Map(known.map((k) => [k.id, k]));
-      for (const k of known) if (k.live) pool.set(k.id, k.rarity);
-      const cleaned: Record<string, unknown> = {};
-      for (const [listRarity, list] of Object.entries(incoming)) {
-        if (!Array.isArray(list)) { cleaned[listRarity] = list; continue; }
-        const kept = list.filter((item) => {
-          const card = byId.get(String((item as { cardId?: unknown } | null)?.cardId));
-          if (card && (!card.live || card.rarity !== listRarity)) {
-            dropped.push({ name: card.name, rarity: listRarity as MtgRarity });
-            return false;
-          }
-          return true;
-        });
-        cleaned[listRarity] = kept.length === list.length
-          ? list
-          : [...kept]
-              .sort((x, y) => Number((x as { slot?: unknown })?.slot) - Number((y as { slot?: unknown })?.slot))
-              .map((item, i) => ({ ...(item as object), slot: i + 1 }));
-      }
-      candidate = cleaned;
     }
-    const validation = validateEntryPicks(candidate, pool);
+    const known = ids.size === 0 ? [] : ((await sql`
+      SELECT id, name, rarity, (in_pool AND NOT voided) AS live
+      FROM newchums.mtg_cards WHERE set_id = ${set.id} AND id = ANY(${[...ids]}::uuid[])
+    `) as { id: string; name: string; rarity: MtgRarity; live: boolean }[]);
+    const byId = new Map(known.map((k) => [k.id, k]));
+    for (const k of known) if (k.live) pool.set(k.id, k.rarity);
+    const cleaned: Record<string, unknown> = {};
+    for (const [listRarity, list] of Object.entries(incoming)) {
+      if (!Array.isArray(list)) { cleaned[listRarity] = list; continue; }
+      const kept = list.filter((item) => {
+        const card = byId.get(String((item as { cardId?: unknown } | null)?.cardId));
+        if (card && (!card.live || card.rarity !== listRarity)) {
+          dropped.push({ name: card.name, rarity: listRarity as MtgRarity });
+          return false;
+        }
+        return true;
+      });
+      cleaned[listRarity] = kept.length === list.length
+        ? list
+        : [...kept]
+            .sort((x, y) => Number((x as { slot?: unknown })?.slot) - Number((y as { slot?: unknown })?.slot))
+            .map((item, i) => ({ ...(item as object), slot: i + 1 }));
+    }
+    const validation = validateEntryPicks(cleaned, pool);
     if (!validation.ok) return c.json({ ok: false, error: "VALIDATION", message: validation.message }, 400);
     const picked = validation.picks.length;
 
+    type EntryRow = { id: string; updated_at: string; completed_at: string | null; revision: number };
+    const existing = ((await sql`
+      SELECT id, updated_at, completed_at, revision FROM newchums.mtg_entries WHERE user_id = ${userId} AND set_id = ${set.id} LIMIT 1
+    `) as EntryRow[])[0];
+    const stale = { ok: false, error: "STALE", message: "Your picks were changed in another tab or on another device." };
     // A save that changes nothing does not touch the entry, so it cannot move
-    // the tie-break time.
-    const existing = (await sql`
-      SELECT id, updated_at, completed_at FROM newchums.mtg_entries WHERE user_id = ${userId} AND set_id = ${set.id} LIMIT 1
-    `) as { id: string; updated_at: string; completed_at: string | null }[];
+    // the tie-break time. It is checked before staleness: a retry of a save
+    // whose response was lost finds its own picks already stored.
     const signature = (rows: { rarity: string; slot: number; cardId: string; note: string | null }[]) =>
       rows.map((r) => `${r.rarity}|${r.slot}|${r.cardId}|${r.note ?? ""}`).sort().join("\n");
-    if (existing[0]) {
+    if (existing) {
       const current = (await sql`
-        SELECT rarity, slot, card_id, note FROM newchums.mtg_picks WHERE entry_id = ${existing[0].id}
+        SELECT rarity, slot, card_id, note FROM newchums.mtg_picks WHERE entry_id = ${existing.id}
       `) as { rarity: string; slot: number; card_id: string; note: string | null }[];
       if (signature(current.map((r) => ({ rarity: r.rarity, slot: Number(r.slot), cardId: r.card_id, note: r.note }))) === signature(validation.picks)) {
         return c.json({
           ok: true,
           unchanged: true,
           dropped,
-          entry: { updatedAt: existing[0].updated_at, completedAt: existing[0].completed_at, picked, complete: picked === full },
+          entry: { updatedAt: existing.updated_at, completedAt: existing.completed_at, revision: Number(existing.revision), picked, complete: picked === full },
         });
       }
     }
-    const entryId = existing[0]?.id ?? ((await sql`
+    if (baseRevision !== undefined && Number(existing?.revision ?? 0) !== baseRevision) return c.json(stale, 409);
+    const entryId = existing?.id ?? ((await sql`
       INSERT INTO newchums.mtg_entries (user_id, set_id) VALUES (${userId}, ${set.id})
       ON CONFLICT (user_id, set_id) DO UPDATE SET user_id = EXCLUDED.user_id
       RETURNING id
     `) as { id: string }[])[0].id;
     try {
-      await writeMtgPicks(sql, entryId, validation.picks, true, set.id);
+      await writeMtgPicks(sql, entryId, validation.picks, { playerChange: true, setId: set.id, expectRevision: baseRevision });
     } catch (err) {
-      if (err instanceof Error && /division by zero/i.test(err.message))
-        return c.json({ ok: false, error: "LOCKED", message: "Picks are locked" }, 423);
+      if (isMtgLockedWrite(err)) return c.json({ ok: false, error: "LOCKED", message: "Picks are locked" }, 423);
+      if (isMtgStaleWrite(err)) return c.json(stale, 409);
       throw err;
     }
-    const after = (await sql`SELECT updated_at, completed_at FROM newchums.mtg_entries WHERE id = ${entryId}`) as { updated_at: string; completed_at: string | null }[];
+    const after = ((await sql`SELECT updated_at, completed_at, revision FROM newchums.mtg_entries WHERE id = ${entryId}`) as Omit<EntryRow, "id">[])[0];
     return c.json({
       ok: true,
       dropped,
-      entry: { updatedAt: after[0]?.updated_at, completedAt: after[0]?.completed_at ?? null, picked, complete: picked === full },
+      entry: { updatedAt: after?.updated_at, completedAt: after?.completed_at ?? null, revision: Number(after?.revision ?? 0), picked, complete: picked === full },
     });
   } catch (err) {
     console.error("[PUT /mtg/sets/:code/entry]", err);
@@ -1525,13 +1621,17 @@ app.get("/mtg/communities/:id/progress", async (c) => {
     const rows = (await sql`
       SELECT u.id, u.name, u.username, u.avatar_key, u.avatar_updated_at,
              COALESCE((
+               -- Before the lock, a pick of a card that has left the pool
+               -- doesn't count: the lock would drop it.
                SELECT COUNT(*)::int FROM newchums.mtg_picks p
                JOIN newchums.mtg_entries e ON e.id = p.entry_id
+               JOIN newchums.mtg_cards mc ON mc.id = p.card_id
                WHERE e.user_id = u.id AND e.set_id = ${set.id}
+                 AND (e.locked_at IS NOT NULL OR (mc.in_pool AND NOT mc.voided AND mc.rarity = p.rarity))
              ), 0) AS picked
       FROM newchums.community_members cm
       JOIN newchums.users u ON u.id = cm.user_id
-      WHERE cm.community_id = ${communityId} AND cm.status = 'active'
+      WHERE cm.community_id = ${communityId} AND cm.status = 'active' AND NOT COALESCE(u.is_suspended, false)
       ORDER BY picked DESC, LOWER(COALESCE(u.name, u.username, '')) ASC
       LIMIT 500
     `) as { id: string; name: string | null; username: string | null; avatar_key: string | null; avatar_updated_at: string | null; picked: number }[];
@@ -1653,7 +1753,8 @@ async function sendMtgWelcomeIfFirst(
     const pickedRows = (await sql`
       SELECT COUNT(*)::int AS n FROM newchums.mtg_picks p
       JOIN newchums.mtg_entries e ON e.id = p.entry_id
-      WHERE e.user_id = ${userId} AND e.set_id = ${set.id}
+      JOIN newchums.mtg_cards mc ON mc.id = p.card_id
+      WHERE e.user_id = ${userId} AND e.set_id = ${set.id} AND mc.in_pool AND NOT mc.voided AND mc.rarity = p.rarity
     `) as { n: number }[];
     const web = env.WEB_BASE_URL;
     const timeline = mtgTimeline(set, now);
@@ -1733,7 +1834,7 @@ async function processMtgLockWarnings(sql: ReturnType<typeof getSql>, env: Bindi
     ),
     candidates AS (
       SELECT p.user_id,
-             COALESCE(up.notification_prefs->'items'->'mtg_challenge'->>'enabled', 'true') <> 'false' AS wants_email,
+             COALESCE(up.notification_prefs->'items'->'mtg_challenge'->>'enabled', 'true') <> 'false' AND NOT COALESCE(u.is_suspended, false) AS wants_email,
              EXISTS (
                SELECT 1 FROM newchums.mtg_email_log w
                WHERE w.user_id = p.user_id AND w.set_id = ${set.id} AND w.email_type = 'welcome'
@@ -1774,9 +1875,12 @@ async function processMtgLockWarnings(sql: ReturnType<typeof getSql>, env: Bindi
  *  and each of their challenge groups with how many members have finished. */
 async function mtgLockWarningDetails(sql: ReturnType<typeof getSql>, env: Bindings, setId: string, userId: string) {
   const full = MTG_RARITIES.length * MTG_SLOTS_PER_RARITY;
+  // Only picks that will stand at the lock: one whose card left the pool is dropped then.
   const pickedRows = (await sql`
-    SELECT COUNT(p.card_id)::int AS n
-    FROM newchums.mtg_entries e LEFT JOIN newchums.mtg_picks p ON p.entry_id = e.id
+    SELECT COUNT(mc.id)::int AS n
+    FROM newchums.mtg_entries e
+    LEFT JOIN newchums.mtg_picks p ON p.entry_id = e.id
+    LEFT JOIN newchums.mtg_cards mc ON mc.id = p.card_id AND mc.in_pool AND NOT mc.voided AND mc.rarity = p.rarity
     WHERE e.user_id = ${userId} AND e.set_id = ${setId}
   `) as { n: number }[];
   const groups = (await sql`
@@ -1786,8 +1890,10 @@ async function mtgLockWarningDetails(sql: ReturnType<typeof getSql>, env: Bindin
       WHERE c.specialization = ${MTG_SPECIALIZATION} AND COALESCE(c.status, 'active') = 'active'
     ),
     counts AS (
-      SELECT e.user_id, COUNT(p.card_id)::int AS n
-      FROM newchums.mtg_entries e LEFT JOIN newchums.mtg_picks p ON p.entry_id = e.id
+      SELECT e.user_id, COUNT(mc.id)::int AS n
+      FROM newchums.mtg_entries e
+      LEFT JOIN newchums.mtg_picks p ON p.entry_id = e.id
+      LEFT JOIN newchums.mtg_cards mc ON mc.id = p.card_id AND mc.in_pool AND NOT mc.voided AND mc.rarity = p.rarity
       WHERE e.set_id = ${setId}
       GROUP BY e.user_id
     )
@@ -1796,6 +1902,7 @@ async function mtgLockWarningDetails(sql: ReturnType<typeof getSql>, env: Bindin
            COUNT(cm.user_id) FILTER (WHERE COALESCE(ct.n, 0) >= ${full})::int AS finished
     FROM mine m
     JOIN newchums.community_members cm ON cm.community_id = m.id AND cm.status = 'active'
+    JOIN newchums.users mu ON mu.id = cm.user_id AND NOT COALESCE(mu.is_suspended, false)
     LEFT JOIN counts ct ON ct.user_id = cm.user_id
     GROUP BY m.id, m.name, m.slug
     ORDER BY LOWER(m.name)
@@ -1962,7 +2069,7 @@ async function processMtgLock(sql: ReturnType<typeof getSql>, only?: MtgSetRow, 
         .filter((r) => r.entry_id === entryId && r.rarity === rarity && r.valid === true)
         .forEach((r, i) => kept.push({ rarity, slot: i + 1, cardId: r.card_id, note: r.note }));
     }
-    await writeMtgPicks(sql, entryId, kept, false, set.id, true);
+    await writeMtgPicks(sql, entryId, kept, { playerChange: false, setId: set.id, lockCleanup: true });
   }
 
   await sql`
@@ -2231,7 +2338,7 @@ async function processMtgRevealedEmails(sql: ReturnType<typeof getSql>, env: Bin
     ),
     candidates AS (
       SELECT p.user_id,
-             COALESCE(up.notification_prefs->'items'->'mtg_challenge'->>'enabled', 'true') <> 'false' AS wants_email
+             COALESCE(up.notification_prefs->'items'->'mtg_challenge'->>'enabled', 'true') <> 'false' AND NOT COALESCE(u.is_suspended, false) AS wants_email
       FROM players p
       JOIN newchums.users u ON u.id = p.user_id
       LEFT JOIN newchums.user_profile up ON up.user_id = p.user_id
@@ -2362,7 +2469,7 @@ async function processMtgResultsEmails(sql: ReturnType<typeof getSql>, env: Bind
       ),
       candidates AS (
         SELECT p.user_id,
-               COALESCE(up.notification_prefs->'items'->'mtg_challenge'->>'enabled', 'true') <> 'false' AS wants_email
+               COALESCE(up.notification_prefs->'items'->'mtg_challenge'->>'enabled', 'true') <> 'false' AND NOT COALESCE(u.is_suspended, false) AS wants_email
         FROM players p
         JOIN newchums.users u ON u.id = p.user_id
         LEFT JOIN newchums.user_profile up ON up.user_id = p.user_id
@@ -2563,6 +2670,8 @@ async function loadMtgScoringPool(sql: ReturnType<typeof getSql>, setId: string)
   const rows = (await sql`
     SELECT id, name, rarity, arena_id, stats_arena_id, stats_name, collector_sort
     FROM newchums.mtg_cards WHERE set_id = ${setId} AND in_pool = true AND voided = false
+    -- A fixed order, so matching pairs the same card with a record on every run.
+    ORDER BY collector_sort, collector_number, id
   `) as { id: string; name: string; rarity: MtgRarity; arena_id: number | null; stats_arena_id: number | null; stats_name: string | null; collector_sort: number }[];
   return rows.map((r) => ({ id: r.id, name: r.name, rarity: r.rarity, arenaId: r.arena_id, statsArenaId: r.stats_arena_id, statsName: r.stats_name, collectorSort: Number(r.collector_sort) }));
 }
@@ -2681,9 +2790,17 @@ async function runMtgIngest(
     if (named !== today && !(named === finalDate && today > finalDate))
       return { outcome: "skipped", reason: "17Lands' feed only has today's numbers, so a fetch can publish today, or the final day after it ends. To fill in another day, paste a response saved that day", snapshotDate: named };
   }
+  // A day that hasn't come yet would put standings, and on-track badges worked
+  // out from them, on the boards early. A dry run may still name one.
+  if (named && opts.dryRun !== true && named > easternDateKey(new Date()))
+    return { outcome: "skipped", reason: "That day hasn't come yet. Standings can be published for today or an earlier day", snapshotDate: named };
   const window = mtgIngestWindow(set);
-  if (!named && !window.open) return { outcome: "skipped", reason: "Standings can only be published from the day after the Arena launch through the final day", snapshotDate: window.date };
-  const snapshotDate = named ?? window.date;
+  // A dry run before the season, with no day named, rehearses its first morning.
+  const rehearsal = !named && !window.open && opts.dryRun === true && set.arena_release_at && window.date <= easternDateKey(set.arena_release_at)
+    ? shiftDateKey(easternDateKey(set.arena_release_at), 1)
+    : null;
+  if (!named && !window.open && !rehearsal) return { outcome: "skipped", reason: "Standings can only be published from the day after the Arena launch through the final day", snapshotDate: window.date };
+  const snapshotDate = named ?? rehearsal ?? window.date;
   // A dry run fetches, matches and checks, and records the attempt with its
   // archived response, but publishes nothing: matching can be rehearsed, and
   // the admin match queue filled, before the season's first morning.
@@ -2727,11 +2844,16 @@ async function runMtgIngest(
     await recordRun("failed_validation", parsed.reason, { rawKey });
     return { outcome: "failed_validation", reason: parsed.reason, snapshotDate };
   }
+  // Standings are only fetched from the day after the Arena launch, when
+  // 17Lands has the set. An empty list then is how the feed answers a wrong
+  // expansion code too, so it fails the checks and alerts straight away
+  // instead of waiting out the day as "not newer".
   if (parsed.records.length === 0) {
-    await recordRun("not_newer", "The feed has no cards yet", { rawKey });
-    return { outcome: "not_newer", reason: "The feed has no cards yet", snapshotDate };
+    const reason = "The feed has no cards for this set. If it's out on Arena, check the expansion code in the feed address";
+    await recordRun("failed_validation", reason, { rawKey });
+    return { outcome: "failed_validation", reason, snapshotDate };
   }
-  const pool = await loadMtgScoringPool(sql, set.id);
+  const [pool, picks] = await Promise.all([loadMtgScoringPool(sql, set.id), loadMtgSetPicks(sql, set.id)]);
   const match = matchFeed(parsed.records, pool);
 
   // Compare with the latest standings: today's when replacing, else the last day's.
@@ -2747,7 +2869,14 @@ async function runMtgIngest(
     `) as { card_id: string; gih_games: number }[];
     previous = { totalGames: Number(prevRows[0].total_games), gamesByCard: new Map(games.map((g) => [g.card_id, Number(g.gih_games)])) };
   }
-  const check = checkSnapshot({ matched: match.matched, poolSize: pool.length, previous, force: opts.force });
+  const check = checkSnapshot({
+    matched: match.matched,
+    poolSize: pool.length,
+    previous,
+    poolNames: new Map(pool.map((c) => [c.id, c.name])),
+    pickedIds: new Set(picks.map((p) => p.card_id)),
+    force: opts.force,
+  });
   const summary = { snapshotDate, matched: check.matched, poolSize: pool.length, totalGames: check.totalGames };
   if (check.outcome !== "published") {
     await recordRun(check.outcome, check.reason, { rawKey, totalGames: check.totalGames, matched: check.matched });
@@ -2762,7 +2891,6 @@ async function runMtgIngest(
     return { outcome: "published", reason: null, ...summary, dryRun: true };
   }
 
-  const picks = await loadMtgSetPicks(sql, set.id);
   const source = opts.trigger === "paste" ? "paste" : "feed";
   try {
     await sql.transaction([
@@ -2868,6 +2996,8 @@ type MtgJudgement = {
   /** The set's published days and when each was last scored, checked again at write time. */
   fingerprint: string;
   badges: SeasonBadge[];
+  /** Each group's players the day was judged on; finalize records them on the roster. */
+  players: Array<{ communityId: string; userId: string }>;
 };
 
 /**
@@ -3026,6 +3156,8 @@ async function judgeMtgSeason(sql: ReturnType<typeof getSql>, set: MtgSetRow, ta
     hasFinal: printRow?.has_final === true,
     fingerprint: String(printRow?.fingerprint ?? ""),
     badges: computeSeasonBadges({ cards, entries, groups, judgedDays }),
+    // Who each group's standings and honors were judged on.
+    players: (memberRows as Member[]).map((m) => ({ communityId: m.community_id, userId: m.id })),
   };
 }
 
@@ -3454,22 +3586,27 @@ type MtgGroupMember = {
  * (`newchums.mtg_season_player`). While the season is played these are the
  * active members, and one who joined after the lock gets no entry here even
  * with one from another group, and is flagged. A finished season is kept as
- * it ended (`mtg_group_season_players`): its players who have since left the
- * group stay in it, and members who joined after its lock aren't listed.
+ * it ended (`mtg_group_season_players`): the players its finalize counted,
+ * including any who have since left the group, and not members who joined
+ * after its lock or players who left before the season ended.
  */
 async function loadMtgGroupMembers(sql: ReturnType<typeof getSql>, setId: string, communityId: string): Promise<MtgGroupMember[]> {
   return (await sql`
     WITH season AS (
       SELECT id, lock_at, (status <> 'active' AND finalized_at IS NOT NULL) AS finished FROM newchums.mtg_sets WHERE id = ${setId}
     ),
+    players AS (
+      SELECT gp.user_id, gp.joined_at, gp.left_group
+      FROM newchums.mtg_group_season_players(${communityId}::uuid, ${setId}::uuid) gp
+    ),
     people AS (
       SELECT cm.user_id, cm.created_at AS joined, false AS left_group,
-             newchums.mtg_season_player(cm.community_id, ${setId}::uuid, cm.user_id, cm.created_at) AS plays
+             EXISTS (SELECT 1 FROM players gp WHERE gp.user_id = cm.user_id AND NOT gp.left_group) AS plays
       FROM newchums.community_members cm
       WHERE cm.community_id = ${communityId} AND cm.status = 'active'
       UNION ALL
       SELECT gp.user_id, gp.joined_at, true, true
-      FROM newchums.mtg_group_season_players(${communityId}::uuid, ${setId}::uuid) gp
+      FROM players gp
       WHERE gp.left_group
     )
     SELECT u.id, u.name, u.username, u.avatar_key, u.avatar_updated_at,
@@ -3907,7 +4044,8 @@ app.get("/mtg/communities/:id/cards/:cardId", async (c) => {
     const card = cardRows[0];
     if (!card) return c.json({ ok: false, error: "NOT_FOUND", message: "That card isn't in this season" }, 404);
     const latestDate = latestRows[0]?.d ?? null;
-    // A card voided later has no row on the latest day, so its numbers stop at its last one.
+    // A voided card has no row on the latest day. Re-scoring after a void clears its
+    // past days too, so its card page shows no numbers at all once that's done.
     const last = history[history.length - 1];
     const latest = last && last.snapshot_date === latestDate ? {
       date: String(last.snapshot_date),
@@ -4105,6 +4243,8 @@ app.get("/mtg/sets/:code/everyone", async (c) => {
       WHERE u.email = ${payload.email} AND e.set_id = ${set.id} LIMIT 1
     `) as { user_id: string; hide_from_everyone_board: boolean }[])[0];
     const viewer = { hasEntry: !!mine, hidden: mine?.hide_from_everyone_board === true };
+    // Points come from picks, which nobody sees before the lock.
+    if (Date.now() < new Date(set.lock_at).getTime()) return c.json({ ok: true, set: { code: set.code, name: set.name }, viewer, standings: null });
     const snap = ((await sql`
       SELECT id, snapshot_date::text AS snapshot_date, taken_at, is_final FROM newchums.mtg_snapshots
       WHERE set_id = ${set.id} ORDER BY snapshot_date DESC LIMIT 1
@@ -4232,6 +4372,9 @@ app.put("/admin/mtg/sets/:code", async (c) => {
   // Prereleases are the first real games with a set, so picks lock before they start.
   if (dates.prerelease_start_at && new Date(dates.lock_at).getTime() > new Date(dates.prerelease_start_at).getTime())
     return c.json({ ok: false, error: "VALIDATION", message: "Picks must lock before prereleases start", field: "lock_at" }, 400);
+  // Standings start the day after the Arena launch, and picks must be locked by then.
+  if (dates.arena_release_at && new Date(dates.arena_release_at).getTime() <= new Date(dates.lock_at).getTime())
+    return c.json({ ok: false, error: "VALIDATION", message: "The Arena launch must come after the lock", field: "arena_release_at" }, 400);
   const status = ["active", "final", "archived"].includes(String(body.status)) ? String(body.status) : "active";
   const sql = getSql(c.env);
   try {
@@ -4240,6 +4383,14 @@ app.put("/admin/mtg/sets/:code", async (c) => {
     const existing = await loadMtgSet(sql, code);
     if (existing?.locked_at && new Date(existing.lock_at).getTime() !== new Date(dates.lock_at).getTime())
       return c.json({ ok: false, error: "LOCK_RAN", message: "The lock has already run, so the lock time can't change", field: "lock_at" }, 409);
+    // The Reveal opens at lock_at and saves stop there, so a lock time already
+    // passed can't move (players may have seen everyone's picks), and a new one
+    // can't be in the past (it would open the Reveal at once).
+    const lockChanged = !existing || new Date(existing.lock_at).getTime() !== new Date(dates.lock_at).getTime();
+    if (lockChanged && existing && Date.now() >= new Date(existing.lock_at).getTime())
+      return c.json({ ok: false, error: "LOCK_PASSED", message: "Picks have already locked, so the lock time can't change", field: "lock_at" }, 409);
+    if (lockChanged && status === "active" && new Date(dates.lock_at).getTime() <= Date.now())
+      return c.json({ ok: false, error: "VALIDATION", message: "The lock time must be in the future", field: "lock_at" }, 400);
     // Ending a season awards its badges and sends its results, and reopening
     // takes the awards back, so only Finalize and Reopen move it to or from final.
     const was = existing?.status ?? "active";
@@ -4290,6 +4441,15 @@ async function finalizeMtgSeason(sql: ReturnType<typeof getSql>, set: MtgSetRow,
       sql`UPDATE newchums.mtg_snapshots SET is_final = (id = ${judged.target.id}) WHERE set_id = ${set.id}`,
       sql`DELETE FROM newchums.mtg_badge_awards WHERE set_id = ${set.id} AND status = 'on_track'`,
       mtgBadgeInsert(sql, set.id, judged.badges, "awarded"),
+      // The finished season shows exactly these players, so a player who left
+      // mid-season doesn't return to a podium their badges weren't judged on.
+      sql`
+        UPDATE newchums.mtg_group_rosters r SET in_final = EXISTS (
+          SELECT 1 FROM UNNEST(${judged.players.map((x) => x.communityId)}::uuid[], ${judged.players.map((x) => x.userId)}::uuid[]) AS j(community_id, user_id)
+          WHERE j.community_id = r.community_id AND j.user_id = r.user_id
+        )
+        WHERE r.set_id = ${set.id}
+      `,
       sql`UPDATE newchums.mtg_sets SET status = 'final', finalized_at = now(), reopened_at = NULL, updated_at = now() WHERE id = ${set.id}`,
     ]);
   } catch (err) {
@@ -4421,6 +4581,9 @@ async function runMtgCardSync(sql: ReturnType<typeof getSql>, env: Bindings, set
     // Picks of cards that leave the pool are deleted, so a held pool needs a person to look.
     if (summary.poolHeld) {
       Sentry.captureMessage(`MTG ${set.code} card sync kept the pool: it would have taken ${summary.poolHeld.leaving} of ${summary.poolHeld.total} cards out`, "warning");
+    }
+    if (summary.failed) {
+      Sentry.captureMessage(`MTG ${set.code} card sync couldn't save ${summary.failed} card${summary.failed === 1 ? "" : "s"}: ${summary.notes.filter((n) => n.startsWith("Couldn't save")).slice(0, 3).join("; ")}`, "warning");
     }
     return summary;
   } catch (err) {
@@ -4950,8 +5113,14 @@ app.post("/auth/record-legal-acceptance", async (c) => {
 const VERIFY_EXPIRY_MS = 24 * 60 * 60 * 1000;
 
 app.post("/auth/email-verify/request", async (c) => {
-  const body = await c.req.json<{ email?: string }>();
+  const body = await c.req.json<{ email?: string; next?: string }>();
   const normalizedEmail = body.email?.trim().toLowerCase();
+  // Where the person was headed before signing up (an invite link, say), kept
+  // on the verification link so sign-in can return them there. Paths on this
+  // site only: no "//host", no backslashes or control characters.
+  const nextPath = typeof body.next === "string" ? body.next.trim() : "";
+  const safeNext = nextPath.length <= 1000 && nextPath.startsWith("/") && !nextPath.startsWith("//")
+    && !/[\\\u0000-\u001f\u007f]/.test(nextPath) && !nextPath.toLowerCase().includes("://") ? nextPath : "";
   if (!normalizedEmail) {
     return c.json({ ok: true, message: "If an account exists, a verification email was sent." });
   }
@@ -4986,7 +5155,7 @@ app.post("/auth/email-verify/request", async (c) => {
     VALUES (${user.id}, ${tokenHash}, ${expiresAt})
   `;
 
-  const verifyUrl = `${c.env.WEB_BASE_URL}/auth/verify?email=${encodeURIComponent(normalizedEmail)}&token=${encodeURIComponent(rawToken)}`;
+  const verifyUrl = `${c.env.WEB_BASE_URL}/auth/verify?email=${encodeURIComponent(normalizedEmail)}&token=${encodeURIComponent(rawToken)}${safeNext && safeNext !== "/" ? `&next=${encodeURIComponent(safeNext)}` : ""}`;
   const nameRows = (await sql`SELECT name FROM users WHERE id = ${user.id} LIMIT 1`) as { name: string | null }[];
   const name = nameRows[0]?.name ?? null;
   await sendVerificationEmail(c.env, {
@@ -13846,6 +14015,16 @@ app.delete("/communities/:slug", async (c) => {
   if (communityRows[0].owner_user_id !== userRows[0].id && !isSuperAdmin) return c.json({ ok: false, error: "FORBIDDEN" }, 403);
 
   try {
+    // Spec 11: once a season has locked with players in the group, deleting
+    // would take their standings and group honors with it (they cascade), so
+    // the owner closes the group instead. Super admins can still delete.
+    if (!isSuperAdmin) {
+      const history = (await sql`
+        SELECT EXISTS (SELECT 1 FROM newchums.mtg_group_rosters WHERE community_id = ${communityRows[0].id}) AS has
+      `) as { has: boolean }[];
+      if (history[0]?.has)
+        return c.json({ ok: false, error: "MTG_SEASON_HISTORY", message: "This group has a season's picks and standings, so it can't be deleted. You can close it instead." }, 409);
+    }
     await sql`DELETE FROM newchums.communities WHERE id = ${communityRows[0].id}`;
     return c.json({ ok: true });
   } catch (err) {
@@ -14045,7 +14224,9 @@ app.post("/communities/:id/leave", async (c) => {
     if (!communityRows[0]) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     if (communityRows[0].owner_user_id === userId) return c.json({ ok: false, error: "OWNER_CANNOT_LEAVE", message: "Transfer ownership before leaving" }, 400);
 
-    await sql`DELETE FROM newchums.community_members WHERE community_id = ${communityId} AND user_id = ${userId}`;
+    // Only an active membership is left. A removed member's row is what keeps
+    // them from joining again, so it must survive a call to leave.
+    await sql`DELETE FROM newchums.community_members WHERE community_id = ${communityId} AND user_id = ${userId} AND status = 'active'`;
     // Also withdraw any pending requests
     await sql`UPDATE newchums.community_join_requests SET status = 'withdrawn' WHERE community_id = ${communityId} AND user_id = ${userId} AND status = 'pending'`;
     return c.json({ ok: true });
@@ -23106,14 +23287,17 @@ async function processEmailOutbox(
     SELECT o.id, o.kind, o.event_id, o.set_id, o.group_key, o.user_id, o.payload, o.attempts,
            e.title, e.starts_at, e.timezone,
            e.location_type, e.location_name, e.location_address, e.location_visibility, e.location_area, e.online_link,
-           u.email AS to_email, u.name AS to_name
+           u.email AS to_email, u.name AS to_name,
+           COALESCE(u.is_suspended, false) AS to_suspended,
+           COALESCE(up.notification_prefs->'items'->'mtg_challenge'->>'enabled', 'true') <> 'false' AS wants_mtg
     FROM newchums.email_outbox o
     LEFT JOIN newchums.events e ON e.id = o.event_id
     JOIN newchums.users u ON u.id = o.user_id
+    LEFT JOIN newchums.user_profile up ON up.user_id = o.user_id
     WHERE o.status = 'pending' AND (${scope === "all"} OR left(o.kind, 4) = 'mtg_')
     ORDER BY o.created_at ASC
     LIMIT ${scope === "mtg" ? 200 : 40}
-  `) as { id: number; kind: string; event_id: string; user_id: string; payload: { role?: string; isHost?: boolean; deadline?: string; confirmedCount?: number; minRequired?: number; reason?: string; count?: number; senderName?: string; message?: string | null; planTitle?: string | null; recipientHandle?: string | null; tags?: Array<{ emoji: string; label: string; count: number }>; planTitles?: string[] } | null; attempts: number; set_id: string | null; group_key: string | null; title: string; starts_at: string; timezone: string | null; location_type: string; location_name: string | null; location_address: string | null; location_visibility: string | null; location_area: string | null; online_link: string | null; to_email: string; to_name: string | null }[];
+  `) as { id: number; kind: string; event_id: string; user_id: string; payload: { role?: string; isHost?: boolean; deadline?: string; confirmedCount?: number; minRequired?: number; reason?: string; count?: number; senderName?: string; message?: string | null; planTitle?: string | null; recipientHandle?: string | null; tags?: Array<{ emoji: string; label: string; count: number }>; planTitles?: string[] } | null; attempts: number; set_id: string | null; group_key: string | null; title: string; starts_at: string; timezone: string | null; location_type: string; location_name: string | null; location_address: string | null; location_visibility: string | null; location_area: string | null; online_link: string | null; to_email: string; to_name: string | null; to_suspended: boolean; wants_mtg: boolean }[];
 
   if (rows.length === 0) return;
 
@@ -23134,6 +23318,13 @@ async function processEmailOutbox(
     // to send without a plan, must never fall through to the wrap-up email.
     if (!row.event_id && !row.kind.startsWith("mtg_")) {
       await sql`UPDATE newchums.email_outbox SET status = 'gave_up', last_error = 'no plan for a plan email' WHERE id = ${row.id}`;
+      gaveUp++;
+      continue;
+    }
+    // Season emails can wait in the queue for hours before a retry sends them:
+    // a player who has since turned them off, or been suspended, doesn't get one.
+    if (row.kind.startsWith("mtg_") && (row.to_suspended || !row.wants_mtg)) {
+      await sql`UPDATE newchums.email_outbox SET status = 'gave_up', last_error = ${row.to_suspended ? "the account is suspended" : "the player turned these emails off"} WHERE id = ${row.id}`;
       gaveUp++;
       continue;
     }

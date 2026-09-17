@@ -90,6 +90,9 @@ export default function EditCommunityClient() {
   // Close community state
   const [closing, setClosing] = useState(false);
   const [closeConfirmOpen, setCloseConfirmOpen] = useState(false);
+  // A challenge community (MTG Card Evaluation Challenge) leaves the game when
+  // it closes, so its close warning says so. Set at creation, never edited.
+  const [isChallenge, setIsChallenge] = useState(false);
 
   // Operating hours (free for all plans)
   const [operatingHours, setOperatingHours] = useState<OperatingHours | null>(null);
@@ -160,6 +163,7 @@ export default function EditCommunityClient() {
           data.viewerCanEditBanner === true || data.viewerHasProBannerAccess === true,
         );
         setIsOwner(data.viewerMembership?.role === "owner");
+        setIsChallenge(c.specialization === "mtg_prediction_challenge");
         // Load hobbies
         if (Array.isArray(c.hobbies)) {
           setSelectedHobbies(c.hobbies.map((h: { name: string; slug: string }) => ({ name: h.name, slug: h.slug })));
@@ -652,7 +656,9 @@ export default function EditCommunityClient() {
       {/* Community features. Lightweight per-community feature flags
           that toggle optional surfaces on the public community page.
           Designed to grow over time without becoming a generic module
-          system, just one card per durable feature. */}
+          system, just one card per durable feature. A challenge community
+          has no Schedule tab, so the card isn't shown there. */}
+      {!isChallenge && (
       <AppCard>
         <Stack spacing={2}>
           <Stack direction="row" spacing={1.5} alignItems="center">
@@ -721,6 +727,7 @@ export default function EditCommunityClient() {
           </Box>
         </Stack>
       </AppCard>
+      )}
 
       {/* Access */}
       <AppCard>
@@ -783,7 +790,9 @@ export default function EditCommunityClient() {
                 <Box>
                   <Typography variant="body1" fontWeight={500}>Approval required</Typography>
                   <Typography variant="caption" color="text.secondary">
-                    Discoverable, but you approve each request to join. Plans and members are only visible to members.
+                    {isChallenge
+                      ? "Discoverable, but you approve each request to join. Picks, standings and members are only visible to members."
+                      : "Discoverable, but you approve each request to join. Plans and members are only visible to members."}
                   </Typography>
                 </Box>
               }
@@ -877,7 +886,9 @@ export default function EditCommunityClient() {
                   color="text.disabled"
                   sx={{ fontSize: "0.75rem", lineHeight: 1.35, display: "block" }}
                 >
-                  Closing this community hides it from listings and removes it from linked plans. Members can still see that it existed. This cannot be undone.
+                  {isChallenge
+                    ? "Closing takes this group out of the MTG Card Evaluation Challenge. Members can no longer see its picks, standings or past seasons, and it's hidden from listings. This cannot be undone."
+                    : "Closing this community hides it from listings and removes it from linked plans. Members can still see that it existed. This cannot be undone."}
                 </Typography>
               </Box>
             </Stack>
@@ -933,9 +944,15 @@ export default function EditCommunityClient() {
       <Dialog open={closeConfirmOpen} onClose={() => setCloseConfirmOpen(false)} maxWidth="xs" fullWidth>
         <DialogTitle>Close community?</DialogTitle>
         <DialogContent>
-          <Typography variant="body2" color="text.secondary">
-            This will hide <strong>{name}</strong> from all listings and remove it from any linked plans. This action cannot be undone.
-          </Typography>
+          {isChallenge ? (
+            <Typography variant="body2" color="text.secondary">
+              This takes <strong>{name}</strong> out of the MTG Card Evaluation Challenge. Members will no longer see its picks, standings or past seasons, and it will be hidden from all listings. Their own picks still count in any other challenge group they&apos;re in. This action cannot be undone.
+            </Typography>
+          ) : (
+            <Typography variant="body2" color="text.secondary">
+              This will hide <strong>{name}</strong> from all listings and remove it from any linked plans. This action cannot be undone.
+            </Typography>
+          )}
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button onClick={() => setCloseConfirmOpen(false)} sx={{ textTransform: "none" }}>Cancel</Button>

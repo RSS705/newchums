@@ -156,49 +156,82 @@ describe("syncScryfallSet pool rule", () => {
     id: `10000000-0000-4000-8000-${String(i).padStart(12, "0")}`, oracle_id: oracle(i), name: `Card ${i}`, rarity: ["common", "uncommon", "rare", "mythic"][i % 4],
     collector_number: String(i + 1), ...(i < boosterFor ? { booster: true } : {}),
   }));
-  /** Serves one Scryfall page and records what the sync writes. */
-  function run(opts: { now: string; cards: ReturnType<typeof cards>; inPool: string[] }) {
+  /** Serves one Scryfall page and records what the sync writes. `overdue` are
+   *  pool cards already missing for a day. The pool itself is decided in SQL,
+   *  so this records what the sync asks for: whether each card qualifies,
+   *  whether the run holds the pool, and whether unlisted cards are handled. */
+  function run(opts: { now: string; cards: ReturnType<typeof cards>; inPool: string[]; overdue?: string[]; failOn?: string }) {
     vi.stubGlobal("fetch", async () => new Response(JSON.stringify({ data: opts.cards, has_more: false }), { status: 200 }));
-    const written = new Map<string, boolean>();
-    let retraction = false;
+    const wanted = new Map<string, boolean>();
+    const holds: boolean[] = [];
+    let unlistedHeld: boolean | null = null;
     const sql = async (strings: TemplateStringsArray, ...values: unknown[]) => {
       const text = strings.join("?");
-      if (text.includes("SELECT oracle_id::text AS oracle_id")) return opts.inPool.map((oracle_id) => ({ oracle_id }));
-      if (text.includes("INSERT INTO newchums.mtg_cards")) { written.set(String(values[2]), values[23] === true); return [{ inserted: false }]; }
-      if (text.includes("SET in_pool = false")) retraction = true;
+      if (text.includes("SELECT oracle_id::text AS oracle_id")) return opts.inPool.map((oracle_id) => ({ oracle_id, overdue: (opts.overdue ?? []).includes(oracle_id) }));
+      if (text.includes("INSERT INTO newchums.mtg_cards")) {
+        if (values[2] === opts.failOn) throw new Error("duplicate key value violates unique constraint");
+        wanted.set(String(values[2]), values[23] === true);
+        holds.push(values[26] === true);
+        return [{ inserted: false }];
+      }
+      if (text.includes("missing_since = COALESCE(missing_since, now())")) { unlistedHeld = values[0] === true; return []; }
+      if (text.includes("SELECT COUNT(*)::int AS n")) return [{ n: 0 }];
       return [];
     };
-    return syncScryfallSet(sql as never, undefined as never, set, new Date(opts.now)).then((summary) => ({ summary, written, retraction }));
+    return syncScryfallSet(sql as never, undefined as never, set, new Date(opts.now)).then((summary) => ({ summary, wanted, holds, unlistedHeld }));
   }
   afterEach(() => { vi.unstubAllGlobals(); });
 
   it("keeps every card after the gallery date while Scryfall marks no booster cards", async () => {
     const all = Array.from({ length: 40 }, (_, i) => oracle(i));
-    const { summary, written } = await run({ now: "2026-09-18T14:00:20Z", cards: cards(40), inPool: all });
-    expect([...written.values()].every(Boolean)).toBe(true);
+    const { summary, wanted } = await run({ now: "2026-09-18T14:00:20Z", cards: cards(40), inPool: all });
+    expect([...wanted.values()].every(Boolean)).toBe(true);
     expect(summary.poolHeld).toBeUndefined();
     expect(summary.notes.join(" ")).toMatch(/no booster cards/);
   });
 
-  it("narrows to booster cards once the set has them, a few at a time", async () => {
+  it("narrows to booster cards once the set has them", async () => {
     const all = Array.from({ length: 40 }, (_, i) => oracle(i));
-    const { summary, written } = await run({ now: "2026-09-19T14:00:20Z", cards: cards(40, 37), inPool: all });
-    expect([...written.values()].filter((v) => !v)).toHaveLength(3);
+    const { summary, wanted } = await run({ now: "2026-09-19T14:00:20Z", cards: cards(40, 37), inPool: all });
+    expect([...wanted.values()].filter((v) => !v)).toHaveLength(3);
     expect(summary.poolHeld).toBeUndefined();
+  });
+
+  it("doesn't hold the pool for cards that have only just gone missing: they wait a day first", async () => {
+    const all = Array.from({ length: 40 }, (_, i) => oracle(i));
+    const { summary, holds, unlistedHeld } = await run({ now: "2026-09-19T14:00:20Z", cards: cards(10), inPool: all });
+    expect(summary.poolHeld).toBeUndefined();
+    expect(holds.every((h) => !h)).toBe(true);
+    // The 30 unlisted cards start their day; the SQL keeps them in until it passes.
+    expect(unlistedHeld).toBe(false);
   });
 
   it("holds the pool, and says so, when a sync would take a large share out before the lock", async () => {
     const all = Array.from({ length: 40 }, (_, i) => oracle(i));
-    const { summary, written, retraction } = await run({ now: "2026-09-19T14:00:20Z", cards: cards(40, 5), inPool: all });
-    expect([...written.values()].every(Boolean)).toBe(true);
+    const { summary, holds, unlistedHeld } = await run({ now: "2026-09-19T14:00:20Z", cards: cards(40, 5), inPool: all, overdue: all });
     expect(summary.poolHeld).toEqual({ leaving: 35, total: 40 });
-    expect(retraction).toBe(false);
+    expect(holds.every(Boolean)).toBe(true);
+    expect(unlistedHeld).toBe(true);
   });
 
-  it("still lets a couple of retracted cards leave", async () => {
+  it("still lets a couple of retracted cards leave once they've been missing a day", async () => {
     const all = [...Array.from({ length: 40 }, (_, i) => oracle(i)), oracle(900), oracle(901)];
-    const { summary, retraction } = await run({ now: "2026-09-16T14:00:20Z", cards: cards(40), inPool: all });
+    const { summary, unlistedHeld } = await run({ now: "2026-09-16T14:00:20Z", cards: cards(40), inPool: all, overdue: [oracle(900), oracle(901)] });
     expect(summary.poolHeld).toBeUndefined();
-    expect(retraction).toBe(true);
+    expect(unlistedHeld).toBe(false);
+  });
+
+  it("carries on past a card that can't be saved", async () => {
+    const all = Array.from({ length: 40 }, (_, i) => oracle(i));
+    const { summary, wanted } = await run({ now: "2026-09-16T14:00:20Z", cards: cards(40), inPool: all, failOn: oracle(3) });
+    expect(summary.failed).toBe(1);
+    expect(wanted.size).toBe(39);
+    expect(summary.notes.join(" ")).toMatch(/Couldn't save Card 3/);
+  });
+
+  it("leaves unlisted cards alone after the lock", async () => {
+    const all = [...Array.from({ length: 40 }, (_, i) => oracle(i)), oracle(900)];
+    const { unlistedHeld } = await run({ now: "2026-09-26T14:00:20Z", cards: cards(40), inPool: all, overdue: [oracle(900)] });
+    expect(unlistedHeld).toBeNull();
   });
 });

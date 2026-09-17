@@ -18,14 +18,14 @@ import { AppCard, useToast } from "@/components/ui";
 import { apiFetch } from "@/lib/apiClient";
 import {
   MTG_ATTRIBUTION, MTG_RARITIES, MTG_SLOTS_PER_RARITY, MTG_TOTAL_PICKS, RARITY_LABEL, RARITY_PLURAL,
-  type MtgCard, type MtgCardWithNew, type MtgEntryPayload, type MtgRarity, countdown, formatWhen,
+  type MtgCard, type MtgCardWithNew, type MtgEntryPayload, type MtgRarity, countdown, formatWhenZoned,
 } from "../mtgTypes";
 import CardGrid from "./CardGrid";
 import CardViewer from "./CardViewer";
 import PickTray, { SaveStatus, type SaveState } from "./PickTray";
 import ReviewStep from "./ReviewStep";
 import {
-  EMPTY_FILTERS, type CardFilters, type PickSlot, type PickState, applyFilters, clampNote, emptyPickState, moveItem, toPutBody, totalPicked,
+  EMPTY_FILTERS, type CardFilters, type PickSlot, type PickState, applyFilters, emptyPickState, fitNote, moveItem, toPutBody, totalPicked,
 } from "./pickUtils";
 
 type Step = MtgRarity | "review";
@@ -41,7 +41,7 @@ type Load =
 type SetInfo = MtgEntryPayload["set"];
 type Viewer = { rarity: MtgRarity; list: MtgCardWithNew[]; index: number };
 type Dropped = { name: string; rarity: MtgRarity };
-type PutResponse = { ok?: boolean; error?: string; message?: string; dropped?: Dropped[]; unchanged?: boolean };
+type PutResponse = { ok?: boolean; error?: string; message?: string; dropped?: Dropped[]; unchanged?: boolean; entry?: { revision?: number } };
 
 const LIVE_TEXT: Record<SaveState, string> = {
   idle: "",
@@ -77,6 +77,11 @@ function pickStateFromEntry(entry: MtgEntryPayload["entry"]): PickState {
  * link, another page in the app, hiding the tab, closing it) flushes a
  * pending change straight away, with keepalive when the page is going away.
  * The server is the lock: a 423 turns the page read-only.
+ *
+ * Each save names the revision of the picks this page last loaded or saved.
+ * If another tab or device has saved since, the server refuses it (409
+ * STALE) and the page loads the newer picks instead of erasing them. Coming
+ * back to the tab reloads the picks when nothing here is waiting to save.
  */
 export default function PickWizard() {
   const params = useParams<{ slug: string }>();
@@ -95,6 +100,8 @@ export default function PickWizard() {
   const [viewer, setViewer] = useState<Viewer | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [undo, setUndo] = useState<{ rarity: MtgRarity; index: number; slot: PickSlot } | null>(null);
+  const [cardsFailed, setCardsFailed] = useState<MtgRarity | null>(null);
+  const [cardsAttempt, setCardsAttempt] = useState(0);
 
   // `dirty` counts local changes; `saved` is the count the server confirmed.
   const [dirty, setDirty] = useState(0);
@@ -113,6 +120,10 @@ export default function PickWizard() {
   const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveOnceRef = useRef<(keepalive: boolean) => Promise<void>>(async () => {});
   const resyncRef = useRef<() => Promise<void>>(async () => {});
+  /** The stored picks' revision this page builds on; undefined until loaded. */
+  const baseRef = useRef<number | undefined>(undefined);
+  const inFlightRef = useRef(false);
+  const hiddenAtRef = useRef<number | null>(null);
 
   useEffect(() => { picksRef.current = picks; }, [picks]);
 
@@ -141,12 +152,15 @@ export default function PickWizard() {
         const sRes = await apiFetch("/mtg/sets/current", { auth: true });
         const sData = await sRes.json();
         if (cancelled) return;
-        if (!sData.ok || !sData.set) { setLoad({ kind: "no_season" }); return; }
+        // No season is a 404 NOT_FOUND; anything else that isn't ok is a failure to load.
+        if ((sRes.status === 404 && sData.error === "NOT_FOUND") || (sData.ok && !sData.set)) { setLoad({ kind: "no_season" }); return; }
+        if (!sRes.ok || !sData.ok) { setLoad({ kind: "error", message: "We couldn't load the season. Try again in a moment." }); return; }
 
         const eRes = await apiFetch(`/mtg/sets/${sData.set.code}/entry`, { auth: true });
         const eData = (await eRes.json()) as { ok?: boolean } & MtgEntryPayload;
         if (cancelled) return;
         if (!eRes.ok || !eData.ok) { setLoad({ kind: "error", message: "We couldn't load your picks. Try again in a moment." }); return; }
+        baseRef.current = eData.entry?.revision ?? 0;
         setSetInfo(eData.set);
         setPicks(pickStateFromEntry(eData.entry));
         setDropped(eData.entry?.dropped ?? []);
@@ -171,6 +185,8 @@ export default function PickWizard() {
 
   // Cards for the open step, fetched once per rarity. Opening a rarity also
   // stamps the visit, so NEW ribbons stay for this visit and clear next time.
+  // A failed load stamps nothing and offers a retry, rather than showing an
+  // empty rarity.
   const rarityLoaded = rarity ? cards[rarity] !== undefined : true;
   useEffect(() => {
     if (!setCode || !rarity || rarityLoaded) return;
@@ -180,7 +196,9 @@ export default function PickWizard() {
         const res = await apiFetch(`/mtg/sets/${setCode}/cards?rarity=${rarity}`, { auth: true });
         const data = await res.json();
         if (cancelled) return;
-        setCards((prev) => ({ ...prev, [rarity]: data.ok && Array.isArray(data.cards) ? (data.cards as MtgCardWithNew[]) : [] }));
+        if (!res.ok || !data.ok || !Array.isArray(data.cards)) { setCardsFailed(rarity); return; }
+        setCardsFailed(null);
+        setCards((prev) => ({ ...prev, [rarity]: data.cards as MtgCardWithNew[] }));
         apiFetch(`/mtg/sets/${setCode}/reviewed`, {
           auth: true,
           method: "POST",
@@ -188,21 +206,26 @@ export default function PickWizard() {
           body: JSON.stringify({ rarity }),
         }).catch(() => {});
       } catch {
-        if (!cancelled) setCards((prev) => ({ ...prev, [rarity]: [] }));
+        if (!cancelled) setCardsFailed(rarity);
       }
     })();
     return () => { cancelled = true; };
-  }, [setCode, rarity, rarityLoaded]);
+  }, [setCode, rarity, rarityLoaded, cardsAttempt]);
 
-  /** Show what is really saved after the server changed or refused a save. */
+  /** Show what is really saved after the server changed or refused a save,
+   *  or after coming back to the tab. A change made while the request was out
+   *  wins: it saves against the revision it was made on. */
   const resync = useCallback(async () => {
     const code = setCodeRef.current;
     if (!code) return;
+    const startedAt = dirtyRef.current;
     try {
       const res = await apiFetch(`/mtg/sets/${code}/entry`, { auth: true });
       const data = (await res.json()) as { ok?: boolean } & MtgEntryPayload;
       if (!data.ok) return;
       setSetInfo(data.set);
+      if (dirtyRef.current !== startedAt) return;
+      baseRef.current = data.entry?.revision ?? 0;
       const next = pickStateFromEntry(data.entry);
       picksRef.current = next;
       setPicks(next);
@@ -221,18 +244,22 @@ export default function PickWizard() {
     const code = setCodeRef.current;
     const version = dirtyRef.current;
     if (!code || blockedRef.current || version === savedRef.current) return;
+    inFlightRef.current = true;
     setSaveState("saving");
     const markSaved = () => { savedRef.current = Math.max(savedRef.current, version); setSaved(savedRef.current); };
+    // What the screen shows once a refused save has been replaced by the stored picks.
+    const settled = () => setSaveState(dirtyRef.current === savedRef.current ? "saved" : "saving");
     try {
       const res = await apiFetch(`/mtg/sets/${code}/entry`, {
         auth: true,
         method: "PUT",
         keepalive,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(toPutBody(picksRef.current)),
+        body: JSON.stringify({ ...toPutBody(picksRef.current), baseRevision: baseRef.current }),
       });
       const data = (await res.json().catch(() => ({}))) as PutResponse;
       if (res.ok && data.ok) {
+        if (typeof data.entry?.revision === "number") baseRef.current = data.entry.revision;
         markSaved();
         if (data.dropped && data.dropped.length > 0) {
           setDropped(data.dropped);
@@ -258,12 +285,21 @@ export default function PickWizard() {
         await resyncRef.current();
         return;
       }
+      if (res.status === 409 && data.error === "STALE") {
+        // Another tab or device saved first. Its picks are newer, so show them
+        // rather than overwrite them with this page's older list.
+        markSaved();
+        toast.info("Your picks were changed in another tab or on another device, so this page now shows those. Make your last change again if you still want it.");
+        await resyncRef.current();
+        settled();
+        return;
+      }
       if (res.status === 400 || res.status === 403 || res.status === 404 || res.status === 409) {
         // A change the server will not take: stop retrying and show what is saved.
         markSaved();
-        setSaveState("error");
         toast.error(data.message || "That change couldn't be saved.");
         await resyncRef.current();
+        settled();
         return;
       }
       throw new Error(`HTTP ${res.status}`);
@@ -271,6 +307,8 @@ export default function PickWizard() {
       setSaveState("error");
       if (retryRef.current) clearTimeout(retryRef.current);
       retryRef.current = setTimeout(() => { retryRef.current = null; void queueSave(); }, 4000);
+    } finally {
+      inFlightRef.current = false;
     }
   }, [toast, queueSave]);
 
@@ -287,18 +325,36 @@ export default function PickWizard() {
   }, [setCode, dirty, saved, queueSave]);
 
   // Flush when the tab is hidden, when the page goes away, and when the
-  // wizard unmounts because the player moved elsewhere in the app.
+  // wizard unmounts because the player moved elsewhere in the app. Coming
+  // back to the tab picks up changes made elsewhere meanwhile.
   useEffect(() => {
     const unsaved = () => dirtyRef.current !== savedRef.current && !blockedRef.current;
-    const sendNow = () => { if (unsaved()) void saveOnceRef.current(true); };
-    const onVisibility = () => { if (document.visibilityState === "hidden" && unsaved()) void queueSave(true); };
+    // Behind a save still on its way, a second save would carry the same
+    // revision and be refused, so it waits its turn.
+    const sendNow = () => {
+      if (!unsaved()) return;
+      if (inFlightRef.current) void queueSave(true);
+      else void saveOnceRef.current(true);
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        hiddenAtRef.current = Date.now();
+        if (unsaved()) void queueSave(true);
+        return;
+      }
+      const awayMs = hiddenAtRef.current === null ? 0 : Date.now() - hiddenAtRef.current;
+      hiddenAtRef.current = null;
+      if (!unsaved() && !blockedRef.current && !inFlightRef.current) void resyncRef.current();
+      // After a long time away, list the cards again for any revealed since.
+      if (awayMs > 10 * 60000) { setCards({}); setCardsFailed(null); }
+    };
     window.addEventListener("pagehide", sendNow);
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
       window.removeEventListener("pagehide", sendNow);
       document.removeEventListener("visibilitychange", onVisibility);
       if (retryRef.current) clearTimeout(retryRef.current);
-      sendNow();
+      if (unsaved()) void queueSave(true);
     };
   }, [queueSave]);
 
@@ -379,10 +435,10 @@ export default function PickWizard() {
     mutate((p) => {
       const current = p[r][index];
       if (!current) return p;
-      const clamped = clampNote(note);
-      if (clamped === current.note) return p;
+      const fitted = fitNote(current.note, note);
+      if (fitted === current.note) return p;
       const next = p[r].slice();
-      next[index] = { ...current, note: clamped };
+      next[index] = { ...current, note: fitted };
       return { ...p, [r]: next };
     });
   }, [mutate]);
@@ -495,7 +551,7 @@ export default function PickWizard() {
           ) : undefined}
         >
           {setInfo.locked || pastLock
-            ? `Picks locked ${formatWhen(setInfo.lockAt)}. These are your final picks.`
+            ? `Picks locked ${formatWhenZoned(setInfo.lockAt)}. These are your final picks.`
             : "Picks aren't open yet. They open when previews begin."}
         </Alert>
       )}
@@ -538,15 +594,29 @@ export default function PickWizard() {
               )}
               {newCount > 0 && <Chip label={`${newCount} new`} size="small" sx={{ height: 20, fontSize: "0.6875rem", fontWeight: 800, bgcolor: "#1E8E5A", color: "#fff" }} />}
             </Stack>
-            <CardGrid
-              cards={rarityCards}
-              visible={visible}
-              filters={filters}
-              onFiltersChange={setFilters}
-              pickedSlotById={pickedSlotById}
-              onOpen={openFromGrid}
-              pluralLabel={RARITY_PLURAL[rarity]}
-            />
+            {cardsFailed === rarity && !rarityCards ? (
+              <Alert
+                severity="error"
+                sx={{ borderRadius: 2.5 }}
+                action={
+                  <Button color="inherit" size="small" onClick={() => { setCardsFailed(null); setCardsAttempt((n) => n + 1); }} sx={{ textTransform: "none", fontWeight: 700, whiteSpace: "nowrap" }}>
+                    Try again
+                  </Button>
+                }
+              >
+                We couldn&apos;t load the {RARITY_PLURAL[rarity]}. Check your connection and try again.
+              </Alert>
+            ) : (
+              <CardGrid
+                cards={rarityCards}
+                visible={visible}
+                filters={filters}
+                onFiltersChange={setFilters}
+                pickedSlotById={pickedSlotById}
+                onOpen={openFromGrid}
+                pluralLabel={RARITY_PLURAL[rarity]}
+              />
+            )}
           </AppCard>
           <PickTray
             rarity={rarity}

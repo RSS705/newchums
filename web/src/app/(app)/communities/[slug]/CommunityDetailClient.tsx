@@ -45,6 +45,9 @@ import {
 } from "@/components/communities";
 import CampaignRoundedIcon from "@mui/icons-material/CampaignRounded";
 import EventAvailableRoundedIcon from "@mui/icons-material/EventAvailableRounded";
+import GroupsRoundedIcon from "@mui/icons-material/GroupsRounded";
+import LeaderboardRoundedIcon from "@mui/icons-material/LeaderboardRounded";
+import StyleRoundedIcon from "@mui/icons-material/StyleRounded";
 import { createEventHref } from "@/config/nav";
 import MtgChallengeHome from "@/components/mtg/MtgChallengeHome";
 
@@ -58,7 +61,8 @@ type CommunityData = {
   /** Secret behind the invite link; only present for members of invite-only communities. */
   invite_code?: string | null;
   chat_enabled: boolean;
-  /** 'mtg_prediction_challenge' turns the body into the game view (header kept). */
+  /** 'mtg_prediction_challenge' swaps the Plans, Announcements and Schedule
+   *  tabs for the game view (header, Members and Requests kept). */
   specialization?: string | null;
   is_online: boolean;
   /** Omitted from the response for non-members of private communities. */
@@ -625,6 +629,10 @@ export default function CommunityDetailClient({
     return () => { cancelled = true; };
   }, [isAuthenticated, communityHobbySlugs]);
 
+  // Challenge communities (MTG spec section 3) show the game in place of the
+  // Plans, Announcements and Schedule tabs, with Members and Requests beside it.
+  const isChallenge = community?.specialization === "mtg_prediction_challenge";
+
   useEffect(() => {
     if (!community || restricted) return;
     // Plans and members are both needed up-front, plans for the default tab,
@@ -632,21 +640,24 @@ export default function CommunityDetailClient({
     // both on mount means tab switches feel instant and the page renders a
     // lived-in snapshot immediately instead of waiting for a tab click.
     // Both fetchers flip loading=true synchronously; legitimate fetch-on-
-    // ready pattern.
+    // ready pattern. A challenge community has no plans, announcements or
+    // schedule tab, so it only needs the members.
     /* eslint-disable react-hooks/set-state-in-effect */
-    fetchEvents();
     fetchMembers();
+    if (isChallenge) return;
+    fetchEvents();
     fetchAnnouncementsSeed();
     fetchScheduleSeed();
     /* eslint-enable react-hooks/set-state-in-effect */
-  }, [community, restricted, fetchEvents, fetchMembers, fetchAnnouncementsSeed, fetchScheduleSeed]);
+  }, [community, restricted, isChallenge, fetchEvents, fetchMembers, fetchAnnouncementsSeed, fetchScheduleSeed]);
 
   // Apply an incoming ?tab=<name> query param to tabIndex exactly once, the
   // first time we know enough about the viewer to evaluate eligibility
   // (community loaded + viewerMembership resolved). The main caller is the
   // community-join-request email's "Review request" CTA, which deep-links
   // to ?tab=requests. Non-owner viewers who somehow land on that URL (e.g.
-  // share) silently fall back to Plans instead of showing a broken tab.
+  // share) silently fall back to the first tab (Plans, or Challenge on a
+  // challenge community) instead of showing a broken tab.
   //
   // setState-in-effect is intentional here: the initial tabIndex depends
   // on async data (community + membership) and a URL param that aren't
@@ -657,18 +668,22 @@ export default function CommunityDetailClient({
   // response always includes the field via `c.*`, so this resolves to
   // the actual community setting once `community` loads for viewers
   // who can see the tab strip in the first place.
-  const scheduleTabVisible = community?.schedule_enabled === true && !restricted;
+  const scheduleTabVisible = community?.schedule_enabled === true && !restricted && !isChallenge;
   // Tab order is dynamic because Schedule may be disabled per community.
   // When Schedule is hidden, Members shifts up to index 2 and Requests
-  // (private + owner only) shifts to index 3. Keys stay stable so the
-  // ?tab=<name> param is order-independent.
-  const tabIndexMap = useMemo(() => ({
-    plans: 0,
-    announcements: 1,
-    schedule: scheduleTabVisible ? 2 : -1,
-    members: scheduleTabVisible ? 3 : 2,
-    requests: scheduleTabVisible ? 4 : 3,
-  }), [scheduleTabVisible]);
+  // (private + owner only) shifts to index 3. A challenge community's strip
+  // is Challenge, Members, then Requests, and the tabs it doesn't show map
+  // to -1. Keys stay stable so the ?tab=<name> param is order-independent.
+  const tabIndexMap = useMemo(() => (isChallenge
+    ? { challenge: 0, plans: -1, announcements: -1, schedule: -1, members: 1, requests: 2 }
+    : {
+        challenge: -1,
+        plans: 0,
+        announcements: 1,
+        schedule: scheduleTabVisible ? 2 : -1,
+        members: scheduleTabVisible ? 3 : 2,
+        requests: scheduleTabVisible ? 4 : 3,
+      }), [isChallenge, scheduleTabVisible]);
 
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
@@ -685,13 +700,34 @@ export default function CommunityDetailClient({
       setTabIndex(tabIndexMap.members);
     } else if (initialTabParam === "schedule" && scheduleTabVisible) {
       setTabIndex(tabIndexMap.schedule);
-    } else if (initialTabParam === "announcements") {
+    } else if (initialTabParam === "announcements" && tabIndexMap.announcements >= 0) {
       setTabIndex(tabIndexMap.announcements);
     }
     // `plans` or any unrecognized value falls through to the default of 0.
     hasAppliedInitialTab.current = true;
   }, [community, viewerMembership, initialTabParam, scheduleTabVisible, tabIndexMap]);
   /* eslint-enable react-hooks/set-state-in-effect */
+
+  // Keep the URL in sync with the active tab so a refresh lands on the same
+  // surface and a copy-pasted link matches what the sharer was looking at.
+  // router.replace keeps this out of the browser history so the back button
+  // doesn't tab-walk. `scroll: false` keeps the viewer at the tab section
+  // instead of jumping to the page top on every tab switch. Tab keys come
+  // from `tabIndexMap` so the URL stays stable when the index of a
+  // particular tab shifts (e.g. Schedule disabled, or a challenge community).
+  const selectTab = (v: number) => {
+    setTabIndex(v);
+    const next = v === tabIndexMap.requests ? "requests"
+      : v === tabIndexMap.members ? "members"
+      : v === tabIndexMap.schedule ? "schedule"
+      : v === tabIndexMap.announcements ? "announcements"
+      : null;
+    const url = new URL(window.location.href);
+    if (next) url.searchParams.set("tab", next);
+    else url.searchParams.delete("tab");
+    const nextHref = url.pathname + (url.search || "") + (url.hash || "");
+    router.replace(nextHref, { scroll: false });
+  };
 
   const handleJoin = async () => {
     if (!community) return;
@@ -808,10 +844,13 @@ export default function CommunityDetailClient({
       if (data.ok) {
         toast.success(action === "approve" ? "Approved!" : "Declined");
         setPendingRequests((prev) => prev.filter((r) => r.id !== requestId));
-        if (action === "approve") fetchMembers();
-        // Decline: refetch the community so the "Previously denied" section
-        // picks up the new row without requiring a manual refresh.
-        if (action === "decline") fetchCommunity();
+        // Refetch the community either way: an approval changes the member
+        // count on the header and the Members tab (the member list reloads
+        // with it), and a decline adds a row to "Previously denied".
+        fetchCommunity();
+      } else {
+        toast.error(data.message || "Could not update this request");
+        fetchCommunity();
       }
     } catch { toast.error("Something went wrong"); }
   };
@@ -1326,7 +1365,7 @@ export default function CommunityDetailClient({
                 </Box>
                 <Box sx={{ minWidth: 0 }}>
                   <Typography variant="body1" fontWeight={700} sx={{ lineHeight: 1.3, fontSize: "1.0625rem" }}>
-                    Inside this community
+                    {isChallenge ? "MTG Card Evaluation Challenge" : "Inside this community"}
                   </Typography>
                   <Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
                     {community.join_mode === "invite_only" ? "Members unlock everything below." : "Approved members unlock everything below."}
@@ -1334,26 +1373,51 @@ export default function CommunityDetailClient({
                 </Box>
               </Stack>
 
-              <Stack spacing={1.25}>
-                <MemberBenefitRow
-                  tone="primary"
-                  icon={<EventNoteRoundedIcon sx={{ fontSize: 18 }} />}
-                  title="Upcoming plans"
-                  subtitle="See and RSVP to community plans as they&rsquo;re scheduled."
-                />
-                <MemberBenefitRow
-                  tone="success"
-                  icon={<PeopleRoundedIcon sx={{ fontSize: 18 }} />}
-                  title="Member directory"
-                  subtitle="Browse profiles and connect with people who share your interests."
-                />
-                <MemberBenefitRow
-                  tone="warning"
-                  icon={<MailOutlineRoundedIcon sx={{ fontSize: 18 }} />}
-                  title="Community updates"
-                  subtitle="Get notified when new plans open up or members join."
-                />
-              </Stack>
+              {/* A challenge community is about the game, so its preview
+                  says what members do there instead of plans. */}
+              {isChallenge ? (
+                <Stack spacing={1.25}>
+                  <MemberBenefitRow
+                    tone="primary"
+                    icon={<StyleRoundedIcon sx={{ fontSize: 18 }} />}
+                    title="Make your picks"
+                    subtitle="Each season, rank the new set&rsquo;s five best cards at each rarity before picks lock."
+                  />
+                  <MemberBenefitRow
+                    tone="success"
+                    icon={<GroupsRoundedIcon sx={{ fontSize: 18 }} />}
+                    title="See everyone&rsquo;s picks"
+                    subtitle="Picks stay private until they lock. Then every member can see each player&rsquo;s picks."
+                  />
+                  <MemberBenefitRow
+                    tone="warning"
+                    icon={<LeaderboardRoundedIcon sx={{ fontSize: 18 }} />}
+                    title="Daily standings"
+                    subtitle="Standings update every morning from the Arena launch until the season ends."
+                  />
+                </Stack>
+              ) : (
+                <Stack spacing={1.25}>
+                  <MemberBenefitRow
+                    tone="primary"
+                    icon={<EventNoteRoundedIcon sx={{ fontSize: 18 }} />}
+                    title="Upcoming plans"
+                    subtitle="See and RSVP to community plans as they&rsquo;re scheduled."
+                  />
+                  <MemberBenefitRow
+                    tone="success"
+                    icon={<PeopleRoundedIcon sx={{ fontSize: 18 }} />}
+                    title="Member directory"
+                    subtitle="Browse profiles and connect with people who share your interests."
+                  />
+                  <MemberBenefitRow
+                    tone="warning"
+                    icon={<MailOutlineRoundedIcon sx={{ fontSize: 18 }} />}
+                    title="Community updates"
+                    subtitle="Get notified when new plans open up or members join."
+                  />
+                </Stack>
+              )}
             </Stack>
           </AppCard>
         )}
@@ -1408,7 +1472,7 @@ export default function CommunityDetailClient({
           </Box>
         ) : community.join_mode === "invite_only" ? (
           viewerInvited ? (
-            <InvitedJoinCard onJoin={handleJoin} joining={joining} />
+            <InvitedJoinCard onJoin={handleJoin} joining={joining} challenge={isChallenge} />
           ) : (
             <InviteOnlyNotice />
           )
@@ -1806,7 +1870,7 @@ export default function CommunityDetailClient({
                   members={members}
                   totalCount={community.member_count}
                   hideRealName={isAuthenticated === false}
-                  onSeeAll={() => setTabIndex(tabIndexMap.members)}
+                  onSeeAll={() => selectTab(tabIndexMap.members)}
                   onOpenProfile={(handle) => router.push(`/u/${handle}`)}
                 />
               )}
@@ -1828,7 +1892,7 @@ export default function CommunityDetailClient({
           alignItems={{ xs: "stretch", sm: "center" }}
           useFlexGap
         >
-          <Stack direction="row" spacing={1} alignItems="center" useFlexGap sx={{ flex: 1, minWidth: 0 }}>
+          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap sx={{ flex: 1, minWidth: 0 }}>
             {!isMember && viewerRemoved && (
               <Tooltip title="You can't rejoin this community. Contact the community owner if you believe this was a mistake.">
                 <Chip
@@ -1886,11 +1950,19 @@ export default function CommunityDetailClient({
                 {joining ? <CircularProgress size={18} color="inherit" /> : community.join_mode === "approval_required" ? "Request to join" : "Join this community"}
               </Button>
             )}
+            {/* Joining a public challenge group says up front who sees your
+                picks (MTG spec section 11). Full width, so it sits on its
+                own line under the button. */}
+            {isChallenge && community.join_mode === "open" && !isMember && !viewerPendingRequest && !viewerRemoved && (
+              <Typography variant="caption" color="text.secondary" sx={{ width: "100%", lineHeight: 1.5 }}>
+                Your picks will be visible to everyone in the group once picks lock.
+              </Typography>
+            )}
             {viewerPendingRequest && !isMember && (
               <Chip icon={<HourglassEmptyRoundedIcon />} label="Request pending" color="warning" variant="outlined" size="small" />
             )}
             {/* Challenge communities are about the game, so no plan button there. */}
-            {isMember && community.specialization !== "mtg_prediction_challenge" && (
+            {isMember && !isChallenge && (
               <Button
                 component={Link}
                 href={createPlanHref}
@@ -2001,31 +2073,34 @@ export default function CommunityDetailClient({
          *  "Unmute" so the current state is obvious. When the global
          *  Settings toggle is off, an explanatory caption sits under the
          *  item so unmuting one community can't be misread as overriding
-         *  the global preference. */}
-        <MenuItem
-          onClick={() => {
-            setMemberActionsAnchor(null);
-            void handleToggleAnnouncementMute();
-          }}
-          disabled={announcementMuteSubmitting}
-        >
-          <ListItemIcon>
-            {announcementMuted
-              ? <NotificationsActiveRoundedIcon fontSize="small" />
-              : <NotificationsOffRoundedIcon fontSize="small" />}
-          </ListItemIcon>
-          <ListItemText
-            primary={announcementMuted ? "Unmute announcement notifications" : "Mute announcement notifications"}
-            secondary={
-              globalCommunityAnnouncementsEnabled === false
-                ? "Global community announcement notifications are off in Settings"
-                : undefined
-            }
-            secondaryTypographyProps={{
-              sx: { fontSize: "0.75rem", color: "text.secondary", whiteSpace: "normal", lineHeight: 1.3 },
+         *  the global preference. A challenge community has no
+         *  Announcements tab, so there is nothing to mute there. */}
+        {!isChallenge && (
+          <MenuItem
+            onClick={() => {
+              setMemberActionsAnchor(null);
+              void handleToggleAnnouncementMute();
             }}
-          />
-        </MenuItem>
+            disabled={announcementMuteSubmitting}
+          >
+            <ListItemIcon>
+              {announcementMuted
+                ? <NotificationsActiveRoundedIcon fontSize="small" />
+                : <NotificationsOffRoundedIcon fontSize="small" />}
+            </ListItemIcon>
+            <ListItemText
+              primary={announcementMuted ? "Unmute announcement notifications" : "Mute announcement notifications"}
+              secondary={
+                globalCommunityAnnouncementsEnabled === false
+                  ? "Global community announcement notifications are off in Settings"
+                  : undefined
+              }
+              secondaryTypographyProps={{
+                sx: { fontSize: "0.75rem", color: "text.secondary", whiteSpace: "normal", lineHeight: 1.3 },
+              }}
+            />
+          </MenuItem>
+        )}
         <MenuItem
           onClick={() => {
             setMemberActionsAnchor(null);
@@ -2054,10 +2129,23 @@ export default function CommunityDetailClient({
         </DialogTitle>
         <DialogContent sx={{ px: { xs: 2, sm: 3 }, pb: { xs: 0, sm: 1.5 } }}>
           <Stack spacing={1.25} sx={{ mt: 0.5 }}>
-            <Typography variant="body2" color="text.secondary">
-              Any plans you&apos;ve RSVP&apos;d to will stay on your
-              schedule.
-            </Typography>
+            {isChallenge ? (
+              // A player's picks belong to them, not the group (MTG spec
+              // section 2), and a season's standings list the group's
+              // current members, so leaving after the lock drops them off.
+              <Typography variant="body2" color="text.secondary">
+                Your picks are yours, not the group&apos;s, so you keep them
+                and they still count in any other challenge group you&apos;re
+                in. You&apos;ll stop seeing this group&apos;s picks and
+                standings, and if picks have already locked, you&apos;ll drop
+                off those standings too.
+              </Typography>
+            ) : (
+              <Typography variant="body2" color="text.secondary">
+                Any plans you&apos;ve RSVP&apos;d to will stay on your
+                schedule.
+              </Typography>
+            )}
             {community?.join_mode === "invite_only" ? (
               <Typography variant="body2" color="text.secondary">
                 Because this community is invite only, rejoining later needs
@@ -2075,7 +2163,10 @@ export default function CommunityDetailClient({
             )}
           </Stack>
         </DialogContent>
+        {/* disableSpacing: `gap` spaces the buttons, and MUI's default
+            left margin would push the stacked phone button off center. */}
         <DialogActions
+          disableSpacing
           sx={{
             display: "flex",
             flexDirection: { xs: "column", sm: "row" },
@@ -2122,43 +2213,14 @@ export default function CommunityDetailClient({
         </DialogActions>
       </Dialog>
 
-      {/* Specialized community: the game replaces the tabs and everything
-          under them. The header above stays, so members, join and owner
-          settings work as for any community. */}
-      {community.specialization === "mtg_prediction_challenge" ? (
-        <MtgChallengeHome
-          communityId={community.id}
-          communityName={community.name}
-          slug={slug}
-          isMember={isMember}
-          isOwner={isOwner}
-          isAuthenticated={isAuthenticated}
-        />
-      ) : (
+      {/* Tabs. A specialized (challenge) community swaps Plans,
+          Announcements and Schedule for the game, on a Challenge tab that
+          comes first. Members and Requests stay, so its owner reviews
+          requests and manages members as in any community. */}
       <Box>
         <Tabs
           value={tabIndex}
-          onChange={(_, v) => {
-            setTabIndex(v);
-            // Keep the URL in sync with the active tab so a refresh lands
-            // on the same surface and a copy-pasted link matches what the
-            // sharer was looking at. router.replace keeps this out of the
-            // browser history so the back button doesn't tab-walk.
-            // `scroll: false` keeps the viewer at the tab section instead
-            // of jumping to the page top on every tab switch. Tab keys
-            // come from `tabIndexMap` so the URL stays stable when the
-            // index of a particular tab shifts (e.g. Schedule disabled).
-            const next = v === tabIndexMap.requests ? "requests"
-              : v === tabIndexMap.members ? "members"
-              : v === tabIndexMap.schedule ? "schedule"
-              : v === tabIndexMap.announcements ? "announcements"
-              : null;
-            const url = new URL(window.location.href);
-            if (next) url.searchParams.set("tab", next);
-            else url.searchParams.delete("tab");
-            const nextHref = url.pathname + (url.search || "") + (url.hash || "");
-            router.replace(nextHref, { scroll: false });
-          }}
+          onChange={(_, v: number) => selectTab(v)}
           variant="scrollable"
           scrollButtons={false}
           sx={{
@@ -2172,64 +2234,98 @@ export default function CommunityDetailClient({
               borderTopRightRadius: 2,
               backgroundColor: "primary.main",
             },
+            // A challenge community has two or three tabs, which fit a
+            // 320px phone without icons and with tighter padding, so none
+            // starts out scrolled half out of view.
+            ...(isChallenge && {
+              "& .MuiTab-root": {
+                minWidth: { xs: 0, sm: 90 },
+                px: { xs: 1, sm: 2 },
+                fontSize: { xs: "0.875rem", sm: "0.9375rem" },
+              },
+              "& .MuiTab-icon": { display: { xs: "none", sm: "inline-block" } },
+            }),
           }}
         >
-          <Tab
-            label={`Plans${events.length > 0 ? ` (${events.length})` : ""}`}
-            icon={<EventNoteRoundedIcon sx={{ fontSize: 18 }} />}
-            iconPosition="start"
-            sx={{
-              textTransform: "none",
-              minHeight: 52,
-              fontWeight: 600,
-              fontSize: "0.9375rem",
-              color: "text.secondary",
-              "&.Mui-selected": { color: "primary.main", fontWeight: 700 },
-              "&:hover": { color: "text.primary", bgcolor: "action.hover" },
-              borderTopLeftRadius: 8,
-              borderTopRightRadius: 8,
-              transition: "color 0.15s ease, background-color 0.15s ease",
-            }}
-          />
+          {isChallenge && (
+            <Tab
+              label="Challenge"
+              icon={<StyleRoundedIcon sx={{ fontSize: 18 }} />}
+              iconPosition="start"
+              sx={{
+                textTransform: "none",
+                minHeight: 52,
+                fontWeight: 600,
+                fontSize: "0.9375rem",
+                color: "text.secondary",
+                "&.Mui-selected": { color: "primary.main", fontWeight: 700 },
+                "&:hover": { color: "text.primary", bgcolor: "action.hover" },
+                borderTopLeftRadius: 8,
+                borderTopRightRadius: 8,
+                transition: "color 0.15s ease, background-color 0.15s ease",
+              }}
+            />
+          )}
+          {!isChallenge && (
+            <Tab
+              label={`Plans${events.length > 0 ? ` (${events.length})` : ""}`}
+              icon={<EventNoteRoundedIcon sx={{ fontSize: 18 }} />}
+              iconPosition="start"
+              sx={{
+                textTransform: "none",
+                minHeight: 52,
+                fontWeight: 600,
+                fontSize: "0.9375rem",
+                color: "text.secondary",
+                "&.Mui-selected": { color: "primary.main", fontWeight: 700 },
+                "&:hover": { color: "text.primary", bgcolor: "action.hover" },
+                borderTopLeftRadius: 8,
+                borderTopRightRadius: 8,
+                transition: "color 0.15s ease, background-color 0.15s ease",
+              }}
+            />
+          )}
           {/* Announcements tab. The unseen indicator (`hasUnseenAnnouncements`)
               is only ever true for authenticated viewers; logged-out viewers
               see the tab without a badge. The badge is a small primary-color
               dot rendered next to the label so the visual treatment matches
               the existing unread-chat dot on plan cards. */}
-          <Tab
-            label={
-              <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.75 }}>
-                <span>Announcements</span>
-                {hasUnseenAnnouncements && tabIndex !== tabIndexMap.announcements && (
-                  <Box
-                    aria-label="New announcements"
-                    sx={{
-                      width: 8,
-                      height: 8,
-                      borderRadius: "50%",
-                      bgcolor: "primary.main",
-                      boxShadow: "0 0 0 3px rgba(230, 91, 19, 0.18)",
-                      flexShrink: 0,
-                    }}
-                  />
-                )}
-              </Box>
-            }
-            icon={<CampaignRoundedIcon sx={{ fontSize: 18 }} />}
-            iconPosition="start"
-            sx={{
-              textTransform: "none",
-              minHeight: 52,
-              fontWeight: 600,
-              fontSize: "0.9375rem",
-              color: "text.secondary",
-              "&.Mui-selected": { color: "primary.main", fontWeight: 700 },
-              "&:hover": { color: "text.primary", bgcolor: "action.hover" },
-              borderTopLeftRadius: 8,
-              borderTopRightRadius: 8,
-              transition: "color 0.15s ease, background-color 0.15s ease",
-            }}
-          />
+          {!isChallenge && (
+            <Tab
+              label={
+                <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.75 }}>
+                  <span>Announcements</span>
+                  {hasUnseenAnnouncements && tabIndex !== tabIndexMap.announcements && (
+                    <Box
+                      aria-label="New announcements"
+                      sx={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: "50%",
+                        bgcolor: "primary.main",
+                        boxShadow: "0 0 0 3px rgba(230, 91, 19, 0.18)",
+                        flexShrink: 0,
+                      }}
+                    />
+                  )}
+                </Box>
+              }
+              icon={<CampaignRoundedIcon sx={{ fontSize: 18 }} />}
+              iconPosition="start"
+              sx={{
+                textTransform: "none",
+                minHeight: 52,
+                fontWeight: 600,
+                fontSize: "0.9375rem",
+                color: "text.secondary",
+                "&.Mui-selected": { color: "primary.main", fontWeight: 700 },
+                "&:hover": { color: "text.primary", bgcolor: "action.hover" },
+                borderTopLeftRadius: 8,
+                borderTopRightRadius: 8,
+                transition: "color 0.15s ease, background-color 0.15s ease",
+              }}
+            />
+          )}
           {/* Schedule tab. Renders when the per-community feature flag
               `schedule_enabled` is on AND the viewer isn't on the
               restricted preview (private community + non-member). The
@@ -2292,6 +2388,18 @@ export default function CommunityDetailClient({
             />
           )}
         </Tabs>
+
+        {/* Challenge tab. Switching away unmounts the game view, and coming
+            back loads it again; everything it shows is fetched on mount. */}
+        {tabIndex === tabIndexMap.challenge && (
+          <MtgChallengeHome
+            communityId={community.id}
+            communityName={community.name}
+            slug={slug}
+            isMember={isMember}
+            isAuthenticated={isAuthenticated}
+          />
+        )}
 
         {/* Plans tab */}
         {tabIndex === tabIndexMap.plans && (
@@ -2695,7 +2803,7 @@ export default function CommunityDetailClient({
                               </Typography>
                               <Chip label="Blocked" size="small" variant="outlined" sx={{ height: 20, fontSize: "0.6875rem", borderColor: "divider" }} />
                             </Stack>
-                            {handle && <Typography variant="caption" color="text.secondary">@{handle}</Typography>}
+                            {handle && <Typography variant="caption" color="text.secondary" noWrap sx={{ display: "block" }}>@{handle}</Typography>}
                             {m.removal_reason && (
                               <Typography
                                 variant="caption"
@@ -2759,48 +2867,52 @@ export default function CommunityDetailClient({
                   })();
                   return (
                     <AppCard key={req.id}>
-                      <Stack spacing={1.5}>
-                        <Stack direction="row" alignItems="center" spacing={2}>
-                          <Avatar
-                            src={req.avatar_url ? `${getAvatarBaseUrl()}${req.avatar_url}` : undefined}
-                            sx={{ width: 40, height: 40, bgcolor: "grey.300", fontSize: "0.9rem" }}
-                          >
-                            {(req.name || req.username || "?").charAt(0).toUpperCase()}
-                          </Avatar>
-                          <Box sx={{ flex: 1, minWidth: 0 }}>
-                            <Typography variant="body2" fontWeight={600} noWrap>{req.name || req.username || "Unknown"}</Typography>
-                            <Stack direction="row" spacing={0.5} alignItems="center">
-                              {handle && <Typography variant="caption" color="text.secondary">@{handle}</Typography>}
-                              {handle && <Typography variant="caption" color="text.disabled">·</Typography>}
-                              <Typography variant="caption" color="text.disabled">{timeAgo}</Typography>
-                            </Stack>
-                          </Box>
-                          <Stack direction="row" spacing={0.75}>
-                            <Button
-                              size="small"
-                              variant="contained"
-                              color="success"
-                              onClick={() => handleJoinRequestAction(req.id, "approve")}
-                              sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2, minWidth: 80, boxShadow: "none", "&:hover": { boxShadow: "none" } }}
-                            >
-                              Approve
-                            </Button>
-                            <Button
-                              size="small"
-                              variant="outlined"
-                              color="error"
-                              onClick={() => handleJoinRequestAction(req.id, "decline")}
-                              sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2, minWidth: 80 }}
-                            >
-                              Decline
-                            </Button>
+                      {/* One wrapping row. From sm the buttons sit beside the
+                          name with the note below; on a phone they drop under
+                          the note at full width, so the name isn't squeezed
+                          and the note is read before deciding. */}
+                      <Stack direction="row" alignItems="center" flexWrap="wrap" sx={{ columnGap: 2, rowGap: 1.5 }}>
+                        <Avatar
+                          src={req.avatar_url ? `${getAvatarBaseUrl()}${req.avatar_url}` : undefined}
+                          sx={{ width: 40, height: 40, bgcolor: "grey.300", fontSize: "0.9rem" }}
+                        >
+                          {(req.name || req.username || "?").charAt(0).toUpperCase()}
+                        </Avatar>
+                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                          <Typography variant="body2" fontWeight={600} noWrap>{req.name || req.username || "Unknown"}</Typography>
+                          <Stack direction="row" spacing={0.5} alignItems="center">
+                            {handle && <Typography variant="caption" color="text.secondary" noWrap sx={{ minWidth: 0 }}>@{handle}</Typography>}
+                            {handle && <Typography variant="caption" color="text.disabled">·</Typography>}
+                            <Typography variant="caption" color="text.disabled" sx={{ whiteSpace: "nowrap", flexShrink: 0 }}>{timeAgo}</Typography>
                           </Stack>
+                        </Box>
+                        <Stack direction="row" spacing={0.75} sx={{ order: { xs: 1, sm: 0 }, width: { xs: "100%", sm: "auto" } }}>
+                          <Button
+                            size="small"
+                            variant="contained"
+                            color="success"
+                            onClick={() => handleJoinRequestAction(req.id, "approve")}
+                            sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2, minWidth: 80, flex: { xs: 1, sm: "0 0 auto" }, boxShadow: "none", "&:hover": { boxShadow: "none" } }}
+                          >
+                            Approve
+                          </Button>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            color="error"
+                            onClick={() => handleJoinRequestAction(req.id, "decline")}
+                            sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2, minWidth: 80, flex: { xs: 1, sm: "0 0 auto" } }}
+                          >
+                            Decline
+                          </Button>
                         </Stack>
                         {req.message && (
-                          <Box sx={{ ml: 7, pl: 1.5, borderLeft: "2px solid", borderColor: "divider" }}>
-                            <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic", lineHeight: 1.5 }}>
-                              &ldquo;{req.message}&rdquo;
-                            </Typography>
+                          <Box sx={{ width: "100%" }}>
+                            <Box sx={{ ml: 7, pl: 1.5, borderLeft: "2px solid", borderColor: "divider" }}>
+                              <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic", lineHeight: 1.5 }}>
+                                &ldquo;{req.message}&rdquo;
+                              </Typography>
+                            </Box>
                           </Box>
                         )}
                       </Stack>
@@ -2835,41 +2947,43 @@ export default function CommunityDetailClient({
                     })() : null;
                     return (
                       <AppCard key={req.id} sx={{ opacity: 0.85, bgcolor: "action.hover" }}>
-                        <Stack spacing={1.25}>
-                          <Stack direction="row" alignItems="center" spacing={2}>
-                            <Avatar
-                              src={req.avatar_url ? `${getAvatarBaseUrl()}${req.avatar_url}` : undefined}
-                              sx={{ width: 40, height: 40, bgcolor: "grey.300", fontSize: "0.9rem" }}
-                            >
-                              {(req.name || req.username || "?").charAt(0).toUpperCase()}
-                            </Avatar>
-                            <Box sx={{ flex: 1, minWidth: 0 }}>
-                              <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: "wrap" }}>
-                                <Typography variant="body2" fontWeight={600} noWrap>
-                                  {req.name || req.username || "Unknown"}
-                                </Typography>
-                                <Chip label="Denied" size="small" variant="outlined" sx={{ height: 20, fontSize: "0.6875rem", borderColor: "divider" }} />
-                              </Stack>
-                              <Stack direction="row" spacing={0.5} alignItems="center">
-                                {handle && <Typography variant="caption" color="text.secondary">@{handle}</Typography>}
-                                {handle && timeAgo && <Typography variant="caption" color="text.disabled">·</Typography>}
-                                {timeAgo && <Typography variant="caption" color="text.disabled">denied {timeAgo}</Typography>}
-                              </Stack>
-                            </Box>
-                            <Button
-                              size="small"
-                              variant="outlined"
-                              onClick={(e) => { e.stopPropagation(); setUndoDeclineTarget(req); }}
-                              sx={{ textTransform: "none", fontSize: "0.75rem", borderRadius: 1.5, flexShrink: 0 }}
-                            >
-                              Undo denial
-                            </Button>
-                          </Stack>
-                          {req.message && (
-                            <Box sx={{ ml: 7, pl: 1.5, borderLeft: "2px solid", borderColor: "divider" }}>
-                              <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic", lineHeight: 1.5 }}>
-                                &ldquo;{req.message}&rdquo;
+                        {/* Same wrapping row as a pending request: on a phone
+                            the button drops under the note at full width. */}
+                        <Stack direction="row" alignItems="center" flexWrap="wrap" sx={{ columnGap: 2, rowGap: 1.25 }}>
+                          <Avatar
+                            src={req.avatar_url ? `${getAvatarBaseUrl()}${req.avatar_url}` : undefined}
+                            sx={{ width: 40, height: 40, bgcolor: "grey.300", fontSize: "0.9rem" }}
+                          >
+                            {(req.name || req.username || "?").charAt(0).toUpperCase()}
+                          </Avatar>
+                          <Box sx={{ flex: 1, minWidth: 0 }}>
+                            <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: "wrap" }}>
+                              <Typography variant="body2" fontWeight={600} noWrap>
+                                {req.name || req.username || "Unknown"}
                               </Typography>
+                              <Chip label="Denied" size="small" variant="outlined" sx={{ height: 20, fontSize: "0.6875rem", borderColor: "divider" }} />
+                            </Stack>
+                            <Stack direction="row" spacing={0.5} alignItems="center">
+                              {handle && <Typography variant="caption" color="text.secondary" noWrap sx={{ minWidth: 0 }}>@{handle}</Typography>}
+                              {handle && timeAgo && <Typography variant="caption" color="text.disabled">·</Typography>}
+                              {timeAgo && <Typography variant="caption" color="text.disabled" sx={{ whiteSpace: "nowrap", flexShrink: 0 }}>denied {timeAgo}</Typography>}
+                            </Stack>
+                          </Box>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            onClick={(e) => { e.stopPropagation(); setUndoDeclineTarget(req); }}
+                            sx={{ textTransform: "none", fontSize: "0.75rem", borderRadius: 1.5, flexShrink: 0, order: { xs: 1, sm: 0 }, width: { xs: "100%", sm: "auto" } }}
+                          >
+                            Undo denial
+                          </Button>
+                          {req.message && (
+                            <Box sx={{ width: "100%" }}>
+                              <Box sx={{ ml: 7, pl: 1.5, borderLeft: "2px solid", borderColor: "divider" }}>
+                                <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic", lineHeight: 1.5 }}>
+                                  &ldquo;{req.message}&rdquo;
+                                </Typography>
+                              </Box>
                             </Box>
                           )}
                         </Stack>
@@ -2882,7 +2996,6 @@ export default function CommunityDetailClient({
           </>
         )}
       </Box>
-      )}
 
       {/* Local interest signal. Same copy/layout as the explore feed's
           footer: surfaces one of the community's hobbies that active
@@ -2916,7 +3029,7 @@ export default function CommunityDetailClient({
           poster, or a direct share link. Suppressed for authed viewers
           (the action row above already handles their state). */}
       {isAuthenticated === false && (
-        <CommunitySignupFooter slug={slug} communityName={community.name} />
+        <CommunitySignupFooter slug={slug} communityName={community.name} challenge={isChallenge} />
       )}
 
       {/* Remove member confirmation */}
@@ -2933,7 +3046,11 @@ export default function CommunityDetailClient({
             <strong>
               {removeMemberTarget?.name || (removeMemberTarget?.username ? `@${removeMemberTarget.username.replace(/^@/, "")}` : "this member")}
             </strong>{" "}
-            from <strong>{community.name}</strong> and <strong>block them from rejoining</strong>. They&rsquo;ll lose access to the community&rsquo;s plans and members, and will receive an email letting them know. You can unblock them later from the Blocked list.
+            from <strong>{community.name}</strong> and <strong>block them from rejoining</strong>.{" "}
+            {isChallenge
+              ? "They’ll lose access to the group’s picks, standings and members, and will receive an email letting them know. If picks have already locked, they also drop off this group’s standings."
+              : "They’ll lose access to the community’s plans and members, and will receive an email letting them know."}{" "}
+            You can unblock them later from the Blocked list.
           </Typography>
           <TextField
             label="Reason (optional)"
@@ -3048,7 +3165,16 @@ export default function CommunityDetailClient({
  *  /communities discovery page so the two surfaces feel like one
  *  product. The CTA buttons route through `/login?next=...` so the
  *  viewer lands back on this community after authenticating. */
-function CommunitySignupFooter({ slug, communityName }: { slug: string; communityName: string }) {
+function CommunitySignupFooter({
+  slug,
+  communityName,
+  challenge = false,
+}: {
+  slug: string;
+  communityName: string;
+  /** Challenge communities: members play the game rather than RSVP to plans. */
+  challenge?: boolean;
+}) {
   const next = `/communities/${slug}`;
   const loginHref = `/login?next=${encodeURIComponent(next)}`;
   return (
@@ -3086,7 +3212,9 @@ function CommunitySignupFooter({ slug, communityName }: { slug: string; communit
           Join {communityName} on NewChums
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
-          Sign up free to RSVP to plans, meet other members, and get notified when something is on the calendar.
+          {challenge
+            ? "Sign up free to make your picks, see everyone’s picks once they lock, and follow the standings."
+            : "Sign up free to RSVP to plans, meet other members, and get notified when something is on the calendar."}
         </Typography>
       </Box>
       <Stack
@@ -3323,7 +3451,16 @@ function InviteOnlyNotice() {
 }
 
 /** The invite link checked out: one tap joins, no approval step. */
-function InvitedJoinCard({ onJoin, joining }: { onJoin: () => void; joining: boolean }) {
+function InvitedJoinCard({
+  onJoin,
+  joining,
+  challenge = false,
+}: {
+  onJoin: () => void;
+  joining: boolean;
+  /** Challenge communities: joining is about the picks, not plans. */
+  challenge?: boolean;
+}) {
   return (
     <AppCard>
       <Stack spacing={2}>
@@ -3343,7 +3480,9 @@ function InvitedJoinCard({ onJoin, joining }: { onJoin: () => void; joining: boo
               You&rsquo;re invited
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              Your invite link checks out. Join to see the plans and members.
+              {challenge
+                ? "Your invite link checks out. Join to make your picks and follow the standings."
+                : "Your invite link checks out. Join to see the plans and members."}
             </Typography>
           </Box>
         </Stack>

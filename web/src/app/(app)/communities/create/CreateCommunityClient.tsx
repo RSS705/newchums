@@ -579,7 +579,9 @@ export default function CreateCommunityClient() {
                 <Box>
                   <Typography variant="body1" fontWeight={500}>Approval required</Typography>
                   <Typography variant="caption" color="text.secondary">
-                    Discoverable, but you approve each request to join. Plans and members are only visible to members.
+                    {specialized
+                      ? "Discoverable, but you approve each request to join. Picks, standings and members are only visible to members."
+                      : "Discoverable, but you approve each request to join. Plans and members are only visible to members."}
                   </Typography>
                 </Box>
               }

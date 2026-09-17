@@ -15,6 +15,12 @@ export function getSafeRedirectPath(value: string | null | undefined): string {
     return DEFAULT_REDIRECT_PATH;
   }
 
+  // Browsers read a backslash as a slash, so "/\example.com" would leave the
+  // site; control characters can hide the same trick.
+  if (/[\\\u0000-\u001f\u007f]/.test(normalized)) {
+    return DEFAULT_REDIRECT_PATH;
+  }
+
   if (
     lowerValue.includes("://") ||
     lowerValue.startsWith("http:") ||
@@ -24,6 +30,17 @@ export function getSafeRedirectPath(value: string | null | undefined): string {
   }
 
   return normalized;
+}
+
+/**
+ * `path` with the post-auth destination carried along as `next`, so a
+ * detour through signup or email verification still ends where the person
+ * was headed (an invite link, say). Leaves `path` alone for the default.
+ */
+export function withNextParam(path: string, next: string | null | undefined): string {
+  const safe = getSafeRedirectPath(next);
+  if (safe === DEFAULT_REDIRECT_PATH) return path;
+  return `${path}${path.includes("?") ? "&" : "?"}next=${encodeURIComponent(safe)}`;
 }
 
 function mergePathAndQuery(path: string | null, query: string | null): string | null {

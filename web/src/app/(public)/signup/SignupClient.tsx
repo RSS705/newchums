@@ -21,7 +21,7 @@ import { AppButton, AppCard } from "@/components/ui";
 import { apiFetch } from "@/lib/apiClient";
 import { trackEvent } from "@/lib/analytics";
 import { validateCleanText } from "@/lib/contentSafety";
-import { getSafeRedirectPath } from "@/lib/authRedirect";
+import { getSafeRedirectPath, withNextParam } from "@/lib/authRedirect";
 import OnboardingProgress from "@/components/onboarding/OnboardingProgress";
 import StepTransition from "@/components/onboarding/StepTransition";
 import HobbiesStep, { type InterestOption } from "@/components/onboarding/HobbiesStep";
@@ -269,12 +269,14 @@ export default function SignupClient() {
         has_location: homeLat != null && homeLng != null,
       });
 
+      // `next` rides along through verification, so someone who signed up
+      // from an invite link lands back on it after signing in.
       await apiFetch("/auth/email-verify/request", {
         method: "POST",
-        body: JSON.stringify({ email: signedUpEmail }),
+        body: JSON.stringify({ email: signedUpEmail, next: nextParam ? redirectTarget : undefined }),
       });
       router.push(
-        `/auth/verify/pending?email=${encodeURIComponent(signedUpEmail)}`,
+        withNextParam(`/auth/verify/pending?email=${encodeURIComponent(signedUpEmail)}`, nextParam),
       );
     } catch {
       setError("Sign up failed. Please try again.");
@@ -628,7 +630,7 @@ export default function SignupClient() {
             <AuthFooterLink
               prompt="Already have an account?"
               linkText="Sign in"
-              href="/login"
+              href={withNextParam("/login", nextParam)}
             />
           )}
         </Stack>

@@ -14,6 +14,9 @@ export const MTG_MIN_MATCH_RATE = 0.95;
 export const MTG_WELL_PLAYED_GAMES = 2000;
 /** Cards allowed to lose games since the last standings (spec 9.1). */
 export const MTG_MAX_SHRINKING_CARDS = 5;
+/** Games a card, or the pool, may lose between two days before it counts as
+ *  losing games: 17Lands may trim a few, and that shouldn't hold standings up. */
+const lossTolerance = (before: number) => Math.max(10, before * 0.005);
 /** Eastern hours of the day's ingest attempts (spec 9.1). */
 export const MTG_INGEST_HOURS = [9, 11, 13, 16, 20] as const;
 
@@ -153,9 +156,15 @@ export function checkSnapshot(args: {
   matched: Map<string, FeedRecord>;
   poolSize: number;
   previous: { totalGames: number; gamesByCard: Map<string, number> } | null;
+  /** The pool's cards by id with their names. With it, a card matched last
+   *  time and unmatched now counts as losing games, since its Card Score
+   *  would fall to a neutral 50. */
+  poolNames?: Map<string, string>;
+  /** Cards in someone's picks: every one must match, or its picks score a neutral 50. */
+  pickedIds?: Set<string>;
   force?: boolean;
 }): SnapshotCheck {
-  const { matched, poolSize, previous, force = false } = args;
+  const { matched, poolSize, previous, poolNames, pickedIds, force = false } = args;
   let totalGames = 0;
   for (const r of matched.values()) totalGames += r.gihGames;
   // Growth is compared over cards in both days, so a card joining or leaving
@@ -169,9 +178,13 @@ export function checkSnapshot(args: {
       if (before === undefined) continue;
       sharedNow += r.gihGames;
       sharedBefore += before;
-      if (r.gihGames < before) shrinking++;
+      if (r.gihGames < before - lossTolerance(before)) shrinking++;
     }
   }
+  // Matched last time, still in the pool, unmatched now: a renamed record, or
+  // a name the feed now lists twice.
+  const lost = previous && poolNames ? [...previous.gamesByCard.keys()].filter((id) => poolNames.has(id) && !matched.has(id)) : [];
+  shrinking += lost.length;
   const compare = !!previous && sharedBefore > 0;
   const base = { totalGames, matched: matched.size, shrinking };
   if (poolSize === 0 || matched.size === 0) return { ...base, outcome: "failed_validation", reason: "No pool cards matched the feed" };
@@ -185,14 +198,28 @@ export function checkSnapshot(args: {
   if (wellPlayed.length >= 10 && blank > wellPlayed.length * 0.1) {
     return { ...base, outcome: "failed_validation", reason: `${blank} of ${wellPlayed.length} cards with ${MTG_WELL_PLAYED_GAMES}+ games in hand have no win rate` };
   }
-  if (compare && sharedNow < sharedBefore) {
+  if (compare && sharedNow < sharedBefore - lossTolerance(sharedBefore)) {
     return { ...base, outcome: "failed_validation", reason: `Games in hand went down, from ${sharedBefore} to ${sharedNow}` };
   }
+  const names = (ids: string[]) => {
+    const shown = ids.slice(0, 3).map((id) => poolNames?.get(id) ?? id);
+    return ids.length > 3 ? `${shown.join(", ")} and ${ids.length - 3} more` : shown.join(", ");
+  };
   if (shrinking > MTG_MAX_SHRINKING_CARDS) {
-    return { ...base, outcome: "failed_validation", reason: `${shrinking} cards lost games since the last standings` };
+    const detail = lost.length > 0 ? `, including ${lost.length} that matched last time and don't now (${names(lost)})` : "";
+    return { ...base, outcome: "failed_validation", reason: `${shrinking} cards lost games since the last standings${detail}` };
+  }
+  const unmatchedPicks = pickedIds ? [...pickedIds].filter((id) => poolNames?.has(id) !== false && !matched.has(id)) : [];
+  if (unmatchedPicks.length > 0) {
+    const one = unmatchedPicks.length === 1;
+    return {
+      ...base,
+      outcome: "failed_validation",
+      reason: `${unmatchedPicks.length} picked card${one ? "" : "s"} didn't match the feed (${names(unmatchedPicks)}), so ${one ? "its" : "their"} picks would score a neutral 50. Match ${one ? "it" : "them"} on MTG Seasons, or publish anyway`,
+    };
   }
   if (totalGames === 0) return { ...base, outcome: "not_newer", reason: "No games in hand yet" };
-  if (compare && sharedNow === sharedBefore) return { ...base, outcome: "not_newer", reason: "Same data as the last standings" };
+  if (compare && sharedNow <= sharedBefore) return { ...base, outcome: "not_newer", reason: "No new games since the last standings" };
   return { ...base, outcome: "published", reason: null };
 }
 

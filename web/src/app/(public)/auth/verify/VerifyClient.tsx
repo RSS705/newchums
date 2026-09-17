@@ -7,6 +7,7 @@ import Typography from "@mui/material/Typography";
 import AuthSplitLayout from "@/components/layout/AuthSplitLayout";
 import { AppButton, AppCard } from "@/components/ui";
 import { apiFetch } from "@/lib/apiClient";
+import { withNextParam } from "@/lib/authRedirect";
 
 export default function VerifyClient() {
   const params = useSearchParams();
@@ -63,7 +64,7 @@ export default function VerifyClient() {
             </Typography>
             <AppButton
               variant="contained"
-              href={verifiedEmail ? `/login?email=${encodeURIComponent(verifiedEmail)}` : "/login"}
+              href={withNextParam(verifiedEmail ? `/login?email=${encodeURIComponent(verifiedEmail)}` : "/login", params.get("next"))}
               fullWidth
             >
               Continue to sign in

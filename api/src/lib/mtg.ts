@@ -156,10 +156,14 @@ export type CardSyncSummary = {
   seen: number; kept: number; inserted: number; updated: number; pages: number; rawKeys: string[]; notes: string[];
   /** Set when the sync would have taken a large share of the pool out at once, so it kept the pool as it was. */
   poolHeld?: { leaving: number; total: number };
+  /** Cards Scryfall returned that couldn't be saved; the rest of the run carried on. */
+  failed?: number;
 };
 
 /** Before the lock, a sync may take at most this share of the pool out in one run (and always a few cards). */
 const MTG_POOL_DROP_LIMIT = 0.1;
+/** Before the lock, how long a card must go unlisted, or unwanted, before it leaves the pool. */
+const MTG_POOL_MISSING_GRACE = "1 day";
 
 /**
  * Pull the set from Scryfall, keep one row per oracle card (lowest collector
@@ -174,11 +178,18 @@ const MTG_POOL_DROP_LIMIT = 0.1;
  * had one on September 17, 2026, nor any set's released since April), so the
  * flag narrows the pool only once some printing in the set carries it.
  *
- * Before the lock a sync never takes more than a tenth of the pool out at
- * once: a pool that shrinks that fast is Scryfall misbehaving (flags half
- * added, a page missing), not a retraction, and every pick of a card that
- * leaves the pool is deleted when its player next opens their picks. Such a
- * run keeps the pool as it was, says so in its notes and sets `poolHeld`.
+ * Every pick of a card that leaves the pool is deleted when its player next
+ * opens their picks, so before the lock the pool is slow to shrink:
+ *  - A card Scryfall stops listing, or that stops qualifying, stays in the
+ *    pool for a day (`missing_since`) and leaves only if it is still missing
+ *    then. Scryfall's search has dropped a few dozen cards for a couple of
+ *    hours before (September 17, 2026).
+ *  - A run never takes more than a tenth of the pool out at once: a pool that
+ *    shrinks that fast is Scryfall misbehaving (flags half added, a page
+ *    missing), not a retraction. Such a run keeps the pool as it was, says so
+ *    in its notes and sets `poolHeld`.
+ * A card that fails to save is noted and counted in `failed`, and the run goes
+ * on, so one bad row can't keep newer cards out of the pool.
  */
 export async function syncScryfallSet(
   sql: SqlTag,
@@ -230,18 +241,22 @@ export async function syncScryfallSet(
   const wantsPool = (card: ScryfallCard) => (byBooster ? card.booster === true : true);
 
   const beforeLock = now.getTime() < new Date(set.lock_at).getTime();
-  let held = new Set<string>();
+  let held = false;
   if (beforeLock) {
+    // Only a card already missing for a day would leave in this run.
     const current = (await sql`
-      SELECT oracle_id::text AS oracle_id FROM newchums.mtg_cards WHERE set_id = ${set.id} AND in_pool = true
-    `) as { oracle_id: string }[];
-    const leaving = current.filter((r) => { const card = byOracle.get(r.oracle_id); return !card || !wantsPool(card); }).length;
+      SELECT oracle_id::text AS oracle_id,
+             (missing_since IS NOT NULL AND missing_since <= now() - ${MTG_POOL_MISSING_GRACE}::interval) AS overdue
+      FROM newchums.mtg_cards WHERE set_id = ${set.id} AND in_pool = true
+    `) as { oracle_id: string; overdue: boolean }[];
+    const leaving = current.filter((r) => { const card = byOracle.get(r.oracle_id); return r.overdue && (!card || !wantsPool(card)); }).length;
     if (leaving > Math.max(3, Math.floor(current.length * MTG_POOL_DROP_LIMIT))) {
-      held = new Set(current.map((r) => r.oracle_id));
+      held = true;
       summary.poolHeld = { leaving, total: current.length };
       summary.notes.push(`Kept the pool as it was: this sync would have taken ${leaving} of ${current.length} cards out`);
     }
   }
+  const lockIso = new Date(set.lock_at).toISOString();
 
   for (const card of byOracle.values()) {
     const front = card.image_uris ?? card.card_faces?.[0]?.image_uris;
@@ -249,8 +264,10 @@ export async function syncScryfallSet(
     const colors = (card.colors ?? Array.from(new Set((card.card_faces ?? []).flatMap((f) => f.colors ?? [])))).join("");
     const manaCost = card.mana_cost ?? (card.card_faces ?? []).map((f) => f.mana_cost).filter(Boolean).join(" // ") ?? null;
     const oracleText = card.oracle_text ?? (card.card_faces ?? []).map((f) => f.oracle_text).filter(Boolean).join("\n//\n") ?? null;
-    const inPool = wantsPool(card) || held.has(card.oracle_id as string);
-    const rows = (await sql`
+    const wanted = wantsPool(card);
+    let rows: { inserted: boolean }[];
+    try {
+    rows = (await sql`
       INSERT INTO newchums.mtg_cards (
         set_id, scryfall_id, oracle_id, arena_id, name, rarity, collector_number, collector_sort, layout, colors,
         mana_cost, mana_value, type_line, oracle_text, image_normal, image_large, image_back_normal, image_back_large,
@@ -260,11 +277,11 @@ export async function syncScryfallSet(
         ${collectorSort(card.collector_number)}, ${card.layout ?? null}, ${colors}, ${manaCost || null}, ${card.cmc ?? null},
         ${card.type_line ?? null}, ${oracleText || null}, ${front?.normal ?? null}, ${front?.large ?? null},
         ${back?.normal ?? null}, ${back?.large ?? null}, ${card.image_status ?? null}, ${card.booster ?? null},
-        ${card.preview?.previewed_at ?? null}, ${card.preview?.source ?? null}, ${card.preview?.source_uri ?? null}, ${inPool}
+        ${card.preview?.previewed_at ?? null}, ${card.preview?.source ?? null}, ${card.preview?.source_uri ?? null}, ${wanted}
       )
       ON CONFLICT (set_id, oracle_id) DO UPDATE SET
         scryfall_id = EXCLUDED.scryfall_id, arena_id = COALESCE(EXCLUDED.arena_id, newchums.mtg_cards.arena_id),
-        name = EXCLUDED.name, rarity = CASE WHEN now() >= ${new Date(set.lock_at).toISOString()}::timestamptz THEN newchums.mtg_cards.rarity ELSE EXCLUDED.rarity END, collector_number = EXCLUDED.collector_number,
+        name = EXCLUDED.name, rarity = CASE WHEN now() >= ${lockIso}::timestamptz THEN newchums.mtg_cards.rarity ELSE EXCLUDED.rarity END, collector_number = EXCLUDED.collector_number,
         collector_sort = EXCLUDED.collector_sort, layout = EXCLUDED.layout, colors = EXCLUDED.colors,
         mana_cost = EXCLUDED.mana_cost, mana_value = EXCLUDED.mana_value, type_line = EXCLUDED.type_line,
         oracle_text = EXCLUDED.oracle_text, image_normal = EXCLUDED.image_normal, image_large = EXCLUDED.image_large,
@@ -273,23 +290,65 @@ export async function syncScryfallSet(
         previewed_at = COALESCE(EXCLUDED.previewed_at, newchums.mtg_cards.previewed_at),
         preview_source = COALESCE(EXCLUDED.preview_source, newchums.mtg_cards.preview_source),
         preview_source_uri = COALESCE(EXCLUDED.preview_source_uri, newchums.mtg_cards.preview_source_uri),
-        in_pool = CASE WHEN now() >= ${new Date(set.lock_at).toISOString()}::timestamptz THEN (newchums.mtg_cards.in_pool OR EXCLUDED.in_pool) ELSE EXCLUDED.in_pool END, updated_at = now()
+        -- After the lock the pool only grows. Before it, a card that stops
+        -- qualifying stays in for a day, and a held run changes nothing.
+        in_pool = CASE
+          WHEN now() >= ${lockIso}::timestamptz THEN (newchums.mtg_cards.in_pool OR EXCLUDED.in_pool)
+          WHEN EXCLUDED.in_pool THEN true
+          WHEN NOT newchums.mtg_cards.in_pool THEN false
+          WHEN ${held} THEN true
+          ELSE COALESCE(newchums.mtg_cards.missing_since, now()) > now() - ${MTG_POOL_MISSING_GRACE}::interval
+        END,
+        missing_since = CASE
+          WHEN EXCLUDED.in_pool OR NOT newchums.mtg_cards.in_pool OR now() >= ${lockIso}::timestamptz THEN NULL
+          ELSE COALESCE(newchums.mtg_cards.missing_since, now())
+        END,
+        updated_at = now()
       RETURNING (xmax = 0) AS inserted
     `) as { inserted: boolean }[];
+    } catch (err) {
+      // A row that can't be saved (Scryfall moving a printing to another
+      // oracle card clashes with scryfall_id) mustn't stop the cards after it.
+      summary.failed = (summary.failed ?? 0) + 1;
+      summary.notes.push(`Couldn't save ${card.name} (#${card.collector_number}): ${err instanceof Error ? err.message : String(err)}`);
+      continue;
+    }
     summary.kept += 1;
     if (rows[0]?.inserted) summary.inserted += 1; else summary.updated += 1;
   }
 
   // Retractions and renumbered previews: a card the complete sync didn't see
-  // leaves the pool, so it can't be picked or counted against the ingest's
-  // match check. Only before the lock, when the pool is still allowed to move.
-  if (byOracle.size > 0 && beforeLock && !summary.poolHeld) {
-    const dropped = (await sql`
-      UPDATE newchums.mtg_cards SET in_pool = false, updated_at = now()
+  // for a day leaves the pool, so it can't be picked or counted against the
+  // ingest's match check. Only before the lock, when the pool may still move.
+  if (byOracle.size > 0 && beforeLock) {
+    const unlisted = (await sql`
+      UPDATE newchums.mtg_cards SET
+        missing_since = COALESCE(missing_since, now()),
+        in_pool = ${held} OR COALESCE(missing_since, now()) > now() - ${MTG_POOL_MISSING_GRACE}::interval,
+        updated_at = now()
       WHERE set_id = ${set.id} AND in_pool = true AND oracle_id::text <> ALL(${Array.from(byOracle.keys())}::text[])
-      RETURNING id
-    `) as { id: string }[];
-    if (dropped.length > 0) summary.notes.push(`${dropped.length} card${dropped.length === 1 ? "" : "s"} Scryfall no longer lists left the pool`);
+      RETURNING in_pool
+    `) as { in_pool: boolean }[];
+    const gone = unlisted.filter((r) => !r.in_pool).length;
+    const waiting = unlisted.length - gone;
+    if (gone > 0) summary.notes.push(`${gone} card${gone === 1 ? "" : "s"} Scryfall hasn't listed for a day left the pool`);
+    if (waiting > 0) {
+      summary.notes.push(waiting === 1
+        ? "Scryfall didn't list 1 card this time. It stays in the pool unless it's still missing a day later"
+        : `Scryfall didn't list ${waiting} cards this time. They stay in the pool unless they're still missing a day later`);
+    }
+  }
+  if (beforeLock) {
+    const unwanted = (await sql`
+      SELECT COUNT(*)::int AS n FROM newchums.mtg_cards
+      WHERE set_id = ${set.id} AND in_pool = true AND missing_since IS NOT NULL AND oracle_id::text = ANY(${Array.from(byOracle.keys())}::text[])
+    `) as { n: number }[];
+    const n = unwanted[0]?.n ?? 0;
+    if (n > 0) {
+      summary.notes.push(n === 1
+        ? "1 card no longer marked as a booster card stays in the pool for a day first"
+        : `${n} cards no longer marked as booster cards stay in the pool for a day first`);
+    }
   }
   return summary;
 }

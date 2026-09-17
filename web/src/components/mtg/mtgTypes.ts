@@ -76,6 +76,16 @@ export function formatWhen(iso: string): string {
   }
 }
 
+/** `formatWhen` with the reader's time zone named ("6:00 PM EDT"), for a
+ *  moment given on its own, where nothing else on screen says which zone. */
+export function formatWhenZoned(iso: string): string {
+  try {
+    return new Date(iso).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" });
+  } catch {
+    return iso;
+  }
+}
+
 /** The same moment in Eastern time with an "ET" suffix. Deterministic on
  *  the server, where the reader's zone is unknown, so server-rendered pages
  *  hydrate cleanly before switching to `formatWhen`. */
@@ -132,6 +142,8 @@ export type MtgEntryPayload = {
   entry: null | {
     updatedAt: string;
     completedAt: string | null;
+    /** Counts changes to the stored picks; a save names the one it builds on. */
+    revision: number;
     picks: Record<MtgRarity, MtgEntryPick[]>;
     /** Picks whose card has since left the pool; shown once, then gone. */
     dropped: { name: string; rarity: MtgRarity }[];

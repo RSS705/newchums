@@ -22,18 +22,23 @@ export default function RevealSummary({ communityId, slug }: { communityId: stri
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    let retry: ReturnType<typeof setTimeout> | null = null;
+    // The home switches to this card by the phone's clock, which can run a
+    // little ahead of the server's: a "not yet" answer is asked again shortly.
+    const load = async (attempt: number) => {
       try {
         const res = await apiFetch(`/mtg/communities/${communityId}/reveal?view=summary`, { auth: true });
         const body = await res.json();
         if (cancelled) return;
-        if (res.ok && body.ok) setData(body as MtgRevealPayload);
-        else setFailed(true);
+        if (res.ok && body.ok) { setData(body as MtgRevealPayload); setFailed(false); return; }
+        if (body?.error === "SEALED" && attempt < 6) { retry = setTimeout(() => { void load(attempt + 1); }, 5000); return; }
+        setFailed(true);
       } catch {
         if (!cancelled) setFailed(true);
       }
-    })();
-    return () => { cancelled = true; };
+    };
+    void load(0);
+    return () => { cancelled = true; if (retry) clearTimeout(retry); };
   }, [communityId]);
 
   const href = `/communities/${slug}/reveal`;

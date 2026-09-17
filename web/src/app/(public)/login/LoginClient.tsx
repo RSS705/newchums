@@ -15,7 +15,7 @@ import AuthSplitLayout from "@/components/layout/AuthSplitLayout";
 import LegalConsentNotice from "@/components/legal/LegalConsentNotice";
 import TurnstileWidget from "@/components/contact/TurnstileWidget";
 import { AppButton, AppCard } from "@/components/ui";
-import { getSafeRedirectPath } from "@/lib/authRedirect";
+import { getSafeRedirectPath, withNextParam } from "@/lib/authRedirect";
 import GlobalStyles from "@mui/material/GlobalStyles";
 import MarkEmailReadRoundedIcon from "@mui/icons-material/MarkEmailReadRounded";
 
@@ -366,7 +366,7 @@ export default function LoginClient() {
                 {emailUnverified && (
                   <Typography
                     component={Link}
-                    href={`/auth/verify/pending?email=${encodeURIComponent(email)}`}
+                    href={withNextParam(`/auth/verify/pending?email=${encodeURIComponent(email)}`, nextParam)}
                     variant="body2"
                     sx={{
                       color: "primary.main",
@@ -530,7 +530,7 @@ export default function LoginClient() {
           Forgot your password?
         </Typography>
       </Box>
-      <AuthFooterLink prompt="New to NewChums?" linkText="Create an account" href="/signup" />
+      <AuthFooterLink prompt="New to NewChums?" linkText="Create an account" href={withNextParam("/signup", nextParam)} />
       {/* Google sign-in can create an account, so the page still carries the
           signup consent line; demoted to the footer with the other
           secondaries. */}
