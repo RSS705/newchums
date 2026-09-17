@@ -40,7 +40,7 @@ export default function ReviewStep({ picks, locked, onReorder, onRemove, onNote,
         </Notice>
       )}
       <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
-        Drag to reorder. Nobody sees your picks, or your thoughts on them, until picks lock. After that, your thoughts on each card sit beside its results all season.
+        Drag to reorder. Nobody sees your picks, or your thoughts on them, until picks lock.
       </Typography>
       <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "repeat(2, minmax(0, 1fr))" }, gap: { xs: 2, sm: 2.5 } }}>
         {MTG_RARITIES.map((rarity) => {

@@ -28,7 +28,7 @@ import CardViewer from "./CardViewer";
 import PickTray, { SaveStatus, type SaveState } from "./PickTray";
 import ReviewStep from "./ReviewStep";
 import {
-  EMPTY_FILTERS, type CardFilters, type PickSlot, type PickState, applyFilters, emptyPickState, fitNote, moveItem, scoredCount, toPutBody, totalPicked,
+  EMPTY_FILTERS, type CardFilters, type PickState, applyFilters, emptyPickState, fitNote, moveItem, scoredCount, toPutBody, totalPicked,
 } from "./pickUtils";
 
 type Step = MtgRarity | "review";
@@ -406,24 +406,13 @@ export default function PickWizard() {
     });
   }, [mutate]);
 
-  /** Put a removed card back where it was, if there's still room for it. */
-  const restorePick = useCallback((r: MtgRarity, index: number, slot: PickSlot) => {
-    mutate((p) => {
-      if (p[r].length >= MTG_LIST_MAX || p[r].some((s) => s.card.id === slot.card.id)) return p;
-      const next = p[r].slice();
-      next.splice(Math.min(index, next.length), 0, slot);
-      return { ...p, [r]: next };
-    });
-  }, [mutate]);
-
   const removePick = useCallback((r: MtgRarity, cardId: string) => {
-    const index = picksRef.current[r].findIndex((s) => s.card.id === cardId);
-    if (index < 0 || readOnlyRef.current) return;
-    const slot = picksRef.current[r][index];
+    const slot = picksRef.current[r].find((s) => s.card.id === cardId);
+    if (!slot || readOnlyRef.current) return;
     mutate((p) => ({ ...p, [r]: p[r].filter((s) => s.card.id !== cardId) }));
-    // The app's confirmation toast, green like its others, with a way back.
-    toast.success(`Removed ${slot.card.name}`, { action: { label: "Undo", onClick: () => restorePick(r, index, slot) }, duration: 6000 });
-  }, [mutate, restorePick, toast]);
+    // The app's usual confirmation; the card is a tap away in the grid if it was a slip.
+    toast.success(`Removed ${slot.card.name}`);
+  }, [mutate, toast]);
 
   const replacePick = useCallback((card: MtgCard, slotIndex: number) => {
     mutate((p) => {

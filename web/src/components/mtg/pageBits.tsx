@@ -48,16 +48,34 @@ export function BackButton({ href, label, onClick }: { href: string; label: stri
       component={NextLink}
       href={href}
       onClick={onClick}
+      // "inherit" takes the theme's ghost outlined style, whose hover keeps the
+      // text dark; the primary outlined style fills orange with white text.
       variant="outlined"
+      color="inherit"
       size="small"
       startIcon={<ArrowBackRoundedIcon sx={{ fontSize: 16 }} />}
       sx={{
         textTransform: "none", fontWeight: 600, borderRadius: 2, borderColor: "divider", color: "text.secondary", maxWidth: "100%", minHeight: 36, boxShadow: "none",
-        "&:hover": { borderColor: "text.disabled", bgcolor: "action.hover", boxShadow: "none" },
+        "&:hover": { borderColor: "text.disabled", boxShadow: "none" },
       }}
     >
       <Box component="span" sx={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{label}</Box>
     </Button>
+  );
+}
+
+/**
+ * The column headers over a standings list, lined up with its rows: the rank
+ * column, the player, and what the right-hand column holds ("Points", or the
+ * picks' status before the season goes live).
+ */
+export function StandingsHeader({ last }: { last: string }) {
+  return (
+    <Box aria-hidden sx={{ display: "flex", alignItems: "center", gap: { xs: 1, sm: 1.5 }, px: { xs: 1, sm: 1.5 }, pb: 0.75 }}>
+      <Typography variant="caption" fontWeight={700} color="text.secondary" sx={{ width: 28, flexShrink: 0, textAlign: "center", textTransform: "uppercase", letterSpacing: "0.05em", fontSize: "0.6875rem" }}>Rank</Typography>
+      <Typography variant="caption" fontWeight={700} color="text.secondary" sx={{ flex: 1, minWidth: 0, textTransform: "uppercase", letterSpacing: "0.05em", fontSize: "0.6875rem" }}>Player</Typography>
+      <Typography variant="caption" fontWeight={700} color="text.secondary" sx={{ flexShrink: 0, textAlign: "right", textTransform: "uppercase", letterSpacing: "0.05em", fontSize: "0.6875rem" }}>{last}</Typography>
+    </Box>
   );
 }
 

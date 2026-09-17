@@ -1,68 +1,47 @@
 "use client";
 
 import Alert, { type AlertColor } from "@mui/material/Alert";
-import Button from "@mui/material/Button";
 import Snackbar from "@mui/material/Snackbar";
 import type { ReactNode } from "react";
 import { createContext, useCallback, useContext, useMemo, useState } from "react";
-
-/** Optional extras for one toast: a single action button (such as Undo) and how long it stays. */
-type ToastOptions = {
-  action?: { label: string; onClick: () => void };
-  /** Milliseconds before it closes on its own; 4 seconds by default. */
-  duration?: number;
-};
 
 type ToastState = {
   open: boolean;
   severity: AlertColor;
   message: string;
-  action: ToastOptions["action"] | null;
-  duration: number;
   /** Bumped for every toast, so a new one restarts the close timer instead of inheriting the old one's. */
   id: number;
 };
 
 type ToastContextValue = {
-  success: (message: string, options?: ToastOptions) => void;
-  info: (message: string, options?: ToastOptions) => void;
-  warning: (message: string, options?: ToastOptions) => void;
-  error: (message: string, options?: ToastOptions) => void;
+  success: (message: string) => void;
+  info: (message: string) => void;
+  warning: (message: string) => void;
+  error: (message: string) => void;
 };
 
 const ToastContext = createContext<ToastContextValue | null>(null);
-
-const DEFAULT_DURATION = 4000;
 
 const initialState: ToastState = {
   open: false,
   severity: "info",
   message: "",
-  action: null,
-  duration: DEFAULT_DURATION,
   id: 0,
 };
 
 export default function ToastProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<ToastState>(initialState);
 
-  const showToast = useCallback((severity: AlertColor, message: string, options?: ToastOptions) => {
-    setState((previous) => ({
-      open: true,
-      severity,
-      message,
-      action: options?.action ?? null,
-      duration: options?.duration ?? DEFAULT_DURATION,
-      id: previous.id + 1,
-    }));
+  const showToast = useCallback((severity: AlertColor, message: string) => {
+    setState((previous) => ({ open: true, severity, message, id: previous.id + 1 }));
   }, []);
 
   const value = useMemo<ToastContextValue>(
     () => ({
-      success: (message, options) => showToast("success", message, options),
-      info: (message, options) => showToast("info", message, options),
-      warning: (message, options) => showToast("warning", message, options),
-      error: (message, options) => showToast("error", message, options),
+      success: (message) => showToast("success", message),
+      info: (message) => showToast("info", message),
+      warning: (message) => showToast("warning", message),
+      error: (message) => showToast("error", message),
     }),
     [showToast],
   );
@@ -75,10 +54,8 @@ export default function ToastProvider({ children }: { children: ReactNode }) {
       <Snackbar
         key={state.id}
         open={state.open}
-        autoHideDuration={state.duration}
-        // A click elsewhere closes a plain toast, as it always has, but not one
-        // with an action: the Undo on it has to stay reachable.
-        onClose={(_, reason) => { if (reason === "clickaway" && state.action) return; close(); }}
+        autoHideDuration={4000}
+        onClose={close}
         anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
         sx={{
           // Pull above mobile safe-area / browser chrome and keep it from butting against screen edges.
@@ -96,16 +73,6 @@ export default function ToastProvider({ children }: { children: ReactNode }) {
           variant="filled"
           severity={state.severity}
           onClose={close}
-          action={state.action ? (
-            <Button
-              color="inherit"
-              size="small"
-              onClick={() => { state.action?.onClick(); close(); }}
-              sx={{ textTransform: "none", fontWeight: 800, minHeight: 36 }}
-            >
-              {state.action.label}
-            </Button>
-          ) : undefined}
           sx={{
             width: "100%",
             maxWidth: { sm: 480 },

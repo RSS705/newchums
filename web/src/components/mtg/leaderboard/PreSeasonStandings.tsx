@@ -10,7 +10,7 @@ import CheckCircleRoundedIcon from "@mui/icons-material/CheckCircleRounded";
 import LeaderboardRoundedIcon from "@mui/icons-material/LeaderboardRounded";
 import { AppCard } from "@/components/ui";
 import { getAvatarBaseUrl } from "@/lib/apiClient";
-import { srOnly } from "../pageBits";
+import { StandingsHeader, srOnly } from "../pageBits";
 import { MTG_TOTAL_PICKS, formatWhenZoned, type MtgProgressMember } from "../mtgTypes";
 
 const displayName = (p: { name: string | null; username: string | null; isViewer: boolean }) => (p.isViewer ? "You" : p.name || (p.username ? `@${p.username}` : "Member"));
@@ -101,9 +101,12 @@ export default function PreSeasonStandings({ members, isMember, locked, firstSta
       {isMember && (
         members ? (
           members.length > 0 && (
-            <Stack component="ol" spacing={0.75} aria-label="Standings" sx={{ m: 0, p: 0 }}>
-              {members.map((m) => <MemberRow key={m.userId} member={m} locked={locked} />)}
-            </Stack>
+            <>
+              <StandingsHeader last="Picks" />
+              <Stack component="ol" spacing={0.75} aria-label="Standings" sx={{ m: 0, p: 0 }}>
+                {members.map((m) => <MemberRow key={m.userId} member={m} locked={locked} />)}
+              </Stack>
+            </>
           )
         ) : failed ? (
           <Stack direction="row" spacing={1} alignItems="center" useFlexGap flexWrap="wrap">

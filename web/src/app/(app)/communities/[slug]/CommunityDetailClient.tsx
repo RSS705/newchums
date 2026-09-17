@@ -1580,19 +1580,14 @@ export default function CommunityDetailClient({
   const actionsBesideMembers = isChallenge && isMember;
   const secondaryActions = (
     <>
+      {/* The same outlined buttons as a plan's Edit plan and Send invite. */}
       <Tooltip title={community.join_mode === "invite_only" && community.invite_code ? "Copy the invite link. Anyone with it can join." : "Copy a link to this community"}>
         <Button
-          variant="text"
+          variant="outlined"
           size="small"
           startIcon={<ContentCopyRoundedIcon sx={{ fontSize: 16 }} />}
           onClick={handleShare}
-          sx={{
-            textTransform: "none",
-            fontWeight: 600,
-            borderRadius: 2,
-            color: "text.secondary",
-            "&:hover": { bgcolor: "action.hover", color: "text.primary" },
-          }}
+          sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2 }}
         >
           {community.join_mode === "invite_only" && community.invite_code ? "Invite link" : "Share"}
         </Button>
@@ -1603,7 +1598,7 @@ export default function CommunityDetailClient({
           size="small"
           startIcon={<EditRoundedIcon sx={{ fontSize: 16 }} />}
           onClick={() => router.push(`/communities/${slug}/edit`)}
-          sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2, borderColor: "divider", color: "text.secondary" }}
+          sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2 }}
         >
           Edit
         </Button>

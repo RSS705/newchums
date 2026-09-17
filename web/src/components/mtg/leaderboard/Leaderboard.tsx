@@ -19,7 +19,7 @@ import PsychologyAltRoundedIcon from "@mui/icons-material/PsychologyAltRounded";
 import { AppCard } from "@/components/ui";
 import { apiFetch, getAvatarBaseUrl } from "@/lib/apiClient";
 import { BadgeIcon } from "../badgeIcons";
-import { srOnly } from "../pageBits";
+import { StandingsHeader, srOnly } from "../pageBits";
 import BadgeChip from "../reveal/BadgeChip";
 import EveryoneBoard from "./EveryoneBoard";
 import { MTG_RARITIES, RARITY_LABEL, seasonQuery, type MtgLeaderboardPayload, type MtgLeaderboardRow } from "../mtgTypes";
@@ -402,6 +402,7 @@ export default function Leaderboard({ communityId, slug, setCode, nowMs, firstSt
             <Box component="span" sx={{ color: UP, fontWeight: 800 }}>{signed(best.change)}</Box>.
           </Typography>
         )}
+        {s.rows.length > 0 && <StandingsHeader last="Points" />}
         <Stack component="ol" spacing={0.75} aria-label="Standings" sx={{ m: 0, p: 0 }}>
           {items.map((item, i) =>
             item.kind === "player" ? (
