@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import NextLink from "next/link";
 import Avatar from "@mui/material/Avatar";
 import Box from "@mui/material/Box";
@@ -19,14 +19,20 @@ import ShareResultsImage from "./ShareResultsImage";
 import { ordinal, seasonQuery, type MtgBadgeTier, type MtgCeremonyBadge, type MtgResultsPayload } from "../mtgTypes";
 
 type Results = NonNullable<MtgResultsPayload["results"]>;
-type Load = { kind: "loading" } | { kind: "error" } | { kind: "ready"; data: MtgResultsPayload };
+type Load = { kind: "loading" } | { kind: "error"; retrying: boolean } | { kind: "ready"; data: MtgResultsPayload };
 
 const whole = (n: number) => Math.round(n).toLocaleString("en-US");
 const personName = (p: { name: string | null; username: string | null }) => p.name?.trim() || (p.username ? `@${p.username}` : "Member");
 /** A phone's podium column fits a first name; the standings below give the full one. */
 const firstName = (p: { name: string | null; username: string | null }) => p.name?.trim().split(/\s+/)[0] || personName(p);
-/** A YYYY-MM-DD day as "Friday, November 13". */
-const longDay = (key: string) => new Intl.DateTimeFormat("en-US", { timeZone: "UTC", weekday: "long", month: "long", day: "numeric" }).format(new Date(`${key}T12:00:00Z`));
+/** A YYYY-MM-DD day as "Friday, November 13, 2026": results outlive their season, in chats and on past-season pages. */
+const longDay = (key: string) => new Intl.DateTimeFormat("en-US", { timeZone: "UTC", weekday: "long", month: "long", day: "numeric", year: "numeric" }).format(new Date(`${key}T12:00:00Z`));
+/** A whole podium column as the link's target: the link's box covers its step. */
+const stretched = {
+  "&::after": { content: '""', position: "absolute", inset: 0, borderRadius: "10px" },
+  "&:focus-visible": { outline: "none" },
+  "&:focus-visible::after": { outline: "2px solid", outlineColor: "primary.main", outlineOffset: 2 },
+} as const;
 const clampTwo = { display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", overflowWrap: "anywhere" } as const;
 
 /** Podium steps in medal colors; each label is 4.5:1 or better on its step. */
@@ -44,6 +50,7 @@ const CEREMONY_FIRST = 8;
  * third on the right, the middle a little wider. Tied players share a step.
  * The list is in rank order for screen readers; only the grid moves the
  * steps into place. Phones show first names, with the full name to screen readers.
+ * A step with one player is a link as a whole, not just its name.
  */
 function Podium({ podium, hrefFor }: { podium: Results["podium"]; hrefFor: (userId: string) => string }) {
   const ranks = [...new Set(podium.map((p) => p.rank))].sort((a, b) => a - b);
@@ -54,7 +61,15 @@ function Podium({ podium, hrefFor }: { podium: Results["podium"]; hrefFor: (user
         const step = STEPS[rank] ?? STEPS[3];
         const avatar = rank === 1 ? { xs: "44px", sm: "56px" } : { xs: "36px", sm: "44px" };
         return (
-          <Box component="li" key={rank} sx={{ gridColumn: [2, 1, 3][i], gridRow: 1, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}>
+          <Box
+            component="li"
+            key={rank}
+            sx={{
+              gridColumn: [2, 1, 3][i], gridRow: 1, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center",
+              position: people.length === 1 ? "relative" : undefined, borderRadius: "10px",
+              "@media (hover: hover)": people.length === 1 ? { "&:hover": { bgcolor: "action.hover" } } : {},
+            }}
+          >
             <Box component="span" sx={srOnly}>{ordinal(rank)} place: </Box>
             <Stack direction="row" justifyContent="center" aria-hidden sx={{ mb: 0.75 }}>
               {people.slice(0, 3).map((p, j) => (
@@ -71,7 +86,7 @@ function Podium({ podium, hrefFor }: { podium: Results["podium"]; hrefFor: (user
               {people.map((p, j) => (
                 <Typography key={p.userId} variant="body2" fontWeight={700} sx={{ lineHeight: 1.25, fontSize: { xs: "0.8125rem", sm: "0.875rem" }, ...clampTwo }}>
                   {j > 0 && <Box component="span" sx={srOnly}>and </Box>}
-                  <Link component={NextLink} href={hrefFor(p.userId)} underline="hover" color="text.primary" aria-label={p.isViewer ? "You" : personName(p)}>
+                  <Link component={NextLink} href={hrefFor(p.userId)} underline="hover" color="text.primary" aria-label={p.isViewer ? "You" : personName(p)} sx={people.length === 1 ? stretched : undefined}>
                     <Box component="span" sx={{ display: { xs: "none", sm: "inline" } }}>{p.isViewer ? "You" : personName(p)}</Box>
                     <Box component="span" sx={{ display: { xs: "inline", sm: "none" } }}>{p.isViewer ? "You" : firstName(p)}</Box>
                   </Link>
@@ -162,41 +177,65 @@ type Props = {
 
 /**
  * A finished season in a group (spec 10.2 and 10.5): the podium, the
- * viewer's own finish, the share image and the badge ceremony. Renders
- * nothing for a season that isn't over, or until it has loaded.
+ * viewer's own finish, the share image and the badge ceremony. The final
+ * standings (`between`) show whatever happens to the podium's request; the
+ * podium card says when it's loading or failed. Nothing else shows for a
+ * season that isn't over.
  */
 export default function SeasonResults({ communityId, communityName, slug, setCode, past = false, heading, seasonHref, between }: Props) {
   const [load, setLoad] = useState<Load>({ kind: "loading" });
+  // Bumped by each request, so a slow answer for an earlier season never replaces a newer one.
+  const requestRef = useRef(0);
 
   const fetchResults = useCallback(async () => {
+    const id = ++requestRef.current;
     try {
       const res = await apiFetch(`/mtg/communities/${communityId}/results${seasonQuery(setCode)}`, { auth: true });
       const body = await res.json();
-      setLoad(res.ok && body.ok ? { kind: "ready", data: body as MtgResultsPayload } : { kind: "error" });
+      if (id !== requestRef.current) return;
+      setLoad(res.ok && body.ok ? { kind: "ready", data: body as MtgResultsPayload } : { kind: "error", retrying: false });
     } catch {
-      setLoad({ kind: "error" });
+      if (id === requestRef.current) setLoad({ kind: "error", retrying: false });
     }
   }, [communityId, setCode]);
 
+  // Leaving the season (or the page) drops any answer still on its way.
+  const dropPending = useCallback(() => { requestRef.current += 1; }, []);
   useEffect(() => {
     const t = setTimeout(() => { fetchResults(); }, 0);
-    return () => clearTimeout(t);
-  }, [fetchResults]);
+    return () => { clearTimeout(t); dropPending(); };
+  }, [fetchResults, dropPending]);
 
-  if (load.kind === "loading") return null;
-  if (load.kind === "error") {
+  const icon = <EmojiEventsRoundedIcon sx={{ fontSize: 18 }} />;
+  if (load.kind !== "ready") {
     return (
-      <AppCard>
-        <IconTitle icon={<EmojiEventsRoundedIcon sx={{ fontSize: 18 }} />} title={heading ?? "Season results"} />
-        <Stack direction="row" spacing={1} alignItems="center" useFlexGap flexWrap="wrap">
-          <Typography variant="body2" color="text.secondary">We couldn&apos;t load the final standings.</Typography>
-          <Button variant="text" size="small" onClick={() => { setLoad({ kind: "loading" }); fetchResults(); }} sx={{ textTransform: "none", fontWeight: 700, minHeight: 40 }}>Try again</Button>
-        </Stack>
-      </AppCard>
+      <>
+        <AppCard>
+          <IconTitle icon={icon} title={heading ?? "Season results"} />
+          {load.kind === "loading" ? (
+            <Typography variant="body2" color="text.secondary">Loading the podium…</Typography>
+          ) : (
+            <Stack direction="row" spacing={1} alignItems="center" useFlexGap flexWrap="wrap">
+              <Typography variant="body2" color="text.secondary" role="alert">We couldn&apos;t load the podium.</Typography>
+              {/* The button stays put while it retries, so keyboard focus stays on it. */}
+              <Button
+                variant="text"
+                size="small"
+                aria-disabled={load.retrying}
+                onClick={() => { if (load.retrying) return; setLoad({ kind: "error", retrying: true }); fetchResults(); }}
+                sx={{ textTransform: "none", fontWeight: 700, minHeight: 40 }}
+              >
+                {load.retrying ? "Trying again…" : "Try again"}
+              </Button>
+            </Stack>
+          )}
+        </AppCard>
+        {between}
+      </>
     );
   }
   const { set, results: r } = load.data;
-  if (!r) return null;
+  if (!r) return <>{between}</>;
 
   const hrefFor = (userId: string) => `/communities/${slug}/players/${userId}${past ? seasonQuery(set.code) : ""}`;
   const v = r.viewer;
@@ -216,13 +255,14 @@ export default function SeasonResults({ communityId, communityName, slug, setCod
         )}
         {v && (
           <Typography variant="body2" sx={{ mt: 2, lineHeight: 1.55 }}>
-            {v.rank === 1 ? "You're the champion, first" : `You finished ${ordinal(v.rank)}`} of {r.players} with {whole(v.total)} points
-            {v.badgeCount > 0 ? `, and earned ${v.badgeCount} ${v.badgeCount === 1 ? "badge" : "badges"}` : ""}.
+            {v.champion ? `You're the champion of ${communityName}, with ${whole(v.total)} points.` : `You finished ${ordinal(v.rank)} of ${r.players} with ${whole(v.total)} points.`}
+            {v.badgeCount > 0 ? ` You earned ${v.badgeCount} ${v.badgeCount === 1 ? "badge" : "badges"}.` : ""}
           </Typography>
         )}
         <Stack direction="row" spacing={1.25} useFlexGap flexWrap="wrap" alignItems="center" sx={{ mt: 2 }}>
           {r.podium.length > 0 && (
             <ShareResultsImage
+              setCode={set.code}
               setName={set.name}
               groupName={communityName}
               finalDateLabel={longDay(r.date)}

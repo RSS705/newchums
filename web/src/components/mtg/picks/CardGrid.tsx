@@ -13,6 +13,8 @@ import Stack from "@mui/material/Stack";
 import Switch from "@mui/material/Switch";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
+import { useTheme } from "@mui/material/styles";
+import useMediaQuery from "@mui/material/useMediaQuery";
 import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import TuneRoundedIcon from "@mui/icons-material/TuneRounded";
 import type { MtgCardWithNew } from "../mtgTypes";
@@ -35,6 +37,7 @@ function toggle<T>(list: T[], value: T): T[] {
 /** Search, filters and the card grid for one rarity. */
 export default function CardGrid({ cards, visible, filters, onFiltersChange, pickedSlotById, onOpen, pluralLabel }: Props) {
   const [showFilters, setShowFilters] = useState(false);
+  const narrow = useMediaQuery(useTheme().breakpoints.down("sm"), { noSsr: true });
   const active = activeFilterCount(filters);
   const set = (patch: Partial<CardFilters>) => onFiltersChange({ ...filters, ...patch });
 
@@ -46,7 +49,8 @@ export default function CardGrid({ cards, visible, filters, onFiltersChange, pic
           fullWidth
           value={filters.search}
           onChange={(e) => set({ search: e.target.value })}
-          placeholder={`Search ${pluralLabel} by name or rules text`}
+          // A phone's field shows about ten letters beside the Filters button.
+          placeholder={narrow ? "Search" : `Search ${pluralLabel} by name or rules text`}
           slotProps={{
             input: { startAdornment: <InputAdornment position="start"><SearchRoundedIcon sx={{ fontSize: 20 }} /></InputAdornment> },
             htmlInput: { "aria-label": `Search ${pluralLabel}` },

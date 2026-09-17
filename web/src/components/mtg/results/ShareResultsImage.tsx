@@ -14,8 +14,11 @@ import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import DownloadRoundedIcon from "@mui/icons-material/DownloadRounded";
 import IosShareRoundedIcon from "@mui/icons-material/IosShareRounded";
 import { ordinal } from "../mtgTypes";
+import { srOnly } from "../pageBits";
 
 export type ShareResultsImageProps = {
+  /** Names the downloaded file, so each season's image keeps its own name. */
+  setCode: string;
   setName: string;
   groupName: string;
   finalDateLabel: string;
@@ -50,6 +53,8 @@ const INK_FAINT = "#9CA3AF";
 const PANEL = "#F3F4F6";
 const RULE = "#E5E7EB";
 const MEDAL: Record<number, string> = { 1: "#D4A017", 2: "#9CA3AF", 3: "#B87333" };
+/** Medal numbers in dark ink: 8.3:1 on gold, 7.3:1 on silver and 4.6:1 on bronze, where white was under 3:1 on the first two. */
+const MEDAL_INK = "#1F2937";
 /** Failure text at 6.5:1 on white, as on the Everyone board; the theme's error color is too light for small type. */
 const FAILED = "#B91C1C";
 
@@ -80,8 +85,8 @@ const whole = (n: number) => (Math.round(n) || 0).toLocaleString("en-US");
 const pointsText = (n: number) => `${whole(n)} ${Math.round(n) === 1 ? "point" : "points"}`;
 const isAbort = (err: unknown) => typeof err === "object" && err !== null && "name" in err && err.name === "AbortError";
 
-/** "FRA Seven" → "fra-seven-final-standings.png". */
-function fileNameFor(groupName: string): string {
+/** "FRA Seven" and "fra" → "fra-seven-fra-final-standings.png". */
+function fileNameFor(groupName: string, setCode: string): string {
   const slug = groupName
     .normalize("NFKD")
     .replace(/[\u0300-\u036f]/g, "")
@@ -89,7 +94,8 @@ function fileNameFor(groupName: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .slice(0, 60)
     .replace(/^-+|-+$/g, "");
-  return `${slug || "mtg"}-final-standings.png`;
+  const set = setCode.toLowerCase().replace(/[^a-z0-9]+/g, "");
+  return `${slug || "mtg"}${set ? `-${set}` : ""}-final-standings.png`;
 }
 
 /** The page's font as its text actually renders. MUI text, this button
@@ -323,7 +329,7 @@ async function drawResultsImage(p: ShareResultsImageProps, pageFamily: string): 
     const up = ink.actualBoundingBoxAscent || cap(rank.size);
     const down = ink.actualBoundingBoxDescent || 0;
     const shift = (ink.actualBoundingBoxRight - ink.actualBoundingBoxLeft) / 2 || 0;
-    ctx.fillStyle = "#FFFFFF";
+    ctx.fillStyle = MEDAL_INK;
     ctx.fillText(rank.text, cx - shift, cy + (up - down) / 2);
 
     // Points at the right edge, then the name in the room that's left.
@@ -366,7 +372,7 @@ async function drawResultsImage(p: ShareResultsImageProps, pageFamily: string): 
  * happens on the click, never at load, and the image goes when the dialog closes.
  */
 export default function ShareResultsImage(props: ShareResultsImageProps) {
-  const { setName, groupName, players, podium, viewer } = props;
+  const { setCode, setName, groupName, players, podium, viewer } = props;
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   // Bumped by each draw and on unmount, so a draw that finishes after a newer
   // one, or after the page has gone, is dropped instead of opening or leaking.
@@ -385,14 +391,10 @@ export default function ShareResultsImage(props: ShareResultsImageProps) {
   }, [image]);
   useEffect(() => () => { drawRef.current += 1; }, []);
 
-  const fileName = fileNameFor(groupName);
+  const fileName = fileNameFor(groupName, setCode);
   const viewerName = viewer?.name.trim() || "You";
   const podiumText = podium.slice(0, 3).map((r) => `${ordinal(r.rank)} ${r.name}, ${pointsText(r.total)}`).join("; ");
   const alt = `Final standings image for ${groupName}, ${setName}${podiumText ? `: ${podiumText}` : ""}${viewer ? `. ${viewerName} finished ${ordinal(viewer.rank)} of ${whole(players)}` : ""}.`;
-  const shareTitle = `${groupName} final standings`;
-  const shareText = viewer
-    ? `I finished ${ordinal(viewer.rank)} of ${whole(players)} in the ${setName} challenge in ${groupName}.`
-    : `Final standings for the ${setName} challenge in ${groupName}.`;
 
   const makeImage = async () => {
     if (busy) return;
@@ -424,7 +426,8 @@ export default function ShareResultsImage(props: ShareResultsImageProps) {
     if (!image) return;
     setShareError(null);
     try {
-      await navigator.share({ files: [image.file], title: shareTitle, text: shareText });
+      // The file alone: with text beside it, iOS can drop Save Image from the sheet and some chat apps keep only the text.
+      await navigator.share({ files: [image.file] });
     } catch (err) {
       // Closing the share sheet without picking an app isn't a failure.
       if (isAbort(err)) return;
@@ -438,6 +441,9 @@ export default function ShareResultsImage(props: ShareResultsImageProps) {
   return (
     <Box sx={{ minWidth: 0 }}>
       {/* Not disabled while drawing: a disabled button can lose keyboard focus, and the dialog would then have nothing to hand focus back to on close. */}
+      <Box component="span" role="status" sx={srOnly}>
+        {busy ? "Making the results image…" : ""}
+      </Box>
       <Button
         ref={buttonRef}
         variant="outlined"
@@ -453,7 +459,7 @@ export default function ShareResultsImage(props: ShareResultsImageProps) {
       )}
 
       <Dialog open={open} onClose={close} fullWidth maxWidth="xs" slotProps={{ transition: { onExited: () => setImage(null) } }}>
-        <DialogTitle sx={{ pr: { xs: 7, sm: 8 } }}>Your results image</DialogTitle>
+        <DialogTitle sx={{ pr: { xs: 7, sm: 8 } }}>{viewer ? "Your results image" : "The results image"}</DialogTitle>
         <IconButton onClick={close} aria-label="Close" sx={{ position: "absolute", top: { xs: 8, sm: 12 }, right: { xs: 6, sm: 12 }, width: 44, height: 44 }}>
           <CloseRoundedIcon />
         </IconButton>
@@ -461,6 +467,12 @@ export default function ShareResultsImage(props: ShareResultsImageProps) {
           {image && (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={image.url} alt={alt} width={SIZE} height={SIZE} style={{ display: "block", width: "100%", height: "auto", borderRadius: 12 }} />
+          )}
+          {image && (
+            <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1 }}>
+              {/* Browsers inside apps, like a chat app's, often ignore downloads. */}
+              If Download doesn&apos;t save it, press and hold the image to save it.
+            </Typography>
           )}
           {shareError && (
             <Typography variant="body2" role="alert" sx={{ mt: 1.5, color: FAILED }}>{shareError}</Typography>

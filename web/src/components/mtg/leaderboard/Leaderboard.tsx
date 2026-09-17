@@ -276,10 +276,13 @@ export default function Leaderboard({ communityId, slug, setCode, nowMs, firstSt
 
   // Load on mount, again when the tab comes back into view, and every half
   // hour while it stays open; each runs from a callback, not the effect body.
+  // Final standings never change, so once they're here nothing reloads.
+  const finalLoaded = useRef(false);
   useEffect(() => {
     const first = setTimeout(() => { load(); }, 0);
-    const onVisible = () => { if (document.visibilityState === "visible" && Date.now() - lastFetch.current > 60000) load(); };
-    const tick = setInterval(() => { if (document.visibilityState === "visible" && Date.now() - lastFetch.current > REFRESH_MS) load(); }, 60000);
+    const stale = (ms: number) => !finalLoaded.current && document.visibilityState === "visible" && Date.now() - lastFetch.current > ms;
+    const onVisible = () => { if (stale(60000)) load(); };
+    const tick = setInterval(() => { if (stale(REFRESH_MS)) load(); }, 60000);
     document.addEventListener("visibilitychange", onVisible);
     return () => {
       clearTimeout(first);
@@ -289,6 +292,7 @@ export default function Leaderboard({ communityId, slug, setCode, nowMs, firstSt
   }, [load]);
 
   const s = data?.standings ?? null;
+  useEffect(() => { finalLoaded.current = !!s?.isFinal; }, [s]);
   const items = useMemo<Item[]>(() => {
     if (!s || s.rows.length === 0) return [];
     const ghosts: Array<{ item: Item; total: number }> = [{ item: { kind: "random" }, total: s.randomPicks }];
@@ -411,12 +415,14 @@ export default function Leaderboard({ communityId, slug, setCode, nowMs, firstSt
         )}
         {noEntry.length > 0 && (
           <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1.5 }}>
-            {joinNames(noEntry.map((p) => displayName(p)))} {noEntry.length === 1 && !noEntry[0].isViewer ? "is" : "are"} following along.
+            {joinNames(noEntry.map((p) => displayName(p)))}{" "}
+            {s.isFinal ? "didn't make picks this season." : `${noEntry.length === 1 && !noEntry[0].isViewer ? "is" : "are"} following along.`}
           </Typography>
         )}
         {lateJoiners.length > 0 && (
           <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: noEntry.length > 0 ? 0.5 : 1.5 }}>
-            {joinNames(lateJoiners.map((p) => displayName(p)))} joined after picks locked, so {lateJoiners.some((p) => p.isViewer) ? "you play" : "they play"} from the next season.
+            {joinNames(lateJoiners.map((p) => displayName(p)))} joined after picks locked, so{" "}
+            {lateJoiners.length === 1 ? (lateJoiners[0].isViewer ? "you play" : "they play") : lateJoiners.some((p) => p.isViewer) ? "you all play" : "they all play"} from the next season.
           </Typography>
         )}
         </>

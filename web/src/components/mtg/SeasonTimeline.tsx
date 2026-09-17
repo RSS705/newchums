@@ -21,6 +21,16 @@ const TITLE_LINE = 24;
 /** 6.5:1 on white and 5.6:1 on the highlighted row. */
 const LOCK_RED = "#B91C1C";
 
+/** A milestone set to midnight Eastern is a date, not a moment, so it shows as
+ *  that Eastern date: in the reader's zone it would move to the evening before
+ *  for anyone west of New York. */
+function easternDateOnly(iso: string): string | null {
+  const d = new Date(iso);
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "numeric", hourCycle: "h23" }).formatToParts(d).map((p) => [p.type, p.value]));
+  if (Number(parts.hour) !== 0 || Number(parts.minute) !== 0) return null;
+  return new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", weekday: "short", month: "short", day: "numeric" }).format(d);
+}
+
 /** The dates that matter to players, each with done / now / upcoming, shown
  *  in the viewer's own time zone. The current phase is highlighted, and the
  *  lock is in red. */
@@ -28,7 +38,7 @@ export default function SeasonTimeline({ entries, setName }: { entries: Timeline
   // Server HTML cannot know the reader's time zone, so it shows Eastern time
   // and the client swaps in local times after hydration.
   const hydrated = useHydrated();
-  const when = (iso: string) => (hydrated ? formatWhen(iso) : formatWhenEastern(iso));
+  const when = (iso: string) => easternDateOnly(iso) ?? (hydrated ? formatWhen(iso) : formatWhenEastern(iso));
   return (
     <AppCard>
       <Stack direction="row" spacing={1.25} alignItems="center" sx={{ mb: 1.75 }}>
@@ -36,7 +46,7 @@ export default function SeasonTimeline({ entries, setName }: { entries: Timeline
           <CalendarMonthRoundedIcon sx={{ fontSize: 18 }} />
         </Box>
         <Box sx={{ minWidth: 0 }}>
-          <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem", lineHeight: 1.2 }}>Season timeline</Typography>
+          <Typography variant="h6" component="h2" fontWeight={700} sx={{ fontSize: "1.0625rem", lineHeight: 1.2 }}>Season timeline</Typography>
           <Typography variant="caption" color="text.secondary">{setName}. Times are shown in {hydrated ? "your time zone" : "Eastern time"}.</Typography>
         </Box>
       </Stack>
@@ -57,7 +67,8 @@ export default function SeasonTimeline({ entries, setName }: { entries: Timeline
                 bgcolor: isNow ? "primary.light" : "transparent",
                 borderTop: i === 0 ? 0 : "1px solid",
                 borderColor: "divider",
-                opacity: done ? 0.6 : 1,
+                // Dimmed, not faded out: done entries keep readable contrast.
+                opacity: done ? 0.8 : 1,
               }}
             >
               <Box sx={{ height: TITLE_LINE, display: "flex", alignItems: "center", flexShrink: 0 }}>
@@ -78,7 +89,7 @@ export default function SeasonTimeline({ entries, setName }: { entries: Timeline
                 <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
                   {when(e.at)}{e.endAt ? ` to ${when(e.endAt)}` : ""}
                 </Typography>
-                <Typography variant="caption" sx={{ display: "block", color: done ? "text.disabled" : "text.secondary", lineHeight: 1.45 }}>
+                <Typography variant="caption" sx={{ display: "block", color: "text.secondary", lineHeight: 1.45 }}>
                   {e.detail}
                 </Typography>
               </Box>

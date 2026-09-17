@@ -154,12 +154,22 @@ describe("mtgIngestSlot", () => {
   const set = { arena_release_at: "2026-09-29T18:00:00Z", final_at: "2026-10-27T13:00:00Z" };
 
   it("runs at 9, 11, 1, 4 and 8 ET from the day after the launch through the final day", () => {
-    expect(mtgIngestSlot(set, new Date("2026-09-30T13:00:00Z"))).toEqual({ due: true, date: "2026-09-30", last: false });
+    expect(mtgIngestSlot(set, new Date("2026-09-30T13:00:00Z"))).toEqual({ due: true, date: "2026-09-30", last: false, catchUp: false });
     expect(mtgIngestSlot(set, new Date("2026-09-30T14:00:00Z")).due).toBe(false);
-    expect(mtgIngestSlot(set, new Date("2026-10-01T00:00:00Z"))).toEqual({ due: true, date: "2026-09-30", last: true });
+    expect(mtgIngestSlot(set, new Date("2026-10-01T00:00:00Z"))).toEqual({ due: true, date: "2026-09-30", last: true, catchUp: false });
     expect(mtgIngestSlot(set, new Date("2026-09-29T20:00:00Z")).due).toBe(false);
     expect(mtgIngestSlot(set, new Date("2026-10-27T13:00:00Z")).due).toBe(true);
-    expect(mtgIngestSlot(set, new Date("2026-10-28T13:00:00Z")).due).toBe(false);
+  });
+
+  it("retries the final day's standings the next day, under the final day's date, and then stops", () => {
+    expect(mtgIngestSlot(set, new Date("2026-10-28T13:00:00Z"))).toEqual({ due: true, date: "2026-10-27", last: false, catchUp: true });
+    expect(mtgIngestSlot(set, new Date("2026-10-29T00:00:00Z"))).toEqual({ due: true, date: "2026-10-27", last: true, catchUp: true });
+    expect(mtgIngestSlot(set, new Date("2026-10-28T14:00:00Z")).due).toBe(false);
+    expect(mtgIngestSlot(set, new Date("2026-10-29T13:00:00Z")).due).toBe(false);
+    // Reality Fracture: Friday, November 13 at 9 AM EST, retried Saturday at 9 AM through 8 PM EST.
+    const fra = { arena_release_at: "2026-09-29T18:00:00Z", final_at: "2026-11-13T14:00:00Z" };
+    expect(mtgIngestSlot(fra, new Date("2026-11-14T14:00:00Z"))).toMatchObject({ due: true, date: "2026-11-13", catchUp: true });
+    expect(mtgIngestSlot(fra, new Date("2026-11-15T01:00:00Z"))).toMatchObject({ due: true, date: "2026-11-13", last: true, catchUp: true });
   });
 
   it("follows Eastern time across the end of daylight saving", () => {

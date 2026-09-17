@@ -71,7 +71,7 @@ export default function HowScoringWorksContent({ set }: { set: MtgSetPayload | n
                 </Box>
               </Section>
               <Section title="Your score">
-                <strong>Card Score × multiplier,</strong> added up across all 20 picks. Random picks average about 1,000 points; a perfect, hindsight-is-20/20 entry scores about 1,940.
+                <strong>Card Score × multiplier,</strong> added up across all 20 picks. Random picks average about 1,000 points; a perfect, hindsight-is-20/20 set of picks scores about 1,940.
               </Section>
               <Section title="Small samples">
                 In the first few days some cards have only a handful of games. Until 17Lands publishes a win rate for a card, it scores a neutral 50. After that, we blend its win rate toward its rarity&apos;s average until it&apos;s been played a lot, so one lucky day can&apos;t make a card look like a bomb.
@@ -85,10 +85,10 @@ export default function HowScoringWorksContent({ set }: { set: MtgSetPayload | n
                     Picks lock <strong>{easternLong(set.dates.lockAt)}</strong>
                     {set.dates.prereleaseStartAt ? ", before prerelease weekend starts" : ""}.
                     {firstStandings ? ` Standings update daily from ${easternDate(firstStandings)}.` : ""}
-                    {` The season ends ${easternDate(set.dates.finalAt)}; the standings that morning are final, and badges are awarded.`}
+                    {` The season ends ${easternDate(set.dates.finalAt)}: that day's standings are final, and badges are awarded.`}
                   </>
                 ) : (
-                  "Picks lock before prerelease weekend starts. Standings update daily from the morning after the set launches on Arena, and the season runs until the next set comes out, when the standings that morning are final and badges are awarded."
+                  "Picks lock before prerelease weekend starts. Standings update daily from the morning after the set launches on Arena, and the season runs until the next set comes out, when that day's standings are final and badges are awarded."
                 )}
               </Section>
               <Section title="Badges">
@@ -105,7 +105,7 @@ export default function HowScoringWorksContent({ set }: { set: MtgSetPayload | n
 
           {set && set.timeline.length > 0 && <SeasonTimeline entries={set.timeline} setName={set.name} />}
 
-          <Typography variant="caption" color="text.disabled" sx={{ display: "block", lineHeight: 1.6 }}>{MTG_ATTRIBUTION}</Typography>
+          <Typography variant="caption" color="text.secondary" sx={{ display: "block", lineHeight: 1.6 }}>{MTG_ATTRIBUTION}</Typography>
         </Stack>
       </Container>
     </Box>

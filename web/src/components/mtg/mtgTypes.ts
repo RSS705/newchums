@@ -392,8 +392,9 @@ export type MtgResultsPayload = {
     /** Ranks 1 to 3; tied players share a rank. */
     podium: Array<MtgResultsPerson & { avatarUrl: string | null; rank: number; total: number }>;
     badges: MtgCeremonyBadge[];
-    /** The viewer's finish, when they played: `name` as the group sees it, `topBadges` their three best badge names. */
-    viewer: null | { rank: number; total: number; name: string; badgeCount: number; topBadges: string[] };
+    /** The viewer's finish, when they played: `name` as the group sees it, `topBadges` their three best badge names,
+     *  `champion` whether they hold the group's Champion badge (a group under three players has none). */
+    viewer: null | { rank: number; total: number; name: string; badgeCount: number; topBadges: string[]; champion: boolean };
   };
 };
 

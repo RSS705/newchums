@@ -56,6 +56,7 @@ export default function ProfileSectionHeader({
         <Stack direction="row" spacing={1} alignItems="baseline" useFlexGap>
           <Typography
             variant="h6"
+            component="h2"
             fontWeight={700}
             sx={{ fontSize: { xs: "1rem", sm: "1.125rem" }, lineHeight: 1.3 }}
           >
@@ -77,7 +78,7 @@ export default function ProfileSectionHeader({
         {subtitle && (
           <Typography
             variant="caption"
-            color="text.disabled"
+            color="text.secondary"
             sx={{ fontSize: "0.75rem", display: "block", lineHeight: 1.35 }}
           >
             {subtitle}

@@ -93,12 +93,14 @@ export default function SeasonView() {
       select
       size="small"
       label="Season"
+      // The theme makes fields full width, which on wider screens squeezed the title beside it.
+      fullWidth={false}
       value={season ? season.code : ""}
       onChange={(e) => {
         const next = seasons.find((s) => s.code === e.target.value);
         if (next) router.push(seasonPageHref(slug, next));
       }}
-      sx={{ minWidth: 220, maxWidth: "100%" }}
+      sx={{ width: { xs: "100%", sm: 240 }, flexShrink: 0 }}
     >
       {seasons.map((s) => (
         <MenuItem key={s.code} value={s.code}>{s.name}{s.isCurrent && !s.final ? " (being played)" : ""}</MenuItem>
@@ -126,7 +128,7 @@ export default function SeasonView() {
       {!season || !season.final ? (
         <AppCard>
           <Typography variant="body2" color="text.secondary">
-            {season ? "Its standings are on the group's page until the final day." : "Pick a season the group played, or go back to the group."}
+            {season ? "Its standings are on the group's page until the final day." : seasons.length > 1 ? "Pick a season the group played, or go back to the group." : "Go back to the group to see its season."}
           </Typography>
           <Button component={NextLink} href={`/communities/${slug}`} variant="contained" sx={{ mt: 1.5, textTransform: "none", fontWeight: 700, borderRadius: 2.5, boxShadow: "none", minHeight: 44 }}>
             Go to {load.group.name}

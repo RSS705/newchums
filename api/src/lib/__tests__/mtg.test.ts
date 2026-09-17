@@ -63,9 +63,21 @@ describe("mtgTimeline", () => {
     expect(mtgTimeline({ ...fra, final_at: "2026-11-13T14:00:00Z" }).some((e) => e.key.startsWith("weekly"))).toBe(false);
   });
 
-  it("marks everything done after the final day", () => {
-    const entries = mtgTimeline(fra, new Date("2026-11-01T00:00:00Z"));
+  it("marks everything done once the season is finalized", () => {
+    const entries = mtgTimeline({ ...fra, status: "final", finalized_at: "2026-10-27T13:05:00Z" }, new Date("2026-11-01T00:00:00Z"));
     expect(entries.every((e) => e.status === "done")).toBe(true);
+  });
+
+  it("keeps the final day happening until the season is finalized, however late", () => {
+    const entries = mtgTimeline(fra, new Date("2026-11-01T00:00:00Z"));
+    expect(entries.find((e) => e.key === "final")?.status).toBe("now");
+    expect(entries.filter((e) => e.key !== "final").every((e) => e.status === "done")).toBe(true);
+  });
+
+  it("keeps picks open on the timeline until the lock, past the full card list", () => {
+    const previews = mtgTimeline(fra, new Date("2026-09-20T00:00:00Z")).find((e) => e.key === "previews");
+    expect(previews?.endAt).toBe(fra.lock_at);
+    expect(previews?.status).toBe("now");
   });
 });
 
@@ -101,6 +113,12 @@ describe("the season's end", () => {
     expect(mtgFinalizeDue(season, "2026-11-12", at("2026-11-13T20:00:00Z"))).toBe(false);
     expect(mtgFinalizeDue(season, "2026-11-12", new Date(Date.parse(season.final_at) + MTG_FINALIZE_GRACE_MS - 1))).toBe(false);
     expect(mtgFinalizeDue(season, "2026-11-12", new Date(Date.parse(season.final_at) + MTG_FINALIZE_GRACE_MS))).toBe(true);
+  });
+
+  it("waits through the next day's retries, and leaves a reopened season for an admin", () => {
+    // 36 hours after 9 AM EST is 9 PM EST the next day, after the 8 PM retry.
+    expect(new Date(Date.parse(season.final_at) + MTG_FINALIZE_GRACE_MS).toISOString()).toBe("2026-11-15T02:00:00.000Z");
+    expect(mtgFinalizeDue({ ...season, reopened_at: "2026-11-13T16:00:00Z" }, "2026-11-13", at("2026-11-13T17:00:00Z"))).toBe(false);
   });
 
   it("never finalizes without standings, or a season that isn't active", () => {

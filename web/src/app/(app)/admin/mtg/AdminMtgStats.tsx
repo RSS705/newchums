@@ -56,11 +56,13 @@ function describeResult(r: IngestResult): string {
  * score on all of them. A dry run rehearses a fetch without publishing, and
  * naming a day retries one that has already ended.
  */
-export default function AdminMtgStats({ code }: { code: string }) {
+/** `over`: the season is final or archived, so the API refuses every change to its standings. */
+export default function AdminMtgStats({ code, over = false }: { code: string; over?: boolean }) {
   const toast = useToast();
   const [data, setData] = useState<StatsPayload | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
+  const frozen = busy !== null || over;
   const [pasteOpen, setPasteOpen] = useState(false);
   const [paste, setPaste] = useState("");
   const [retry, setRetry] = useState<{ kind: "fetch" | "paste"; message: string; canForce: boolean } | null>(null);
@@ -207,20 +209,21 @@ export default function AdminMtgStats({ code }: { code: string }) {
     <Box sx={{ mt: 2.5, pt: 2, borderTop: "1px solid", borderColor: "divider" }}>
       <Typography variant="subtitle2" fontWeight={800}>Stats from 17Lands</Typography>
       <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1.5 }}>
-        Pulled at 9 and 11 AM, 1, 4 and 8 PM ET from the morning after the Arena launch through the final day. {latest ? `Latest standings: ${latest.snapshot_date}, ${latest.matched} of ${latest.pool_size} cards matched.` : "No standings yet."}
+        Pulled at 9 and 11 AM, 1, 4 and 8 PM ET from the morning after the Arena launch through the final day, and again the next day if the final day&apos;s never came. {latest ? `Latest standings: ${latest.snapshot_date}, ${latest.matched} of ${latest.pool_size} cards matched.` : "No standings yet."}
+        {over ? " The season is over, so its standings can't change. Reopen the season to fix them." : ""}
       </Typography>
       <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" alignItems="center">
-        <Button variant="outlined" onClick={() => runIngest("fetch", false)} disabled={busy !== null} sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2 }}>
+        <Button variant="outlined" onClick={() => runIngest("fetch", false)} disabled={frozen} sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2 }}>
           {busy === "fetch" ? "Fetching…" : "Fetch stats now"}
         </Button>
-        <Button variant="outlined" onClick={() => setPasteOpen((o) => !o)} aria-expanded={pasteOpen} sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2 }}>
+        <Button variant="outlined" onClick={() => setPasteOpen((o) => !o)} aria-expanded={pasteOpen} disabled={over} sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2 }}>
           Paste stats
         </Button>
-        <Button variant="text" onClick={() => runIngest("fetch", false, true)} disabled={busy !== null} sx={btn}>
+        <Button variant="text" onClick={() => runIngest("fetch", false, true)} disabled={frozen} sx={btn}>
           {busy === "dry" ? "Checking…" : "Dry run"}
         </Button>
         {latest && (
-          <Button variant="text" onClick={async () => { await rescoreAll(); await load(); }} disabled={busy !== null} sx={btn}>
+          <Button variant="text" onClick={async () => { await rescoreAll(); await load(); }} disabled={frozen} sx={btn}>
             {busy === "rescore:all" ? "Re-scoring…" : "Re-score every day"}
           </Button>
         )}
@@ -235,7 +238,7 @@ export default function AdminMtgStats({ code }: { code: string }) {
           action={
             <Stack direction="row" spacing={0.5}>
               {retry.canForce && (
-                <Button variant="text" color="inherit" size="small" disabled={busy !== null || (retry.kind === "paste" && !paste.trim())} onClick={() => runIngest(retry.kind, true)} sx={btn}>
+                <Button variant="text" color="inherit" size="small" disabled={frozen || (retry.kind === "paste" && !paste.trim())} onClick={() => runIngest(retry.kind, true)} sx={btn}>
                   Publish anyway
                 </Button>
               )}
@@ -263,7 +266,7 @@ export default function AdminMtgStats({ code }: { code: string }) {
             slotProps={{ htmlInput: { style: { fontFamily: "monospace", fontSize: 12 } } }}
           />
           <Box>
-            <Button variant="contained" onClick={() => runIngest("paste", false)} disabled={busy !== null || !paste.trim()} sx={{ textTransform: "none", fontWeight: 700, borderRadius: 2, boxShadow: "none" }}>
+            <Button variant="contained" onClick={() => runIngest("paste", false)} disabled={frozen || !paste.trim()} sx={{ textTransform: "none", fontWeight: 700, borderRadius: 2, boxShadow: "none" }}>
               {busy === "paste" ? "Publishing…" : "Publish pasted stats"}
             </Button>
           </Box>
@@ -293,7 +296,7 @@ export default function AdminMtgStats({ code }: { code: string }) {
                 <Typography variant="caption" color="text.secondary">
                   {s.snapshot_date} · {s.source} · {s.matched} of {s.pool_size} matched · {games(s.total_games)} games · scored {easternTime(s.scored_at)}
                 </Typography>
-                <Button size="small" variant="text" disabled={busy !== null} onClick={() => rescore(s.snapshot_date)} sx={btn}>
+                <Button size="small" variant="text" disabled={frozen} onClick={() => rescore(s.snapshot_date)} sx={btn}>
                   {busy === `rescore:${s.snapshot_date}` ? "Re-scoring…" : "Re-score"}
                 </Button>
               </Stack>
@@ -316,7 +319,7 @@ export default function AdminMtgStats({ code }: { code: string }) {
                 <Stack key={card.id} direction={{ xs: "column", sm: "row" }} spacing={1} alignItems={{ xs: "stretch", sm: "center" }} useFlexGap flexWrap="wrap">
                   <Typography variant="body2" sx={{ minWidth: 200 }}>{card.name} <Typography component="span" variant="caption" color="text.secondary">· {card.rarity}{card.arenaId ? ` · Arena ${card.arenaId}` : ""}</Typography></Typography>
                   {options.length > 0 && (
-                    <TextField select size="small" label={`Match to (${options.length})`} value="" disabled={busy !== null} sx={{ minWidth: 260 }}
+                    <TextField select size="small" label={`Match to (${options.length})`} value="" disabled={frozen} sx={{ minWidth: 260 }}
                       helperText={fellBack ? `No unmatched ${card.rarity} left in the feed, so every unmatched record is listed` : undefined}
                       onChange={(e) => { const r = options[Number(e.target.value)]; if (r) setConfirmMatch({ cardId: card.id, record: r }); }}>
                       {options.map((r, i) => (
@@ -327,7 +330,7 @@ export default function AdminMtgStats({ code }: { code: string }) {
                   {pending && (
                     <Stack direction="row" spacing={0.5} alignItems="center" useFlexGap flexWrap="wrap">
                       <Typography variant="caption" color="text.secondary">Match to {pending.name}?</Typography>
-                      <Button size="small" variant="text" disabled={busy !== null} onClick={() => { setConfirmMatch(null); setMatch(card.id, pending); }} sx={btn}>Confirm</Button>
+                      <Button size="small" variant="text" disabled={frozen} onClick={() => { setConfirmMatch(null); setMatch(card.id, pending); }} sx={btn}>Confirm</Button>
                       <Button size="small" variant="text" onClick={() => setConfirmMatch(null)} sx={plain}>Cancel</Button>
                     </Stack>
                   )}
@@ -345,7 +348,7 @@ export default function AdminMtgStats({ code }: { code: string }) {
             {data.mapped.map((m) => (
               <Stack key={m.id} direction="row" spacing={1} alignItems="center">
                 <Typography variant="body2">{m.name} → {m.stats_arena_id ? `Arena ${m.stats_arena_id}` : m.stats_name}</Typography>
-                <Button size="small" variant="text" disabled={busy !== null} onClick={() => setMatch(m.id, null)} sx={plain}>Clear</Button>
+                <Button size="small" variant="text" disabled={frozen} onClick={() => setMatch(m.id, null)} sx={plain}>Clear</Button>
               </Stack>
             ))}
           </Stack>
@@ -359,7 +362,7 @@ export default function AdminMtgStats({ code }: { code: string }) {
           {data.voided.map((card) => (
             <Stack key={card.id} direction="row" spacing={1} alignItems="center">
               <Typography variant="body2">{card.name} <Typography component="span" variant="caption" color="text.secondary">· {card.rarity}</Typography></Typography>
-              <Button size="small" variant="text" disabled={busy !== null} onClick={() => setVoided(card, false)} sx={plain}>Restore</Button>
+              <Button size="small" variant="text" disabled={frozen} onClick={() => setVoided(card, false)} sx={plain}>Restore</Button>
             </Stack>
           ))}
         </Stack>
@@ -375,11 +378,11 @@ export default function AdminMtgStats({ code }: { code: string }) {
                 <Typography variant="body2">{card.name} <Typography component="span" variant="caption" color="text.secondary">· {card.rarity}</Typography></Typography>
                 {confirmVoid === card.id ? (
                   <>
-                    <Button size="small" variant="text" disabled={busy !== null} onClick={() => setVoided(card, true)} sx={{ ...btn, color: FAILED }}>Confirm void</Button>
+                    <Button size="small" variant="text" disabled={frozen} onClick={() => setVoided(card, true)} sx={{ ...btn, color: FAILED }}>Confirm void</Button>
                     <Button size="small" variant="text" onClick={() => setConfirmVoid(null)} sx={plain}>Cancel</Button>
                   </>
                 ) : (
-                  <Button size="small" variant="text" disabled={busy !== null} onClick={() => setConfirmVoid(card.id)} sx={{ ...btn, color: FAILED }}>Void</Button>
+                  <Button size="small" variant="text" disabled={frozen} onClick={() => setConfirmVoid(card.id)} sx={{ ...btn, color: FAILED }}>Void</Button>
                 )}
               </Stack>
             ))}

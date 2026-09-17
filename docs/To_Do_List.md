@@ -41,3 +41,9 @@ side effect.
 | # | Item | Effort | Status |
 |---|------|--------|--------|
 | 16 | Docs accuracy audit. Known drift: an API comment references a "Community field visibility rules" section of AGENTS.md that does not exist; Technical_Specs.md (1,600+ lines) is updated piecemeal and sections untouched since the matching / .ics / share-dialog removals likely describe the old world; System_Map's cron inventory predates recent cron changes. Sweep read-only, fix, delete dead sections. | M | Open |
+
+## MTG Card Evaluation Challenge
+
+| # | Item | Effort | Status |
+|---|------|--------|--------|
+| 17 | Two seasons at once. Star Trek's previews and picks will open while Reality Fracture is still being scored (it runs to November 13), but every job and page follows one current season (`loadMtgSet(sql, null)`): the lock, the lock warning and reveal emails, the pick wizard, the group home and its standings. A group needs to show the live season's standings beside the next season's open picks, and the jobs need to handle every active season. Also: once a season's final day has passed, another active season becomes "current" even while the first still waits to be finalized. Must be done before Star Trek is added in MTG Seasons (decided 2026-09-16; see docs/MTG-Bets-Spec.md, section 4.1). | L | Open |

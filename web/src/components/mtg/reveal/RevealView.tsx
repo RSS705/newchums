@@ -235,7 +235,7 @@ export default function RevealView() {
         <Box>{back}</Box>
         <AppCard>
           <Typography variant="body1" fontWeight={700}>
-            {load.kind === "sealed" ? "Picks are sealed until the lock" : load.kind === "error" ? load.message : ""}
+            {load.kind === "sealed" ? "Everyone's picks show here once picks lock" : load.kind === "error" ? load.message : ""}
           </Typography>
           {load.kind === "sealed" && (
             <>
@@ -255,8 +255,8 @@ export default function RevealView() {
   const mind = data.mind[rarity];
   const most = data.mostPicked[rarity];
   const mindNote = data.mindAtLock
-    ? `It was set at the lock${data.mindEntries !== data.entries ? ` from ${plural(data.mindEntries, "entry", "entries")}` : ""} and plays all season as a ghost entry.`
-    : "It updates as players with locked picks join the group.";
+    ? `It was set at the lock${data.mindEntries !== data.entries ? ` from ${plural(data.mindEntries, "player's picks", "players' picks")}` : ""}, and it's on the standings all season as if it were another player.`
+    : "It's worked out from the picks of everyone playing this season in the group.";
 
   return (
     <Stack spacing={{ xs: 2, sm: 2.5 }}>
@@ -265,7 +265,7 @@ export default function RevealView() {
         {back}
         <Typography component="h1" sx={{ fontWeight: 800, fontSize: { xs: "1.75rem", sm: "2.25rem" }, lineHeight: 1.1 }}>The Reveal</Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-          The picks are in for {data.set.name}: {plural(data.entries, "entry", "entries")} in {data.community.name}, locked {formatWhen(data.set.lockAt)}.
+          The picks are in for {data.set.name}: {plural(data.entries, "player", "players")} in {data.community.name}, locked {formatWhen(data.set.lockAt)}.
         </Typography>
       </Box>
 
@@ -345,14 +345,17 @@ export default function RevealView() {
 
       {noEntry.length > 0 && (
         <AppCard>
-          <Typography variant="body2" fontWeight={700} sx={{ mb: 0.5 }}>No entry</Typography>
+          <Typography variant="body2" component="h2" fontWeight={700} sx={{ mb: 0.5 }}>No picks</Typography>
           <Typography variant="body2" color="text.secondary">
-            {joinNames(noEntry.map((p) => (p.isViewer ? "You" : displayName(p))))} {noEntry.length === 1 && !noEntry[0].isViewer ? "is" : "are"} following along this season.
+            {joinNames(noEntry.map((p) => (p.isViewer ? "You" : displayName(p))))}{" "}
+            {season
+              ? `didn't make picks for ${data.set.name}.`
+              : `${noEntry.length === 1 && !noEntry[0].isViewer ? "is" : "are"} following along this season.`}
           </Typography>
         </AppCard>
       )}
 
-      <Typography variant="caption" color="text.disabled" sx={{ display: "block", lineHeight: 1.5, px: 0.5 }}>{MTG_ATTRIBUTION}</Typography>
+      <Typography variant="caption" color="text.secondary" sx={{ display: "block", lineHeight: 1.5, px: 0.5 }}>{MTG_ATTRIBUTION}</Typography>
 
       {viewer && (
         <CardViewer

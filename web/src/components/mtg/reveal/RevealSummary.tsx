@@ -48,10 +48,10 @@ export default function RevealSummary({ communityId, slug }: { communityId: stri
           <AutoAwesomeRoundedIcon sx={{ fontSize: 18 }} />
         </Box>
         <Box sx={{ minWidth: 0 }}>
-          <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem", lineHeight: 1.2 }}>The Reveal</Typography>
+          <Typography variant="h6" component="h2" fontWeight={700} sx={{ fontSize: "1.0625rem", lineHeight: 1.2 }}>The Reveal</Typography>
           <Typography variant="caption" color="text.secondary">
             {data
-              ? `${data.entries} ${data.entries === 1 ? "entry" : "entries"} locked in. Everyone's picks are out.`
+              ? `${data.entries} ${data.entries === 1 ? "player" : "players"} locked in picks. Everyone's picks are out.`
               : failed ? "Everyone's picks are out." : "Loading…"}
           </Typography>
         </Box>

@@ -262,14 +262,25 @@ export function scoreEntry(picks: Array<{ rarity: MtgRarity; slot: number; cardI
  * final day. `date` is the Eastern date the standings would be for; `last`
  * marks the day's final attempt.
  */
-export function mtgIngestSlot(set: { arena_release_at: string | Date | null; final_at: string | Date }, now: Date = new Date()): { due: boolean; date: string; last: boolean } {
+export function mtgIngestSlot(
+  set: { arena_release_at: string | Date | null; final_at: string | Date },
+  now: Date = new Date(),
+): { due: boolean; date: string; last: boolean; catchUp: boolean } {
   const { date, open } = mtgIngestWindow(set, now);
   const hour = easternHour(now);
-  return {
-    due: open && (MTG_INGEST_HOURS as readonly number[]).includes(hour),
-    date,
-    last: hour === MTG_INGEST_HOURS[MTG_INGEST_HOURS.length - 1],
-  };
+  const slot = (MTG_INGEST_HOURS as readonly number[]).includes(hour);
+  const last = hour === MTG_INGEST_HOURS[MTG_INGEST_HOURS.length - 1];
+  // The day after the final day tries again for the final day's standings,
+  // at the same hours and under the final day's date, so a day 17Lands missed
+  // doesn't end the season a day short (the caller skips it once published).
+  const finalDate = easternDateKey(set.final_at);
+  if (!open && set.arena_release_at && date === shiftDateKey(finalDate, 1)) return { due: slot, date: finalDate, last, catchUp: true };
+  return { due: open && slot, date, last, catchUp: false };
+}
+
+/** A YYYY-MM-DD day moved by whole days. */
+export function shiftDateKey(key: string, days: number): string {
+  return new Date(Date.parse(`${key}T12:00:00Z`) + days * 86400000).toISOString().slice(0, 10);
 }
 
 /** Whether standings can be published for `now`'s Eastern date: the day after

@@ -27,7 +27,7 @@ export default function ReviewStep({ picks, locked, onReorder, onRemove, onNote,
     <Stack spacing={{ xs: 2, sm: 2.5 }}>
       {total === MTG_TOTAL_PICKS ? (
         <Alert severity="success" sx={{ borderRadius: 2.5 }}>
-          {locked ? "Your entry is complete and locked." : "Your entry is complete. You can keep changing it until the lock."}
+          {locked ? "All 20 picks are in, and picks are locked." : "All 20 picks are in. You can keep changing them until picks lock."}
         </Alert>
       ) : (
         <Alert severity="info" sx={{ borderRadius: 2.5 }}>
@@ -35,7 +35,7 @@ export default function ReviewStep({ picks, locked, onReorder, onRemove, onNote,
         </Alert>
       )}
       <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
-        Drag to reorder. Receipts are an optional note of up to 140 characters on any pick, like &ldquo;this common is a house.&rdquo; They stay sealed until the lock, then sit beside that card&apos;s results all season.
+        Drag to reorder. Receipts are an optional note of up to 140 characters on any pick, like &ldquo;this common is a house.&rdquo; Nobody else sees them until picks lock, then sit beside that card&apos;s results all season.
       </Typography>
       <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "repeat(2, minmax(0, 1fr))" }, gap: { xs: 2, sm: 2.5 } }}>
         {MTG_RARITIES.map((rarity) => (

@@ -75,7 +75,7 @@ export const NOTIFICATION_TYPES: NotificationTypeConfig[] = [
     key: "mtg_challenge",
     title: "MTG Card Evaluation Challenge",
     description:
-      "Only if you play: a welcome when you join your first challenge group for a set, and a reminder the day before picks lock.",
+      "Only if you play: a welcome when you join your first challenge group for a set, a reminder the day before picks lock, everyone's picks the morning after, and your results when the season ends.",
   },
   {
     key: "plan_reminder",

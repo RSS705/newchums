@@ -1338,14 +1338,22 @@ export const sendMtgResultsEmail = async (
  *  data fails its checks, or the day ends without new standings. */
 export const sendMtgIngestAlertEmail = async (
   env: Bindings,
-  p: { setName: string; dateLabel: string; outcome: string; reason: string; adminUrl: string; hasStandings: boolean; lastAttempt: boolean },
+  p: {
+    setName: string; dateLabel: string; outcome: string; reason: string; adminUrl: string; hasStandings: boolean; lastAttempt: boolean;
+    /** A normal day, the final day, or the next day's retries for the final day. */
+    stage: "day" | "final_day" | "catch_up";
+    /** When the season ends with the latest standings if the final day's never arrive. */
+    finalizeAtLabel: string;
+    /** The latest published day, which the season ends with in that case. */
+    latestLabel: string | null;
+  },
 ) =>
   dispatch(
     env,
     CONTACT_EMAIL,
     "mtgIngestAlert",
     {
-      heading: p.lastAttempt ? "No new standings today" : "Today's 17Lands data failed its checks",
+      heading: p.stage === "catch_up" ? "The final day's standings never arrived" : p.lastAttempt ? "No new standings today" : "Today's 17Lands data failed its checks",
       setName: p.setName,
       dateLabel: p.dateLabel,
       outcomeLabel: p.outcome === "failed_validation"
@@ -1353,7 +1361,11 @@ export const sendMtgIngestAlertEmail = async (
         : p.outcome === "fetch_failed" ? "17Lands couldn't be reached"
         : p.outcome === "error" ? "the stats job hit an error" : "17Lands had no newer data all day",
       statusLine: p.hasStandings ? "The previous standings stay up." : "No standings are published yet.",
-      nextLine: p.lastAttempt ? "That was today's last attempt; the next is tomorrow at 9 AM ET." : "The job tries again at its next hour (9 and 11 AM, 1, 4 and 8 PM ET).",
+      nextLine: p.stage === "catch_up"
+        ? `That was the last attempt. The season ends at ${p.finalizeAtLabel}${p.latestLabel ? ` with the standings from ${p.latestLabel}` : ""}, and the results email goes out. To end it with the final day's standings instead, fetch or paste the final day in MTG Seasons before then.`
+        : p.stage === "final_day" && p.lastAttempt
+          ? `That was the final day's last attempt. Tomorrow the job tries again for the final day's standings at 9 and 11 AM, 1, 4 and 8 PM ET; if none arrive, the season ends at ${p.finalizeAtLabel} with the latest standings. You can fetch or paste the final day in MTG Seasons before then.`
+          : p.lastAttempt ? "That was today's last attempt; the next is tomorrow at 9 AM ET." : "The job tries again at its next hour (9 and 11 AM, 1, 4 and 8 PM ET).",
       reason: p.reason,
       ctaText: "Open MTG Seasons",
       ctaUrl: p.adminUrl,

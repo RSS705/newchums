@@ -32,6 +32,8 @@ export type MtgSetRow = {
   locked_at?: string | Date | null;
   /** When the finalize job ended the season (Batch 8); null until then. */
   finalized_at?: string | Date | null;
+  /** When an admin reopened a finalized season; the finalize job waits for Finalize now. */
+  reopened_at?: string | Date | null;
 };
 
 export type MtgPhase = "upcoming" | "previews" | "open" | "locked" | "live" | "final";
@@ -77,8 +79,9 @@ export function mtgTimeline(set: MtgSetRow, now: Date = new Date()): TimelineEnt
   const entries: Array<Omit<TimelineEntry, "status">> = [];
   if (set.previews_start_at) {
     entries.push({
-      key: "previews", label: "Previews start, picks open", at: set.previews_start_at, endAt: set.gallery_complete_at ?? undefined,
-      detail: "New cards are revealed every day, and you can make your picks from the first one. Revealed cards appear in the pick screens automatically.",
+      // Picks stay open until the lock, well after the full card list arrives, so the entry runs to the lock.
+      key: "previews", label: "Previews start, picks open", at: set.previews_start_at, endAt: set.lock_at,
+      detail: "New cards are revealed every day, and you can make your picks from the first one until picks lock. Revealed cards appear in the pick screens automatically.",
     });
   }
   // Picks lock before prereleases start, so the lock comes first even when the
@@ -102,7 +105,12 @@ export function mtgTimeline(set: MtgSetRow, now: Date = new Date()): TimelineEnt
   entries.sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
   return entries.map((e) => {
     const start = new Date(e.at).getTime();
-    const end = e.endAt ? new Date(e.endAt).getTime() : start + 3600000;
+    // The final day is happening until the season is finalized, however late its standings are.
+    const end = e.key === "final" && set.status === "active"
+      ? Number.POSITIVE_INFINITY
+      : e.key === "final" && set.finalized_at
+        ? Math.max(start, new Date(set.finalized_at).getTime())
+        : e.endAt ? new Date(e.endAt).getTime() : start + 3600000;
     const status: TimelineEntry["status"] = t >= end ? "done" : t >= start ? "now" : "upcoming";
     return { ...e, status };
   });
@@ -933,21 +941,22 @@ export function formatEasternDate(at: string | Date): string {
 }
 
 /** How long past `final_at` the finalize job waits for the final day's
- *  standings before ending the season with the latest day there is. */
-export const MTG_FINALIZE_GRACE_MS = 26 * 3600000;
+ *  standings before ending the season with the latest day there is: through
+ *  the next day's attempts for them, the last at 8 PM ET (spec 9.1). */
+export const MTG_FINALIZE_GRACE_MS = 36 * 3600000;
 
 /**
  * Whether the finalize job should end the season now (spec 12.3): once the
  * final day has begun and its standings are published, or, if 17Lands never
  * delivered them, once the grace period has passed, with the latest standings.
- * Never without any standings at all.
+ * Never without any standings at all, and never a season an admin reopened.
  */
 export function mtgFinalizeDue(
-  set: { status: string; final_at: string | Date },
+  set: { status: string; final_at: string | Date; reopened_at?: string | Date | null },
   latestSnapshotDate: string | null,
   now: Date = new Date(),
 ): boolean {
-  if (set.status !== "active" || !latestSnapshotDate) return false;
+  if (set.status !== "active" || set.reopened_at || !latestSnapshotDate) return false;
   const finalMs = new Date(set.final_at).getTime();
   if (now.getTime() < finalMs) return false;
   return latestSnapshotDate >= easternDateKey(set.final_at) || now.getTime() >= finalMs + MTG_FINALIZE_GRACE_MS;

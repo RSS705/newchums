@@ -49,8 +49,13 @@ const PHASE_COPY: Record<MtgSetPayload["phase"], { title: string; body: string }
   live: { title: "The season is live", body: "Standings update every morning from 17Lands Premier Draft data." },
   final: { title: "Season complete", body: "The final standings are in, with the podium, every badge the group earned, and a results image to share." },
 };
-/** The final day until the season is finalized: the clock says final, the data doesn't yet. */
-const FINAL_PENDING = { title: "Final day", body: "The last standings of the season appear as soon as 17Lands' data is in, then the podium, everyone's badges and an email with your results." };
+/** From the final day until the season is finalized: the clock says final, the data doesn't yet.
+ *  When 17Lands misses the final day, the next day's attempts keep trying (spec 9.1). */
+const FINAL_PENDING = {
+  today: { title: "Final day", body: "The last standings of the season appear as soon as 17Lands' data is in, then the podium, everyone's badges and an email with the results for everyone who played." },
+  late: { title: "Final standings on the way", body: "17Lands' data for the final day is late. The last standings appear as soon as it's in, then the podium, everyone's badges and an email with the results for everyone who played." },
+};
+const EASTERN_DAY = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" });
 
 /** Grey placeholder widths for the blank standings' player names. */
 const BLANK_ROWS = ["58%", "44%", "36%"];
@@ -145,11 +150,14 @@ export default function MtgChallengeHome({ communityId, communityName, slug, isM
     return () => { cancelled = true; };
   }, [isAuthenticated]);
 
-  // Live countdown to the lock, ticking once a minute.
+  // Live countdown to the lock, ticking once a minute, and every second in
+  // the last two minutes so the page switches to the Reveal at the lock itself.
+  const lockMs = set ? Date.parse(set.dates.lockAt) : null;
+  const closeToLock = lockMs !== null && lockMs - nowMs < 120000 && nowMs < lockMs + 5000;
   useEffect(() => {
-    const t = setInterval(() => setNowMs(Date.now()), 60000);
+    const t = setInterval(() => setNowMs(Date.now()), closeToLock ? 1000 : 60000);
     return () => clearInterval(t);
-  }, []);
+  }, [closeToLock]);
 
   // The group's progress, which also carries the viewer's own count for the
   // button label. Deliberately not the entry route: that one tidies picks
@@ -217,7 +225,7 @@ export default function MtgChallengeHome({ communityId, communityName, slug, isM
 
   const finalized = set.phase === "final" && !!set.finalizedAt;
   const copy = set.phase === "final" && !finalized
-    ? FINAL_PENDING
+    ? EASTERN_DAY.format(new Date(nowMs)) > EASTERN_DAY.format(new Date(set.dates.finalAt)) ? FINAL_PENDING.late : FINAL_PENDING.today
     : PHASE_COPY[pastLock && (set.phase === "upcoming" || set.phase === "previews" || set.phase === "open") ? "locked" : set.phase];
   const list = pool ? byRarity[rarity] : null;
   const picksHref = `/communities/${slug}/picks`;
@@ -284,7 +292,7 @@ export default function MtgChallengeHome({ communityId, communityName, slug, isM
                 <Typography variant="caption" fontWeight={700} color="text.secondary">Picks lock in</Typography>
               </Stack>
               <Typography sx={{ fontWeight: 800, fontSize: "1.375rem", lineHeight: 1.1, letterSpacing: "-0.01em" }}>{lockIn ?? "now"}</Typography>
-              <Typography variant="caption" color="text.disabled" sx={{ display: "block", mt: 0.25 }}>{formatWhen(set.dates.lockAt)}</Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.25 }}>{formatWhen(set.dates.lockAt)}</Typography>
             </Box>
           )}
         </Stack>
@@ -338,7 +346,7 @@ export default function MtgChallengeHome({ communityId, communityName, slug, isM
           <Stack direction="row" spacing={1.25} alignItems="center" sx={{ mb: 1.5 }}>
             <IconDisc><GroupsRoundedIcon sx={{ fontSize: 18 }} /></IconDisc>
             <Box sx={{ minWidth: 0 }}>
-              <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem", lineHeight: 1.2 }}>Pick status</Typography>
+              <Typography variant="h6" component="h2" fontWeight={700} sx={{ fontSize: "1.0625rem", lineHeight: 1.2 }}>Pick status</Typography>
               <Typography variant="caption" color="text.secondary">
                 {done} of {progress.length} finished. Everyone&apos;s picks stay private until picks lock, then they&apos;re revealed to the group.
               </Typography>
@@ -376,7 +384,7 @@ export default function MtgChallengeHome({ communityId, communityName, slug, isM
         <Stack direction="row" spacing={1.25} alignItems="center" sx={{ mb: 1.5 }}>
           <IconDisc><StyleRoundedIcon sx={{ fontSize: 18 }} /></IconDisc>
           <Box>
-            <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem", lineHeight: 1.2 }}>The card pool</Typography>
+            <Typography variant="h6" component="h2" fontWeight={700} sx={{ fontSize: "1.0625rem", lineHeight: 1.2 }}>The card pool</Typography>
             <Typography variant="caption" color="text.secondary">
               {set.galleryComplete ? "The full card list is in." : "Automatically updates as cards are revealed."}
               {set.lastCardSyncAt ? ` Last checked ${formatWhen(set.lastCardSyncAt)}.` : ""}
@@ -467,12 +475,12 @@ export default function MtgChallengeHome({ communityId, communityName, slug, isM
         )}
       </AppCard>
 
-      {pastSeasons.length > 0 && (
+      {isMember && pastSeasons.length > 0 && (
         <AppCard>
           <Stack direction="row" spacing={1.25} alignItems="center" sx={{ mb: 1.5 }}>
             <IconDisc><HistoryRoundedIcon sx={{ fontSize: 18 }} /></IconDisc>
             <Box sx={{ minWidth: 0 }}>
-              <Typography variant="h6" fontWeight={700} sx={{ fontSize: "1.0625rem", lineHeight: 1.2 }}>Past seasons</Typography>
+              <Typography variant="h6" component="h2" fontWeight={700} sx={{ fontSize: "1.0625rem", lineHeight: 1.2 }}>Past seasons</Typography>
               <Typography variant="caption" color="text.secondary">Final standings, badges and everyone&apos;s picks from each season the group played.</Typography>
             </Box>
           </Stack>
@@ -488,7 +496,7 @@ export default function MtgChallengeHome({ communityId, communityName, slug, isM
 
       <SeasonTimeline entries={set.timeline} setName={set.name} />
 
-      <Typography variant="caption" color="text.disabled" sx={{ display: "block", lineHeight: 1.5, px: 0.5 }}>
+      <Typography variant="caption" color="text.secondary" sx={{ display: "block", lineHeight: 1.5, px: 0.5 }}>
         {MTG_ATTRIBUTION}
       </Typography>
 

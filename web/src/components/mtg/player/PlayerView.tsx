@@ -198,7 +198,8 @@ const SlotRow = memo(function SlotRow({ slot, pick, rarity, cardHref, comparing,
   );
 });
 
-function TopFive({ top, picks, rarity, cardHref, whose }: { top: MtgTopCard[]; picks: MtgPlayerPick[]; rarity: MtgRarity; cardHref: (id: string) => string; whose: "Your" | "Their" }) {
+function TopFive({ top, picks, rarity, cardHref, whose, final }: { top: MtgTopCard[]; picks: MtgPlayerPick[]; rarity: MtgRarity; cardHref: (id: string) => string; whose: "Your" | "Their"; final: boolean }) {
+  const when = final ? "on the final day" : "right now";
   const [open, setOpen] = useState(false);
   if (top.length === 0) return null;
   return (
@@ -211,10 +212,10 @@ function TopFive({ top, picks, rarity, cardHref, whose }: { top: MtgTopCard[]; p
         sx={{ textTransform: "none", fontWeight: 700, ml: -1, minHeight: 44 }}
       >
         {/* One inline span: a button lays its children out as flex items, which would drop the spaces. */}
-        <span>Actual top 5<Box component="span" sx={srOnly}> {RARITY_PLURAL[rarity]}</Box> right now</span>
+        <span>{final ? "Top 5" : "Actual top 5"}<Box component="span" sx={srOnly}> {RARITY_PLURAL[rarity]}</Box> {when}</span>
       </Button>
       <Collapse in={open} unmountOnExit>
-        <Stack component="ol" spacing={0.5} aria-label={`The top 5 ${RARITY_PLURAL[rarity]} right now`} sx={{ m: 0, p: 0, pt: 0.5 }}>
+        <Stack component="ol" spacing={0.5} aria-label={`The top 5 ${RARITY_PLURAL[rarity]} ${when}`} sx={{ m: 0, p: 0, pt: 0.5 }}>
           {top.map((t) => {
             const picked = picks.find((p) => p.card.id === t.card.id);
             return (
@@ -404,7 +405,9 @@ export default function PlayerView() {
               ? player.isViewer ? "You joined after picks locked, so you're following this season and play from the next one." : `${name} joined after picks locked, so they're following this season and play from the next one.`
               : data.set.phase === "upcoming" || data.set.phase === "previews" || data.set.phase === "open"
                 ? player.isViewer ? "You haven't made any picks yet." : `${name} hasn't made any picks yet.`
-                : player.isViewer ? "You didn't make picks this season, so you're following along." : `${name} didn't make picks this season, so they're following along.`}
+                : data.set.phase === "final"
+                  ? player.isViewer ? "You didn't make picks this season." : `${name} didn't make picks this season.`
+                  : player.isViewer ? "You didn't make picks this season, so you're following along." : `${name} didn't make picks this season, so they're following along.`}
           </Typography>
           {player.isViewer && data.set.phase !== "locked" && data.set.phase !== "live" && data.set.phase !== "final" && (
             <Button component={NextLink} href={`/communities/${slug}/picks`} variant="contained" sx={{ mt: 1.5, textTransform: "none", fontWeight: 700, borderRadius: 2.5, boxShadow: "none" }}>
@@ -461,7 +464,7 @@ export default function PlayerView() {
                     />
                   ))}
                 </Box>
-                <TopFive top={data.top[rarity]} picks={picks} rarity={rarity} cardHref={cardHref} whose={player.isViewer ? "Your" : "Their"} />
+                <TopFive top={data.top[rarity]} picks={picks} rarity={rarity} cardHref={cardHref} whose={player.isViewer ? "Your" : "Their"} final={!!standing?.isFinal} />
               </AppCard>
             );
           })}

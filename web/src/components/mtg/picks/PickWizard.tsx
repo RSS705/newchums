@@ -254,7 +254,7 @@ export default function PickWizard() {
         markSaved();
         setSaveState("locked");
         setSetInfo((s) => (s ? { ...s, locked: true, picksOpen: false } : s));
-        toast.info("Picks are locked. Your last saved entry stands.");
+        toast.info("Picks are locked. Your last saved picks stand.");
         await resyncRef.current();
         return;
       }
@@ -455,7 +455,7 @@ export default function PickWizard() {
           <Box sx={{ minWidth: 0 }}>
             <Typography component="h1" sx={{ fontWeight: 800, fontSize: { xs: "1.625rem", sm: "2rem" }, lineHeight: 1.15 }}>Your picks</Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-              Current Set: {setInfo.name}. You pick once, and these picks count in every challenge group you&apos;re in.
+              Current Set: {setInfo.name}. You pick once, and these picks count in every challenge group you&apos;re in when picks lock.
             </Typography>
           </Box>
           <Stack direction="row" spacing={1.25} alignItems="center" useFlexGap flexWrap="wrap">
@@ -495,7 +495,7 @@ export default function PickWizard() {
           ) : undefined}
         >
           {setInfo.locked || pastLock
-            ? `Picks locked ${formatWhen(setInfo.lockAt)}. This is your final entry.`
+            ? `Picks locked ${formatWhen(setInfo.lockAt)}. These are your final picks.`
             : "Picks aren't open yet. They open when previews begin."}
         </Alert>
       )}
@@ -585,7 +585,7 @@ export default function PickWizard() {
         )}
       </Stack>
 
-      <Typography variant="caption" color="text.disabled" sx={{ display: "block", lineHeight: 1.5, px: 0.5 }}>{MTG_ATTRIBUTION}</Typography>
+      <Typography variant="caption" color="text.secondary" sx={{ display: "block", lineHeight: 1.5, px: 0.5 }}>{MTG_ATTRIBUTION}</Typography>
 
       {viewer && (
         <CardViewer
