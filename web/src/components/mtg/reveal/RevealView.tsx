@@ -7,16 +7,17 @@ import Avatar from "@mui/material/Avatar";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Chip from "@mui/material/Chip";
+import Skeleton from "@mui/material/Skeleton";
 import Stack from "@mui/material/Stack";
 import Tab from "@mui/material/Tab";
 import Tabs from "@mui/material/Tabs";
 import Typography from "@mui/material/Typography";
-import ArrowBackRoundedIcon from "@mui/icons-material/ArrowBackRounded";
 import PsychologyAltRoundedIcon from "@mui/icons-material/PsychologyAltRounded";
 import { AppCard } from "@/components/ui";
 import ConfettiBurst from "@/components/ui/ConfettiBurst";
 import { apiFetch, getAvatarBaseUrl } from "@/lib/apiClient";
 import CardViewer from "../picks/CardViewer";
+import { BackButton } from "../pageBits";
 import {
   MTG_ATTRIBUTION, MTG_RARITIES, MTG_SLOTS_PER_RARITY, RARITY_LABEL, RARITY_PLURAL,
   type MtgCard, type MtgRarity, type MtgRevealPayload, type MtgRevealPlayer, formatWhenZoned, seasonFromSearch, seasonQuery,
@@ -161,6 +162,50 @@ const PlayerRow = memo(function PlayerRow({ player, rarity, onOpen }: { player: 
   );
 });
 
+/** The page's shape while it loads: the title, the rarity tabs, the Group Mind
+ *  and the first player's picks. */
+function RevealSkeleton() {
+  const fiveCards = (
+    <Box sx={{ display: "grid", gridTemplateColumns: `repeat(${MTG_SLOTS_PER_RARITY}, minmax(0, 1fr))`, gap: { xs: 0.75, sm: 1.25 } }}>
+      {Array.from({ length: MTG_SLOTS_PER_RARITY }, (_, i) => (
+        <Skeleton key={i} variant="rounded" sx={{ width: "100%", height: "auto", aspectRatio: "488 / 680" }} />
+      ))}
+    </Box>
+  );
+  return (
+    <Stack spacing={{ xs: 2, sm: 2.5 }} aria-busy="true" aria-label="Loading the Reveal">
+      <Box>
+        <Typography component="h1" sx={{ fontWeight: 800, fontSize: { xs: "1.75rem", sm: "2.25rem" }, lineHeight: 1.1 }}>The Reveal</Typography>
+        <Skeleton variant="text" sx={{ width: { xs: "90%", sm: 460 }, fontSize: "0.875rem", mt: 0.5 }} />
+        <Skeleton variant="rounded" width={150} height={36} sx={{ mt: 1.25 }} />
+      </Box>
+      <Stack direction="row" spacing={1.5} sx={{ borderBottom: "1px solid", borderColor: "divider", pb: 1.25 }}>
+        {[72, 60, 84, 76].map((w, i) => <Skeleton key={i} variant="rounded" width={w} height={24} />)}
+      </Stack>
+      <AppCard>
+        <Stack direction="row" spacing={1.25} alignItems="center" sx={{ mb: 1.5 }}>
+          <Skeleton variant="circular" width={32} height={32} sx={{ flexShrink: 0, borderRadius: "50%" }} />
+          <Box sx={{ minWidth: 0, flex: 1 }}>
+            <Skeleton variant="text" sx={{ width: { xs: "45%", sm: 140 }, fontSize: "1.0625rem" }} />
+            <Skeleton variant="text" sx={{ width: { xs: "90%", sm: 420 }, fontSize: "0.75rem" }} />
+          </Box>
+        </Stack>
+        {fiveCards}
+      </AppCard>
+      <AppCard>
+        <Stack direction="row" spacing={1.25} alignItems="center" sx={{ mb: 1.25 }}>
+          <Skeleton variant="circular" width={34} height={34} sx={{ flexShrink: 0, borderRadius: "50%" }} />
+          <Box sx={{ minWidth: 0, flex: 1 }}>
+            <Skeleton variant="text" sx={{ width: { xs: "50%", sm: 180 }, fontSize: "1rem" }} />
+            <Skeleton variant="text" width={80} sx={{ fontSize: "0.75rem" }} />
+          </Box>
+        </Stack>
+        {fiveCards}
+      </AppCard>
+    </Stack>
+  );
+}
+
 /**
  * The Reveal (spec 10.4): opened at the lock. For one rarity at a time, the
  * Group Mind, the most-picked cards, then every player's five picks side by
@@ -222,33 +267,29 @@ export default function RevealView() {
   const noEntry = useMemo(() => (data ? data.players.filter((p) => p.pickCount === 0) : []), [data]);
   const groupName = data ? data.community.name : load.kind === "sealed" || load.kind === "error" ? load.group?.name : undefined;
 
-  const back = (
-    <Button component={Link} href={season ? `/communities/${slug}/seasons/${season}` : `/communities/${slug}`} variant="text" size="small" startIcon={<ArrowBackRoundedIcon />} sx={{ textTransform: "none", fontWeight: 600, color: "text.secondary", ml: -1, mb: 0.5, minHeight: 40, boxShadow: "none" }}>
-      {season && data ? data.set.name : groupName ?? "Back"}
-    </Button>
-  );
+  const back = <BackButton href={season ? `/communities/${slug}/seasons/${season}` : `/communities/${slug}`} label={season && data ? data.set.name : groupName ?? "Back"} />;
 
-  if (load.kind === "loading") return <Typography variant="body2" color="text.secondary" sx={{ py: 8, textAlign: "center" }}>Loading the Reveal…</Typography>;
+  if (load.kind === "loading") return <RevealSkeleton />;
   if (load.kind !== "ready" || !data) {
     return (
-      <Stack spacing={2}>
-        <Box>{back}</Box>
-        <AppCard>
-          <Typography variant="body1" fontWeight={700}>
-            {load.kind === "sealed" ? "Everyone's picks show here once picks lock" : load.kind === "error" ? load.message : ""}
+      <AppCard>
+        <Typography variant="body1" fontWeight={700}>
+          {load.kind === "sealed" ? "Everyone's picks show here once picks lock" : load.kind === "error" ? load.message : ""}
+        </Typography>
+        {load.kind === "sealed" && (
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+            Everyone&apos;s picks in {load.group.name} are revealed when picks lock{load.lockAt ? `, ${formatWhenZoned(load.lockAt)}` : ""}.
           </Typography>
+        )}
+        <Stack direction="row" spacing={1.25} useFlexGap flexWrap="wrap" alignItems="center" sx={{ mt: 2 }}>
           {load.kind === "sealed" && (
-            <>
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                Everyone&apos;s picks in {load.group.name} are revealed when picks lock{load.lockAt ? `, ${formatWhenZoned(load.lockAt)}` : ""}.
-              </Typography>
-              <Button component={Link} href={`/communities/${slug}/picks`} variant="contained" sx={{ mt: 2, textTransform: "none", fontWeight: 700, borderRadius: 2.5, boxShadow: "none" }}>
-                Make your picks
-              </Button>
-            </>
+            <Button component={Link} href={`/communities/${slug}/picks`} variant="contained" sx={{ textTransform: "none", fontWeight: 700, borderRadius: 2.5, boxShadow: "none" }}>
+              Make your picks
+            </Button>
           )}
-        </AppCard>
-      </Stack>
+          {back}
+        </Stack>
+      </AppCard>
     );
   }
 
@@ -262,11 +303,11 @@ export default function RevealView() {
     <Stack spacing={{ xs: 2, sm: 2.5 }}>
       {load.celebrate && <ConfettiBurst />}
       <Box>
-        {back}
         <Typography component="h1" sx={{ fontWeight: 800, fontSize: { xs: "1.75rem", sm: "2.25rem" }, lineHeight: 1.1 }}>The Reveal</Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
           The picks are in for {data.set.name}: {plural(data.entries, "player", "players")} in {data.community.name}, locked {formatWhenZoned(data.set.lockAt)}.
         </Typography>
+        <Box sx={{ mt: 1.25 }}>{back}</Box>
       </Box>
 
       <Box sx={{ borderBottom: "1px solid", borderColor: "divider" }}>

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  MTG_SLOT_WEIGHTS, checkSnapshot, computeCardScores, isDateKey, matchFeed, mtgIngestDateAllowed, mtgIngestSlot, mtgIngestWindow, mtgStandingsDay,
+  checkSnapshot, computeCardScores, isDateKey, matchFeed, mtgIngestDateAllowed, mtgIngestSlot, mtgIngestWindow, mtgStandingsDay,
   normalizeCardName, parseCardDataFeed, rankGroupDay, rankStandings, scoreEntry, type FeedRecord, type PoolCard,
 } from "../mtgScoring";
 
@@ -146,8 +146,10 @@ describe("computeCardScores and scoreEntry", () => {
     expect(scores.get("c3")).toMatchObject({ score: 97.5, rank: 3, ranked: 81 });
     expect(scores.get("c12")?.score).toBe(86.25);
     const picks = (list: Array<[string, number]>) => list.map(([cardId, slot]) => ({ rarity: "common" as const, slot, cardId }));
-    expect(scoreEntry(picks([["c3", 1], ["c12", 2], ["c1", 3], ["c40", 4], ["c7", 5]]), scores)).toEqual({ total: 438.75, common: 438.75, uncommon: 0, rare: 0, mythic: 0, slot1: 146.25 });
-    expect(scoreEntry(picks([["c1", 1], ["c3", 2], ["c7", 3], ["c12", 4], ["c40", 5]]), scores).total).toBe(454.6875);
+    // Every slot counts the same: 97.5 + 86.25 + 100 + 51.25 + 92.5.
+    expect(scoreEntry(picks([["c3", 1], ["c12", 2], ["c1", 3], ["c40", 4], ["c7", 5]]), scores)).toEqual({ total: 427.5, common: 427.5, uncommon: 0, rare: 0, mythic: 0, slot1: 97.5 });
+    // The same five cards in another order score the same, and only the tie-break changes.
+    expect(scoreEntry(picks([["c1", 1], ["c3", 2], ["c7", 3], ["c12", 4], ["c40", 5]]), scores)).toMatchObject({ total: 427.5, slot1: 100 });
   });
 
   it("blends 200 average games into a small sample (spec 6.4)", () => {
@@ -174,8 +176,9 @@ describe("computeCardScores and scoreEntry", () => {
 
   it("scores empty slots 0 and cards outside the pool a neutral 50", () => {
     const s = scoreEntry([{ rarity: "rare", slot: 1, cardId: "a" }, { rarity: "rare", slot: 2, cardId: "voided" }], new Map([["a", { score: 80 }]]));
-    expect(s).toEqual({ total: 182.5, common: 0, uncommon: 0, rare: 182.5, mythic: 0, slot1: 120 });
-    expect(MTG_SLOT_WEIGHTS.reduce((a, b) => a + b, 0)).toBe(5);
+    expect(s).toEqual({ total: 130, common: 0, uncommon: 0, rare: 130, mythic: 0, slot1: 80 });
+    // Only slots 1 to 5 score.
+    expect(scoreEntry([{ rarity: "rare", slot: 6, cardId: "a" }], new Map([["a", { score: 80 }]])).total).toBe(0);
   });
 });
 

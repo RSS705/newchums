@@ -128,7 +128,7 @@ Every date comes from the set's settings (section 12.2), so setting up a new sea
 
 ## 5. Rules (what players are told)
 
-1. **One entry per set:** five picks at each rarity, ranked 1 to 5 — 20 cards in total.
+1. **One set of picks per set:** five picks at each rarity, ranked 1 to 5, 20 cards in total. *Since Version 21* a player can keep up to five more cards per rarity on a shortlist below their picks while deciding; only the top five at each rarity count.
 2. **The pool** is every non-basic card in the Reality Fracture main set at its printed rarity: 81 commons (including the 10 common dual lands), 109 uncommons, 64 rares and 26 mythics. Special Guests, Commander cards, basic lands and alternate-art duplicates don't count.
 3. **Change anything until the lock.** Every change saves automatically.
 4. **Picks are sealed until the lock.** Your group can see who has finished, but not what they picked. At the lock, everything is revealed.
@@ -168,15 +168,13 @@ One rank step is worth 1.25 points for commons, 0.93 for uncommons, 1.59 for rar
 
 Raw win rates and "points above average" were simulated as alternatives (section 6.7). They separated good predictors from weaker ones no better than ranks did, and ranks are easier to explain, bounded, and immune to one freak 70% mythic deciding a whole season.
 
-### 6.3 Slot multipliers — order matters
+### 6.3 Every pick counts the same, and order still matters
 
-| Slot | #1 | #2 | #3 | #4 | #5 |
-|---|---|---|---|---|---|
-| Multiplier | ×1.5 | ×1.25 | ×1.0 | ×0.75 | ×0.5 |
+**Pick points = the card's Card Score. A player's score = the sum across all 20 picks.**
 
-**Pick points = Card Score × multiplier. A player's score = the sum across all 20 picks.**
+A rarity is worth up to about 490 points and a whole entry about 1,900 in practice (2,000 in theory). The order of a player's picks doesn't change their points, but it still matters: the four #1 picks' points break ties (section 5, rule 8), Called It, Bust, Bullseye, Perfect Order and Whiff of the Season read the order, and so does the Group Mind's vote count.
 
-The multipliers add up to 5, so a rarity is worth up to about 490 points and a whole entry about 1,940 in practice (2,000 in theory). Because the bigger multipliers sit on the higher slots, any five cards score best when they're ordered exactly as they finish, so ordering is rewarded without a separate ordering bonus. The biggest penalty in the game is a bust at #1. That's the conviction part.
+*Version 21 (September 17, 2026):* Rob removed the slot multipliers, which were #1 ×1.5, #2 ×1.25, #3 ×1, #4 ×0.75 and #5 ×0.5 ("It will confuse things somewhat, and isn't needed for a first iteration"), and kept the ordering and the tie-break. No season had been scored yet, so nothing was re-scored and `scoring_version` stays 1.
 
 ### 6.4 Small samples
 
@@ -206,25 +204,25 @@ One consequence the app explains: a card's win rate can rise while its Card Scor
 
 A player's commons, with 81 commons in the pool (card names are placeholders):
 
-| Slot | Card | Actual rank | Card Score | × | Points |
-|---|---|---|---|---|---|
-| #1 | Card A | 3rd | 97.5 | 1.5 | 146.3 |
-| #2 | Card B | 12th | 86.3 | 1.25 | 107.8 |
-| #3 | Card C | 1st | 100.0 | 1.0 | 100.0 |
-| #4 | Card D | 40th | 51.3 | 0.75 | 38.4 |
-| #5 | Card E | 7th | 92.5 | 0.5 | 46.3 |
-| | | | | **Commons total** | **438.8** |
+| Slot | Card | Actual rank | Card Score = points |
+|---|---|---|---|
+| #1 | Card A | 3rd | 97.5 |
+| #2 | Card B | 12th | 86.3 |
+| #3 | Card C | 1st | 100.0 |
+| #4 | Card D | 40th | 51.3 |
+| #5 | Card E | 7th | 92.5 |
+| | | **Commons total** | **427.5** |
 
-The same five cards in their actual order would have scored 454.7, so the ordering cost about 16 points. A perfect hindsight list scores 490.6. Card D is the bust: at #4 it cost about 30 points compared with a top-5 common, and it would have cost about 65 at #1.
+The same five cards in any order score the same 427.5; the order only decides ties (Card A's 97.5 is this rarity's share of the tie-break) and badges. A perfect hindsight list scores 487.5. Card D is the bust: it cost about 45 points compared with a top-5 common, wherever it sat.
 
 ### 6.7 What scores look like (simulation)
 
 Seasons were simulated using this set's pool sizes, typical 17Lands spreads (commons around 55% ± 3 points, mythics around 57% ± 4.5), front-loaded game volume, and eight-player friend groups of mixed skill:
 
 - **Random picks average exactly 1,000 points,** because every card's expected Card Score is 50. The leaderboard draws that as a dashed "random picks" line, which makes the scale instantly readable.
-- **A perfect hindsight entry scores about 1,940.**
+- **A perfect hindsight entry scores about 1,900** (about 1,940 with the multipliers removed in Version 21).
 - **A friend group typically lands between about 1,450 and 1,850,** so gaps of 20 to 100 points decide it. The leaderboard shows points behind the leader, not just totals.
-- **The sharper predictor wins about 80% of head-to-head comparisons** against a slightly noisier one. Linear ranks, squared ranks and tiered points all gave the same result, as did steeper (5-4-3-2-1) or flat multipliers — so the simplest version wins on clarity.
+- **The sharper predictor wins about 80% of head-to-head comparisons** against a slightly noisier one. Linear ranks, squared ranks and tiered points all gave the same result, as did steeper (5-4-3-2-1) or flat multipliers, so the simplest version wins on clarity. Version 21 uses flat ones: every pick counts the same.
 - **The Group Mind is hard to beat.** A group's consensus picks outscored about 99% of individual players in the simulation. Real friends share more blind spots than simulated ones, so it will be beatable, but rarely — which is why Beat the Crowd is a Mythic badge.
 - **Stability:** the Day 1 leader ends up champion about 60–65% of the time; by Day 7, about 85%. Expect drama in week one and a settled race by week two, which is why the race is settled long before the season ends.
 
@@ -292,7 +290,7 @@ The two Hall of Shame group honors, Wooden Spoon and Whiff of the Season, are in
 19. **Perfect Order.** Your five picks at a rarity finished in exactly the order you ranked them, wherever they landed. (About 1 in 12.)
 20. **Oracle.** You finished in the top 5% of the Everyone board.
 21. **Sleeper Agent** (Uncommon since Version 18). You picked a card that finished in its rarity's top 10 even though drafters took it late: its ALSA was in the later half for its rarity.
-22. **Told You So.** A pick you wrote a Receipts note on, and that wasn't in your group's Group Mind, finished in the top five at its rarity.
+22. **Told You So.** A pick you shared your thoughts on, and that wasn't in your group's Group Mind, finished in the top five at its rarity.
 
 **Uncommon**
 
@@ -315,7 +313,7 @@ The two Hall of Shame group honors, Wooden Spoon and Whiff of the Season, are in
 33. **On the Record** (Common). You made all 20 picks before the lock.
 34. **Locked and Loaded** (Common). Your entry was complete at least seven days before the lock.
 35. **Buzzer Beater** (Common). You made your last change in the final hour before the lock.
-36. **Receipts on File** (Common). You wrote a Receipts note on at least five picks.
+36. **Food for Thought** (Common). You shared your thoughts on at least five picks. (Named Receipts on File until Version 21; the code is still `receipts_on_file`.)
 37. **Rainbow** (Common). Your 20 picks include at least one card of each of the five colors.
 38. **Loyalist** (Common). At least 10 of your 20 picks share a color; the badge names it, as in "Blue Loyalist."
 39. **Gold Rush** (Uncommon). At least five of your picks are multicolored.
@@ -329,7 +327,7 @@ The two Hall of Shame group honors, Wooden Spoon and Whiff of the Season, are in
 42. **Whiff of the Season** (group honor). Your #1 pick had the lowest final Card Score of every #1 pick in the group.
 43. **Bust.** Your #1 pick at a rarity finished in the bottom quarter of that rarity. (About 1 in 20.)
 44. **Rock Bottom.** One of your picks finished dead last at its rarity. (About 1 in 100.)
-45. **Eats Words.** A pick you wrote a Receipts note on finished in the bottom quarter of its rarity.
+45. **Eats Words.** A pick you shared your thoughts on finished in the bottom quarter of its rarity.
 46. **Monkey Business.** You finished below 1,000 points, so random picks would have beaten you. (Almost never.)
 
 *As built (Batch 7, September 16, 2026):* the rules for badges 1 to 14, 16 to 32 and 41 to 46 live in `computeSeasonBadges` (`api/src/lib/mtgBadges.ts`), which judges one day's standings. After every publish and re-score it judges the season's latest day, and the result replaces the season's "on track" rows in `mtg_badge_awards`; the final day's judgement becomes the awards in Batch 8. How the rules read in practice:
@@ -479,6 +477,8 @@ The community's usual header stays in every phase (name, picture, members, publi
 
 *As built (Batch 4):* after the lock, members see a **The Reveal** card in place of *Pick status*, with their lock badges, the Group Mind's five mythics and a *See everyone's picks* button that opens the full Reveal at `/communities/<slug>/reveal`. The phase card keeps *View your picks*, which opens the wizard read-only with a *See the Reveal* link. Non-members see a line saying the picks are revealed to the group's members. The card pool's grid folds away behind *Browse the cards* after the lock, so the Reveal leads. From the first published standings (Batch 5) the leaderboard comes first, with the Reveal summary right below it.
 
+*Version 21 (September 17, 2026):* the home drops the card pool section and the blank leaderboard's grey placeholder rows. Until the season goes live, the Standings card lists every member with a "?" for rank and, in place of points, how far along their picks are ("All 20 picked", "Picking, 12 of 20", "Not started") or, after the lock, how many picks they locked in and who is following along; counts only, never cards. It replaces the separate Pick status card, and its caption says when scores start. A non-member sees the card with that one line until the lock, and nothing after it. On the live board the benchmark line reads "Random picks score about 1,000". In the community header, a challenge group's members find Share (or Invite link) and Edit at the end of the members row, since their action row would otherwise hold nothing else.
+
 *As built (Version 14, September 16, 2026):* until the season goes live, the phase card also holds a blank leaderboard: column headers, three placeholder rows, the random-picks line and when the first standings arrive, replaced by the real leaderboard at the Arena launch. The card's label reads "Current Set: Reality Fracture", *How scoring works* is an outlined button beside the picks button, and *Pick status* lists every member with Done, their pick count or Not started. The card pool loads every rarity once, and tapping a card opens it large in the card viewer.
 
 *As built (Batch 8, September 16, 2026):* until the season is finalized, the final day's phase card reads "Final day" and says the last standings arrive as soon as 17Lands' data is in, followed by the podium, everyone's badges and an email with the results. Once it is finalized the card reads "Season complete," and members see the season results card (the podium, their own finish and *Share your results*), then the final standings, then every badge the group's players earned. Between seasons, from the moment the next set becomes the current season until its picks lock, members see the last season's results card, titled "Last season: <set>," with its badges and a *See the final standings* button to that season's page; a *Past seasons* card near the Season timeline links every finished season the group played. After the lock a non-member reads "Picks for <set> are locked, so new members follow this season and play from the next one," and from the final day "Join the group to see the final standings and everyone's picks, and to play next season." There is no separate *Next season* card: the next set's dates reach the group home when it becomes the current season.
@@ -496,6 +496,8 @@ The community's usual header stays in every phase (name, picture, members, publi
 **As built (Batch 2, September 15, 2026).** The wizard lives at `/communities/<slug>/picks` (sign-in and membership required; the entry itself belongs to the player and counts in every group). Picks open when previews start rather than on the full-gallery date, so a group can start as cards are revealed; a pick whose card later leaves the pool is removed on the player's next visit, the remaining picks at that rarity move up, and a notice names the card once. Each rarity is an ordered list with no gaps, so removing #2 moves #3 up. The grid is three columns on phones and fills the available width with tiles of at least 112 pixels elsewhere, since the pick tray takes the right-hand side on desktop. Every change saves about 0.7 seconds later as a full replace, one request at a time so an older save can never land after a newer one; a refused save reloads what is actually stored. `completed_at` records when the entry most recently reached twenty picks and clears if it drops below, so it cannot be claimed early and then changed.
 
 *Version 20 (September 17, 2026):* every save names the revision of the picks it builds on (`mtg_entries.revision`, which every change to the stored picks moves on). A save from a page that is out of date, such as a second tab or another device, is refused (409 `STALE`) instead of replacing newer picks, and the page says "Your picks were changed in another tab or on another device, so this page now shows those" and shows them. Coming back to the tab reloads the picks when nothing is waiting to save, and after ten minutes away it lists the cards again too. An entry that drops below twenty picks gets its completion time back if it is at twenty again within 30 minutes, so swapping a card by removing it and adding another counts the same as Replace, and a card leaving the pool never costs the player their time. Typing into the middle of a full Receipts note is refused rather than cutting words off its end, and a paste at the end is trimmed a whole character or emoji at a time. A card list or season that fails to load says so with *Try again* instead of looking empty. Lock times on the picks, player and Reveal pages name the viewer's time zone.
+
+*Version 21 (September 17, 2026), from Rob's review of the picks page:* each rarity's list holds up to ten cards. The top five are the picks, and up to five more wait below a "Shortlist, not scored" divider, so a player can gather candidates and then drag their best five to the top (migration 134, `mtg_pick_shortlist`). The shortlist never scores, never counts toward the twenty or in Pick status, and nobody else sees it. When a pick leaves the pool, the cards below it move up, so the first shortlisted card can become a pick; the lock does the same. In the card viewer, past five picks the button reads "Add to your shortlist as #6", and a full list offers Replace; grid tiles mark shortlisted cards in grey. The list has no up and down arrows: players drag by the handle (keyboard dragging still works on it), and tapping a card in the list opens it. "Saved" sits on the list's title line and fades after four seconds, while problems stay on screen. Removing a card shows the app's own toast with Undo, which closes on its own and sits above the phone's pick bar. Next, Back and the step tabs scroll to the top of the page, and while the page loads it shows a skeleton of itself. The back button to the group sits under the page's intro, which reads "Current Set: <set>. Your picks count in every challenge group you're in.", and the step header says "best first" instead of "Your #1 counts 1.5×". Receipts are "your thoughts" wherever players see them: the field reads "Your thoughts? (optional, visible to others)" (shorter on phones), the review explains that nobody sees your picks or your thoughts on them until picks lock, and the review's notices use the app's own style instead of MUI's blue and orange alerts. A two-faced card's title shows each face with its own cost ("Semester Foreseer {3}{U} // Peer Review {2}{W/U}").
 
 **How NEW works.** The card sync stamps each card's `first_seen_at`. For each player, set and rarity, the app stores `last_reviewed_at`. When a step opens, cards with `first_seen_at` later than `last_reviewed_at` are marked NEW, and `last_reviewed_at` updates to now — so badges stay visible for that visit and clear on the next. For Reality Fracture the full card list lands on September 18, about when picks open, so NEW badges pay off mostly from the next set onward. A player's first visit to a rarity marks nothing as new, since otherwise every card would be.
 
@@ -550,7 +552,7 @@ A large image; GIH WR, games-in-hand and ALSA; Card Score and rank; a rank-over-
 
 *As built (Batch 3):* a public page at `newchums.com/mtg/how-scoring-works`, readable without an account and linked from every challenge home, the pick wizard and both emails. The season dates paragraph and the full Season timeline, with its calendar links, come from the current set; the copy below is otherwise used as written.
 
-> **The idea.** Before each new Magic set launches on MTG Arena, you pick the 5 cards you think will perform best at each rarity — commons, uncommons, rares and mythics — in order. Once the set is being played, we check how every card is actually doing and score your picks.
+> **The idea.** Before each new Magic set launches on MTG Arena, you pick the 5 cards you think will perform best at each rarity, commons, uncommons, rares and mythics, in order. Once the set is being played, the system checks how every card is actually doing and scores your picks.
 >
 > **Where the data comes from.** Card performance comes from 17Lands.com, a community project that collects anonymized game data from MTG Arena players who use its tracker. We use Premier Draft data from all 17Lands users and update once a day, around 9 AM ET. Card images and details come from Scryfall.
 >
@@ -558,15 +560,15 @@ A large image; GIH WR, games-in-hand and ALSA; Card Score and rank; a rank-over-
 >
 > **Card Score (0–100).** Every day we rank each card against the other cards of the same rarity. The best common scores 100, the worst common scores 0, and everything in between is spread evenly. A Card Score of 87 means the card is doing better than 87% of the other cards at its rarity.
 >
-> **Your order matters.** Your #1 pick counts 1.5×, #2 counts 1.25×, #3 1×, #4 0.75× and #5 0.5×. Put the card you're most sure about at #1.
+> **Put your best card first.** Every pick counts the same, but your four #1 picks break ties, and badges like Called It look at your order.
 >
-> **Your score** is Card Score × multiplier, added up across all 20 picks. Random picks average about 1,000 points; a perfect, hindsight-is-20/20 entry scores about 1,940.
+> **Your score** is the Card Scores of your 20 picks, added up. Random picks average about 1,000 points; a perfect set of picks scores about 1,900.
 >
 > **Small samples.** In the first few days some cards have only a handful of games. Until 17Lands publishes a win rate for a card, it scores a neutral 50. After that, we blend its win rate toward its rarity's average until it's been played a lot, so one lucky day can't make a card look like a bomb.
 >
 > **Standings change every day.** Your score is recalculated from all the data so far, so it can go down as well as up — your card's win rate can rise while its rank falls if other cards rise faster. The first few days swing a lot; things usually settle by week two.
 >
-> **Season dates.** Picks lock Friday, September 25 at 6:00 PM ET, before prerelease weekend starts. Standings update daily from September 30. The season ends Friday, November 13; the standings that morning are final, and badges are awarded.
+> **Season dates.** Picks lock before prerelease weekend starts. Standings update every morning from the day after the set launches on Arena, and the season runs until the next set comes out: that day's standings are final, and badges are awarded. (Written for every set since Version 21; the current set's own dates are in the Season timeline under the copy.) The standings that morning are final, and badges are awarded.
 >
 > **Badges.** Earn badges for great calls — and a few for glorious misses. Some are awarded when picks lock and the rest on the final day, and everyone can see them.
 >
@@ -585,7 +587,7 @@ A large image; GIH WR, games-in-hand and ALSA; Card Score and rank; a rank-over-
 - **Joining after the lock** is open, but nobody joins the current season after picks lock (Rob, September 16, 2026): each group's players for a season are fixed at the lock, so a new member follows the season and plays from the next one, even with a locked entry from another group. A group formed after the lock plays from its next season.
 - **Roles** are the community's owner and members. Once a season has started, "delete group" becomes "archive group," so the season's history survives.
 - **Discussion:** communities have no member chat; the pre-lock arguing lives in the community's Discord or WhatsApp links.
-- **Moderation:** group names and Receipts notes are user-written text, so they use the community's existing reporting tools.
+- **Moderation:** group names and players' thoughts on their picks (Receipts) are user-written text, so they use the community's existing reporting tools.
 - **Plans:** the *Plans* button creates real-world meetups from the group — a prerelease trip, a draft night, a final-day watch party.
 - **Store leagues:** a game store can create a public group and put a QR code on the counter. If a store wants to award a prize, entry stays free and the prize is the store's own promotion (check contest rules first).
 - **The Everyone board** includes every entry for the set from a player in at least one challenge group, except players who opt out.
@@ -776,6 +778,8 @@ create table mtg_group_rosters (                     -- who plays a season in a 
 -- back), mtg_cards.missing_since (a day's grace before a card leaves the pool), and
 -- mtg_group_rosters.in_final (counted in the final standings); mtg_group_season_players keeps a finished
 -- season to the players its finalize counted.
+-- Version 21 (migration 134): mtg_pick_shortlist (entry_id, rarity, slot 6 to 10, card_id, note), the cards
+-- a player keeps in order below their five picks at a rarity. It never scores and nobody else sees it.
 
 create table mtg_badge_awards (
   id           serial primary key,
@@ -855,7 +859,7 @@ const entryScore = (picks, scores) =>
 - `GET  /mtg/sets/current` and `GET /mtg/sets/:code` (built) → the set with its phase, dates, timeline entries, pool counts, `picksOpen`, `revealOpen` and `lockedAt`
 - `GET  /mtg/sets/:code/cards?rarity=common` (built) → cards, plus `isNew` for a signed-in caller
 - `POST /mtg/sets/:code/reviewed` `{ rarity }` (built) → stamps `last_reviewed_at`
-- `GET  /mtg/sets/:code/entry` and `PUT /mtg/sets/:code/entry` (built; full replace, validated by the server; 423 after the lock, 409 before picks open). Since Version 20 the entry carries `revision`, a save sends `baseRevision` and gets 409 `STALE` when the stored picks have moved on (a save without it isn't checked), the shape is checked before any query, and a body over 32,000 characters is 413
+- `GET  /mtg/sets/:code/entry` and `PUT /mtg/sets/:code/entry` (built; full replace, validated by the server; 423 after the lock, 409 before picks open). Since Version 20 the entry carries `revision`, a save sends `baseRevision` and gets 409 `STALE` when the stored picks have moved on (a save without it isn't checked), the shape is checked before any query, and a body over 32,000 characters is 413. Since Version 21 each rarity's list holds up to ten cards in order (slots 1 to 5 are picks, 6 to 10 the shortlist, gaps closed on save), and `picked` and `complete` count only the picks
 - `GET  /mtg/communities/:id/progress` (built) → who in the group has finished, counts only; members and super admins
 - `GET  /mtg/sets/:code/calendar/lock.ics` and `final.ics` (built) → calendar files, public
 - `GET  /mtg/communities/:id/reveal` (built) → everyone's picks by rarity with notes and *Only you* flags, lock badges, the most-picked cards and the Group Mind; members and super admins; 403 `SEALED` before the lock; `?view=summary` returns only the viewer's badges and the Group Mind's mythics
@@ -936,6 +940,7 @@ These dates are a general guide, not deadlines.
 - **Version 18, September 16, 2026.** Batch 8 built (migration 131): the finalize job, the season results email, the podium with a shareable PNG and the badge ceremony, past-season pages with `?set=`, and the trophy case on NewChums profiles; the Season timeline and the final-day phase card promise the results again. Rob's rule: nobody joins the current season after picks lock. Each group's players for a season are fixed at the lock (`mtg_group_rosters`), so a late joiner follows along and plays from the next season, and a player who leaves and rejoins keeps their season; this replaces the late-joiner and past-day cutoff rules of Batches 4 and 7. Rob left four review questions to my judgement: the badge tiers were too generous, so Runner-Up, the subtotal honors, Pick of the Season and Sleeper Agent become Uncommon and Third Place Common, which takes the share of players with a Rare from about 85% to about 27% in the simulation; a fetch naming a past day would have published today's numbers under that date, so a fetch may now name only today or the final day after it ends, and other days are pasted; leaving and rejoining no longer resets a player's days (the roster); and the Everyone board, with its Oracle and Sharp Eye, counts only players in a challenge group, so a player who left every group has nothing to hide. Other design changes: finalizing waits for the final day's standings, or 26 hours past `final_at` with the latest; *MTG Seasons* gains *Finalize now* and *Reopen the season*, and the status field no longer moves a season to or from final; the results email links to the season's page and carries no attached image, since the image is drawn in the browser; there is no separate *Next season* card; the Reveal keeps to the lock's badges after the season ends; and the trophy case names a group only to its members, the player and super admins, or to everyone when the group is public and the player shows their communities.
 - **Version 19, September 17, 2026.** Batch 9: a review of Batch 8, a dry run of the real season calendar, a phone-width pass over every challenge screen, and a pass over this spec (migration 132). A hotfix shipped first: from the full-gallery date the card sync kept only cards Scryfall marks as booster cards, and Scryfall marks none of Reality Fracture's yet, so Friday's sync would have emptied the pool and deleted players' picks; the flag now applies only once the set has it, and no sync before the lock takes more than a tenth of the pool out at once. Design changes: the lock job runs at the lock (6 PM ET), not an hour later; the day after the final day retries the final day's standings, and the grace before finalizing with the latest day is 36 hours; a reopened season waits for Finalize now, which needs the final day's standings or its last attempt; publishing and re-scoring can't write beside a finalize; archived seasons are over like final ones; a finished season is kept as it ended, including players who later left, and doesn't list members who joined after its lock; the champion lines follow the Champion badge; with no active season the newest finished one is current; the timeline's first entry runs to the lock and its final day stays "happening" until the season is finalized, and dates set at midnight Eastern show as dates. Wording: no more "entry" or "sealed" in the picks screens and the Reveal, the results card reads "You're the champion of <group>", finished seasons use the past tense, and the notification settings list all four challenge emails. Two seasons at once is deferred to item 17 of `docs/To_Do_List.md`.
 - **Version 20, September 17, 2026.** A quality check before Rob's friends play (migration 133), from three reviews: the player's journey up to the lock, the season's data pipeline on real 17Lands and Scryfall data, and security and privacy. Fixed: a stale tab or second device could silently erase newer picks, so saves now build on a revision and a stale one is refused and reloaded; a brief gap in Scryfall's listing could take cards out of the pool and delete picks of them (it happened for two hours that morning), so a missing card now waits a day; challenge groups had no way to review join requests or manage members, so approval-required groups couldn't let anyone in; signing up by email lost the invite link, and a private challenge group's page, invite card and link preview talked about plans; a player who left mid-season came back onto the final podium above the Champion badge's holder; a removed member could undo it by leaving and joining again; the public trophy case showed badge reasons that name picks. Design changes: an entry keeps its completion time through a dip below twenty picks of under 30 minutes, or one caused by a card leaving the pool; Pick status and the season emails count only picks that will stand at the lock; an empty 17Lands feed, a card that stops matching, and an unmatched picked card now fail the day's checks and alert straight away, with a small tolerance for cards losing a few games; season emails are checked again for the player's setting and suspension when sent; a group with a season behind it can't be deleted by its owner; lock times can't be set in the past or moved once passed, and the Arena launch must come after the lock; standings can't be published for a future day, and the Everyone board is empty before the lock; a dry run before the season rehearses its first morning.
+- **Version 21, September 17, 2026.** Rob's review of the challenge pages (migration 134). Scoring: the slot multipliers are gone, so every pick counts its Card Score, while the order still breaks ties (the four #1 picks) and drives the order badges; nothing had been scored yet. Picks: each rarity's list holds up to ten cards, the top five being the picks and the rest a shortlist that never scores and nobody else sees; the list drags by its handle with no up and down arrows, a card in it opens on a tap, "Saved" lines up with the list's title and fades, removals use the app's own toast with Undo, Next and Back scroll to the top, the page loads with a skeleton, its back button sits under the intro, notices use the app's style instead of MUI's blue and orange alerts, and two-faced cards show each face's cost. Wording: Receipts are "your thoughts" wherever players see them (badge 36 becomes Food for Thought), the picks intro reads "Your picks count in every challenge group you're in", and the step header says "best first". The challenge home merges Pick status into the Standings card (members with a "?" rank and their pick status until scores start), drops the card pool section and the grey placeholder rows, and explains the random-picks line; a challenge group's Share and Edit move onto the members row; How Scoring Works loses the multiplier grid and gives season dates that fit every set; and the Reveal, player, card and season pages take the same back button and skeleton loading as the picks page.
 - *Claude Code: add a line here whenever you change the design.*
 
 ---

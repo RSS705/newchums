@@ -1571,6 +1571,79 @@ export default function CommunityDetailClient({
     );
   }
 
+  // Secondary actions: the share (or invite) link, the owner's Edit and the
+  // member overflow menu. They sit at the right of the action row, except on
+  // a challenge group, where members have no Start a plan: there the row
+  // would hold nothing else, so they move up to the end of the member
+  // preview (or beside the member count, until members load) and the divider
+  // and row go.
+  const actionsBesideMembers = isChallenge && isMember;
+  const secondaryActions = (
+    <>
+      <Tooltip title={community.join_mode === "invite_only" && community.invite_code ? "Copy the invite link. Anyone with it can join." : "Copy a link to this community"}>
+        <Button
+          variant="text"
+          size="small"
+          startIcon={<ContentCopyRoundedIcon sx={{ fontSize: 16 }} />}
+          onClick={handleShare}
+          sx={{
+            textTransform: "none",
+            fontWeight: 600,
+            borderRadius: 2,
+            color: "text.secondary",
+            "&:hover": { bgcolor: "action.hover", color: "text.primary" },
+          }}
+        >
+          {community.join_mode === "invite_only" && community.invite_code ? "Invite link" : "Share"}
+        </Button>
+      </Tooltip>
+      {isOwner && (
+        <Button
+          variant="outlined"
+          size="small"
+          startIcon={<EditRoundedIcon sx={{ fontSize: 16 }} />}
+          onClick={() => router.push(`/communities/${slug}/edit`)}
+          sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2, borderColor: "divider", color: "text.secondary" }}
+        >
+          Edit
+        </Button>
+      )}
+      {isMember && !isOwner && (
+        // Overflow menu (three-dot icon) for the member-level destructive
+        // action. Keeps the primary action row focused on Start a plan
+        // while still giving members a discoverable path to leave.
+        <Tooltip title="More actions">
+          <IconButton
+            aria-label="More community actions"
+            onClick={(e) => setMemberActionsAnchor(e.currentTarget)}
+            size="small"
+            sx={{
+              color: "text.secondary",
+              border: "1px solid",
+              borderColor: "divider",
+              borderRadius: 2,
+              width: 32,
+              height: 32,
+              "&:hover": { color: "text.primary", bgcolor: "action.hover" },
+            }}
+          >
+            <MoreVertRoundedIcon sx={{ fontSize: "1.125rem" }} />
+          </IconButton>
+        </Tooltip>
+      )}
+    </>
+  );
+  // The member-count row with the secondary actions at its right when `show`.
+  // When both don't fit, the actions wrap onto a line of their own under it.
+  const withActions = (row: React.ReactNode, show: boolean) => (show ? (
+    <Stack direction="row" alignItems="center" flexWrap="wrap" useFlexGap sx={{ columnGap: 1.5, rowGap: 1 }}>
+      <Box sx={{ flex: "1 1 auto", minWidth: 0 }}>{row}</Box>
+      <Stack direction="row" spacing={1} alignItems="center" useFlexGap sx={{ flexShrink: 0 }}>
+        {secondaryActions}
+      </Stack>
+    </Stack>
+  ) : row);
+
   return (
     <Stack spacing={{ xs: 2, sm: 3 }}>
       {/* Community Pro banner hero. Renders above the header card on the
@@ -1743,42 +1816,46 @@ export default function CommunityDetailClient({
               {/* Member count + online/location. Horizontal on desktop with
                   a middot separator; on mobile we switch to a column so a
                   long address can't wrap and leave a dangling separator at
-                  the end of the member-count line. */}
-              <Stack
-                direction={{ xs: "column", sm: "row" }}
-                spacing={{ xs: 0.5, sm: 1 }}
-                alignItems={{ xs: "flex-start", sm: "center" }}
-                flexWrap="wrap"
-                useFlexGap
-              >
-                <Stack direction="row" spacing={0.5} alignItems="center">
-                  <PeopleRoundedIcon sx={{ fontSize: 14, color: "text.disabled" }} />
-                  <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600, fontSize: "0.8125rem" }}>
-                    {community.member_count} {community.member_count === 1 ? "member" : "members"}
-                  </Typography>
-                </Stack>
-                {community.is_online ? (
-                  // useFlexGap uses CSS `gap` instead of sibling-margin for
-                  // spacing, which is the only way a `display: none` dot on
-                  // xs doesn't leave a ghost 4px margin in front of the icon
-                  // and offset it relative to the members icon above.
-                  <Stack direction="row" spacing={0.5} alignItems="center" useFlexGap>
-                    <Typography variant="body2" color="text.disabled" sx={{ display: { xs: "none", sm: "inline" } }}>·</Typography>
-                    <LanguageRoundedIcon sx={{ fontSize: 14, color: "text.disabled" }} />
-                    <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
-                      Online
+                  the end of the member-count line. On a challenge group the
+                  secondary actions sit here until the member preview loads. */}
+              {withActions(
+                <Stack
+                  direction={{ xs: "column", sm: "row" }}
+                  spacing={{ xs: 0.5, sm: 1 }}
+                  alignItems={{ xs: "flex-start", sm: "center" }}
+                  flexWrap="wrap"
+                  useFlexGap
+                >
+                  <Stack direction="row" spacing={0.5} alignItems="center">
+                    <PeopleRoundedIcon sx={{ fontSize: 14, color: "text.disabled" }} />
+                    <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600, fontSize: "0.8125rem" }}>
+                      {community.member_count} {community.member_count === 1 ? "member" : "members"}
                     </Typography>
                   </Stack>
-                ) : community.location_name ? (
-                  <Stack direction="row" spacing={0.5} alignItems="center" useFlexGap>
-                    <Typography variant="body2" color="text.disabled" sx={{ display: { xs: "none", sm: "inline" } }}>·</Typography>
-                    <PlaceRoundedIcon sx={{ fontSize: 14, color: "text.disabled", flexShrink: 0 }} />
-                    <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
-                      {community.location_name}
-                    </Typography>
-                  </Stack>
-                ) : null}
-              </Stack>
+                  {community.is_online ? (
+                    // useFlexGap uses CSS `gap` instead of sibling-margin for
+                    // spacing, which is the only way a `display: none` dot on
+                    // xs doesn't leave a ghost 4px margin in front of the icon
+                    // and offset it relative to the members icon above.
+                    <Stack direction="row" spacing={0.5} alignItems="center" useFlexGap>
+                      <Typography variant="body2" color="text.disabled" sx={{ display: { xs: "none", sm: "inline" } }}>·</Typography>
+                      <LanguageRoundedIcon sx={{ fontSize: 14, color: "text.disabled" }} />
+                      <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
+                        Online
+                      </Typography>
+                    </Stack>
+                  ) : community.location_name ? (
+                    <Stack direction="row" spacing={0.5} alignItems="center" useFlexGap>
+                      <Typography variant="body2" color="text.disabled" sx={{ display: { xs: "none", sm: "inline" } }}>·</Typography>
+                      <PlaceRoundedIcon sx={{ fontSize: 14, color: "text.disabled", flexShrink: 0 }} />
+                      <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem" }}>
+                        {community.location_name}
+                      </Typography>
+                    </Stack>
+                  ) : null}
+                </Stack>,
+                actionsBesideMembers && members.length === 0,
+              )}
               {/* Operating hours: one small meta row with a popover for the
                   full schedule. Keeps hours discoverable without letting
                   them push plans below the fold. Renders nothing when no
@@ -1872,12 +1949,17 @@ export default function CommunityDetailClient({
                   hideRealName={isAuthenticated === false}
                   onSeeAll={() => selectTab(tabIndexMap.members)}
                   onOpenProfile={(handle) => router.push(`/u/${handle}`)}
+                  actions={actionsBesideMembers ? secondaryActions : undefined}
                 />
               )}
             </Stack>
           </Box>
         </Box>
 
+        {/* A challenge group's members have nothing but the secondary
+            actions here, and those sit on the members row above. */}
+        {!actionsBesideMembers && (
+        <>
         <Divider sx={{ my: { xs: 2, sm: 2.25 }, borderColor: "rgba(0,0,0,0.06)" }} />
 
         {/* Action row. Primary action (Join / Start a plan / sign-in CTA)
@@ -1996,59 +2078,11 @@ export default function CommunityDetailClient({
               justifyContent: { xs: "flex-start", sm: "flex-end" },
             }}
           >
-            <Tooltip title={community.join_mode === "invite_only" && community.invite_code ? "Copy the invite link. Anyone with it can join." : "Copy a link to this community"}>
-              <Button
-                variant="text"
-                size="small"
-                startIcon={<ContentCopyRoundedIcon sx={{ fontSize: 16 }} />}
-                onClick={handleShare}
-                sx={{
-                  textTransform: "none",
-                  fontWeight: 600,
-                  borderRadius: 2,
-                  color: "text.secondary",
-                  "&:hover": { bgcolor: "action.hover", color: "text.primary" },
-                }}
-              >
-                {community.join_mode === "invite_only" && community.invite_code ? "Invite link" : "Share"}
-              </Button>
-            </Tooltip>
-            {isOwner && (
-              <Button
-                variant="outlined"
-                size="small"
-                startIcon={<EditRoundedIcon sx={{ fontSize: 16 }} />}
-                onClick={() => router.push(`/communities/${slug}/edit`)}
-                sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2, borderColor: "divider", color: "text.secondary" }}
-              >
-                Edit
-              </Button>
-            )}
-            {isMember && !isOwner && (
-              // Overflow menu (three-dot icon) for the member-level destructive
-              // action. Keeps the primary action row focused on Start a plan
-              // while still giving members a discoverable path to leave.
-              <Tooltip title="More actions">
-                <IconButton
-                  aria-label="More community actions"
-                  onClick={(e) => setMemberActionsAnchor(e.currentTarget)}
-                  size="small"
-                  sx={{
-                    color: "text.secondary",
-                    border: "1px solid",
-                    borderColor: "divider",
-                    borderRadius: 2,
-                    width: 32,
-                    height: 32,
-                    "&:hover": { color: "text.primary", bgcolor: "action.hover" },
-                  }}
-                >
-                  <MoreVertRoundedIcon sx={{ fontSize: "1.125rem" }} />
-                </IconButton>
-              </Tooltip>
-            )}
+            {secondaryActions}
           </Stack>
         </Stack>
+        </>
+        )}
       </AppCard>
 
       {/* Member overflow menu (non-owner members). Currently only hosts the
@@ -3545,19 +3579,24 @@ function MemberBenefitRow({
  *  standalone AppCard version so the top-of-page stack stays short.
  *  Privacy contract unchanged: logged-out viewers (hideRealName) only
  *  ever see `@username`, never the real `name` field. Never renders on
- *  the restricted preview; the API doesn't expose members there. */
+ *  the restricted preview; the API doesn't expose members there.
+ *  `actions` go at the end of the strip, pushed to the right, so on a
+ *  phone they share the "See all" line when the handles take a line of
+ *  their own. */
 function CommunityMemberPreview({
   members,
   totalCount,
   hideRealName,
   onSeeAll,
   onOpenProfile,
+  actions,
 }: {
   members: Member[];
   totalCount: number;
   hideRealName: boolean;
   onSeeAll: () => void;
   onOpenProfile: (handle: string) => void;
+  actions?: React.ReactNode;
 }) {
   const shown = members.slice(0, 4);
   const handles = shown
@@ -3625,6 +3664,11 @@ function CommunityMemberPreview({
       >
         See all
       </Typography>
+      {actions && (
+        <Stack direction="row" spacing={1} alignItems="center" useFlexGap sx={{ ml: "auto", flexShrink: 0 }}>
+          {actions}
+        </Stack>
+      )}
     </Stack>
   );
 }

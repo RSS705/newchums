@@ -6,15 +6,16 @@ import Button from "@mui/material/Button";
 import Drawer from "@mui/material/Drawer";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
+import { keyframes } from "@mui/material/styles";
 import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
 import CloudOffRoundedIcon from "@mui/icons-material/CloudOffRounded";
 import LockClockOutlinedIcon from "@mui/icons-material/LockClockOutlined";
 import LockRoundedIcon from "@mui/icons-material/LockRounded";
 import SyncRoundedIcon from "@mui/icons-material/SyncRounded";
 import { AppCard } from "@/components/ui";
-import { type MtgCard, type MtgRarity, MTG_SLOTS_PER_RARITY, RARITY_LABEL } from "../mtgTypes";
+import { type MtgCard, type MtgRarity, MTG_LIST_MAX, MTG_SLOTS_PER_RARITY, RARITY_LABEL } from "../mtgTypes";
 import PickList from "./PickList";
-import type { PickSlot } from "./pickUtils";
+import { type PickSlot, scoredCount, shortlistCount } from "./pickUtils";
 
 export type SaveState = "idle" | "saving" | "saved" | "error" | "locked" | "signedOut";
 
@@ -38,36 +39,65 @@ const STATUS: Record<SaveState, { icon: React.ReactNode; text: string; color: st
   signedOut: { icon: <CloudOffRoundedIcon sx={{ fontSize: 15 }} />, text: "Signed out", color: "error.main" },
 };
 
+/** "Saved" shows for four seconds, then fades; the space it took stays, so nothing beside it moves. */
+const fadeAway = keyframes`
+  from { opacity: 1; }
+  to { opacity: 0; visibility: hidden; }
+`;
+
 /** Visual save indicator. The wizard announces status once, in a single
  *  live region, so these stay hidden from screen readers. `compact` shows
- *  just the icon, for the narrow phone bar. */
+ *  just the icon, for the narrow phone bar. Keyed by state, so each new
+ *  "Saved" starts its fade again. Problems stay on screen. */
 export function SaveStatus({ state, compact = false }: { state: SaveState; compact?: boolean }) {
   const s = STATUS[state];
   if (!s.text) return null;
   return (
-    <Stack direction="row" spacing={0.5} alignItems="center" sx={{ color: s.color, minWidth: 0 }} aria-hidden title={s.text}>
+    <Stack
+      key={state}
+      direction="row"
+      spacing={0.5}
+      alignItems="center"
+      sx={{ color: s.color, minWidth: 0, ...(state === "saved" && { animation: `${fadeAway} 600ms ease 4s forwards` }) }}
+      aria-hidden
+      title={s.text}
+    >
       {s.icon}
-      {!compact && <Typography variant="caption" sx={{ fontWeight: 700, color: "inherit", whiteSpace: "nowrap" }}>{s.text}</Typography>}
+      {!compact && <Typography variant="caption" sx={{ fontWeight: 700, color: "inherit", whiteSpace: "nowrap", lineHeight: 1 }}>{s.text}</Typography>}
     </Stack>
   );
 }
 
 /**
- * The five slots for the rarity being picked. A sticky rail beside the grid
- * on desktop; on phones a slim bar pinned to the bottom of the screen that
- * opens the full list in a sheet, so the grid keeps the whole width. The bar
- * is hidden once picks are read-only.
+ * The list for the rarity being picked: five picks, then up to five more on a
+ * shortlist to compare, dragged into order. A sticky rail beside the grid on
+ * desktop; on phones a slim bar pinned to the bottom of the screen that opens
+ * the full list in a sheet, so the grid keeps the whole width. The bar is
+ * hidden once picks are read-only.
  */
 export default function PickTray({ rarity, slots, locked, saveState, lockCountdown, onReorder, onRemove, onOpenCard }: Props) {
   const [sheetOpen, setSheetOpen] = useState(false);
+  const label = RARITY_LABEL[rarity].toLowerCase();
+  const picked = scoredCount(slots);
+  const extra = shortlistCount(slots);
   const header = (
-    <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1} sx={{ mb: 1.25 }}>
-      <Box>
-        <Typography variant="body2" fontWeight={800}>Your {RARITY_LABEL[rarity].toLowerCase()}</Typography>
-        <Typography variant="caption" color="text.secondary">{slots.length} of {MTG_SLOTS_PER_RARITY} picked</Typography>
-      </Box>
-      <SaveStatus state={saveState} />
-    </Stack>
+    <Box sx={{ mb: 1.25 }}>
+      {/* The save status sits on the title's own line, so it lines up with it. */}
+      <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1} sx={{ minHeight: 22 }}>
+        <Typography variant="body2" fontWeight={800} sx={{ lineHeight: 1.3 }}>Your {label}</Typography>
+        <SaveStatus state={saveState} />
+      </Stack>
+      <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+        {picked} of {MTG_SLOTS_PER_RARITY} picked{extra > 0 ? `, ${extra} on your shortlist` : ""}
+      </Typography>
+    </Box>
+  );
+  const hint = !locked && (
+    <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1.25, lineHeight: 1.45 }}>
+      {slots.length < MTG_LIST_MAX
+        ? `List up to ${MTG_LIST_MAX} ${label} and drag your best five to the top. Only the top five score.`
+        : `Your list is full. Only the top five score.`}
+    </Typography>
   );
   const countdown = lockCountdown && !locked && (
     <Stack direction="row" spacing={0.5} alignItems="center" sx={{ mt: 1.25, color: "text.secondary" }}>
@@ -82,6 +112,7 @@ export default function PickTray({ rarity, slots, locked, saveState, lockCountdo
         <AppCard>
           {header}
           <PickList rarity={rarity} slots={slots} locked={locked} onReorder={onReorder} onRemove={onRemove} onOpenCard={onOpenCard} dense />
+          {hint}
           {countdown}
         </AppCard>
       </Box>
@@ -108,8 +139,9 @@ export default function PickTray({ rarity, slots, locked, saveState, lockCountdo
             <Stack
               direction="row"
               spacing={0.5}
+              alignItems="center"
               sx={{ flex: 1, minWidth: 0, overflow: "hidden" }}
-              aria-label={`${slots.length} of ${MTG_SLOTS_PER_RARITY} ${RARITY_LABEL[rarity].toLowerCase()} picked`}
+              aria-label={`${picked} of ${MTG_SLOTS_PER_RARITY} ${label} picked${extra > 0 ? `, ${extra} on your shortlist` : ""}`}
             >
               {Array.from({ length: MTG_SLOTS_PER_RARITY }, (_, i) => {
                 const s = slots[i];
@@ -124,6 +156,9 @@ export default function PickTray({ rarity, slots, locked, saveState, lockCountdo
                   </Box>
                 );
               })}
+              {extra > 0 && (
+                <Typography aria-hidden variant="caption" fontWeight={800} color="text.secondary" sx={{ flexShrink: 0, pl: 0.25 }}>+{extra}</Typography>
+              )}
             </Stack>
             <Stack alignItems="flex-end" spacing={0.25} sx={{ flexShrink: 0, minWidth: 0 }}>
               <SaveStatus state={saveState} compact />
@@ -133,8 +168,8 @@ export default function PickTray({ rarity, slots, locked, saveState, lockCountdo
                 </Typography>
               )}
             </Stack>
-            <Button variant="contained" size="small" onClick={() => setSheetOpen(true)} aria-label={`Open your ${RARITY_LABEL[rarity].toLowerCase()}, ${slots.length} of ${MTG_SLOTS_PER_RARITY} picked`} sx={{ textTransform: "none", fontWeight: 700, borderRadius: 2, boxShadow: "none", flexShrink: 0, minHeight: 40, minWidth: 52 }}>
-              {slots.length}/{MTG_SLOTS_PER_RARITY}
+            <Button variant="contained" size="small" onClick={() => setSheetOpen(true)} aria-label={`Open your ${label}, ${picked} of ${MTG_SLOTS_PER_RARITY} picked`} sx={{ textTransform: "none", fontWeight: 700, borderRadius: 2, boxShadow: "none", flexShrink: 0, minHeight: 40, minWidth: 52 }}>
+              {picked}/{MTG_SLOTS_PER_RARITY}
             </Button>
           </Stack>
         </Box>
@@ -155,6 +190,7 @@ export default function PickTray({ rarity, slots, locked, saveState, lockCountdo
           onRemove={onRemove}
           onOpenCard={(card) => { setSheetOpen(false); onOpenCard(card); }}
         />
+        {hint}
         {countdown}
         <Button variant="text" onClick={() => setSheetOpen(false)} fullWidth sx={{ mt: 1.5, textTransform: "none", fontWeight: 600, minHeight: 44 }}>Done</Button>
       </Drawer>

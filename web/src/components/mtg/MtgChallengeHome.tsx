@@ -2,33 +2,25 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import Avatar from "@mui/material/Avatar";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
-import ButtonBase from "@mui/material/ButtonBase";
 import Chip from "@mui/material/Chip";
 import Stack from "@mui/material/Stack";
-import Tab from "@mui/material/Tab";
-import Tabs from "@mui/material/Tabs";
 import Typography from "@mui/material/Typography";
-import CheckCircleRoundedIcon from "@mui/icons-material/CheckCircleRounded";
-import GroupsRoundedIcon from "@mui/icons-material/GroupsRounded";
 import HistoryRoundedIcon from "@mui/icons-material/HistoryRounded";
-import LeaderboardRoundedIcon from "@mui/icons-material/LeaderboardRounded";
 import LockClockOutlinedIcon from "@mui/icons-material/LockClockOutlined";
 import MenuBookRoundedIcon from "@mui/icons-material/MenuBookRounded";
-import StyleRoundedIcon from "@mui/icons-material/StyleRounded";
 import { AppCard } from "@/components/ui";
-import { apiFetch, getAvatarBaseUrl } from "@/lib/apiClient";
+import { apiFetch } from "@/lib/apiClient";
 import SeasonTimeline from "./SeasonTimeline";
 import { rememberChallengeGroup } from "./challengeGroup";
 import RevealSummary from "./reveal/RevealSummary";
 import Leaderboard from "./leaderboard/Leaderboard";
+import PreSeasonStandings from "./leaderboard/PreSeasonStandings";
 import SeasonResults from "./results/SeasonResults";
-import CardViewer from "./picks/CardViewer";
 import {
-  MTG_ATTRIBUTION, MTG_RARITIES, MTG_TOTAL_PICKS, RARITY_LABEL,
-  type MtgCard, type MtgProgressMember, type MtgRarity, type MtgSeasonRef, type MtgSetPayload, countdown, formatWhen, seasonPageHref,
+  MTG_ATTRIBUTION, MTG_TOTAL_PICKS,
+  type MtgProgressMember, type MtgSeasonRef, type MtgSetPayload, countdown, formatWhen, seasonPageHref,
 } from "./mtgTypes";
 
 type Props = {
@@ -56,8 +48,6 @@ const FINAL_PENDING = {
 };
 const EASTERN_DAY = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" });
 
-/** Grey placeholder widths for the blank standings' player names. */
-const BLANK_ROWS = ["58%", "44%", "36%"];
 const buttonSx = { textTransform: "none", fontWeight: 700, borderRadius: 2.5, boxShadow: "none" } as const;
 
 function IconDisc({ children }: { children: React.ReactNode }) {
@@ -69,61 +59,13 @@ function IconDisc({ children }: { children: React.ReactNode }) {
 }
 
 /**
- * The leaderboard as it will look, before there is anything to rank: column
- * headers, three placeholder rows and the random-picks line. It sits under the
- * phase copy until the real standings replace it at the Arena launch.
- */
-function BlankStandings({ firstStandingsAt, picksOpen }: { firstStandingsAt: string | null; picksOpen: boolean }) {
-  return (
-    <Box sx={{ mt: 2.5, pt: 2.5, borderTop: "1px solid", borderColor: "divider" }}>
-      <Stack direction="row" spacing={1.25} alignItems="center" sx={{ mb: 1.5 }}>
-        <IconDisc><LeaderboardRoundedIcon sx={{ fontSize: 18 }} /></IconDisc>
-        <Box sx={{ minWidth: 0 }}>
-          <Typography variant="h6" component="h3" fontWeight={700} sx={{ fontSize: "1.0625rem", lineHeight: 1.2 }}>Standings</Typography>
-          <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
-            {firstStandingsAt ? `The first standings arrive ${formatWhen(firstStandingsAt)}.` : "The first standings arrive the morning after the Arena launch."}
-            {picksOpen ? " Make your picks to get on the board." : ""}
-          </Typography>
-        </Box>
-      </Stack>
-      <Box aria-hidden>
-        <Box sx={{ display: "grid", gridTemplateColumns: "44px minmax(0, 1fr) 64px", alignItems: "center", px: { xs: 1, sm: 1.5 }, pb: 0.75 }}>
-          {["Rank", "Player", "Points"].map((h, i) => (
-            <Typography key={h} variant="caption" fontWeight={700} color="text.secondary" sx={{ textTransform: "uppercase", letterSpacing: "0.05em", fontSize: "0.6875rem", textAlign: i === 2 ? "right" : "left" }}>
-              {h}
-            </Typography>
-          ))}
-        </Box>
-        <Stack spacing={0.75}>
-          {BLANK_ROWS.map((width, i) => (
-            <Box key={width} sx={{ display: "grid", gridTemplateColumns: "44px minmax(0, 1fr) 64px", alignItems: "center", px: { xs: 1, sm: 1.5 }, minHeight: 52, borderRadius: 2, border: "1px dashed", borderColor: "divider" }}>
-              <Typography sx={{ fontWeight: 800, color: "text.disabled" }}>{i + 1}</Typography>
-              <Stack direction="row" spacing={1.25} alignItems="center" sx={{ minWidth: 0 }}>
-                <Box sx={{ width: 28, height: 28, borderRadius: "50%", bgcolor: "grey.200", flexShrink: 0 }} />
-                <Box sx={{ height: 10, width, borderRadius: 5, bgcolor: "grey.200" }} />
-              </Stack>
-              <Typography sx={{ fontWeight: 800, color: "text.disabled", textAlign: "right" }}>–</Typography>
-            </Box>
-          ))}
-        </Stack>
-        <Stack direction="row" alignItems="center" spacing={1} sx={{ px: 1, mt: 1.25 }}>
-          <Box sx={{ flex: 1, borderTop: "2px dashed", borderColor: "divider" }} />
-          <Typography variant="caption" color="text.secondary" fontWeight={700} sx={{ whiteSpace: "nowrap" }}>Random picks ≈ 1,000</Typography>
-          <Box sx={{ flex: 1, borderTop: "2px dashed", borderColor: "divider" }} />
-        </Stack>
-      </Box>
-    </Box>
-  );
-}
-
-/**
  * The challenge view on a specialized community's Challenge tab, in place of
  * Plans (the community header, and the Members and Requests tabs, stay
- * around it): the phase card with the lock countdown,
- * the picks and scoring buttons, and until the season goes live a blank
- * leaderboard; every member's pick status (counts only, never cards) or,
- * after the lock, the Reveal summary (below the standings once they start);
- * the card pool, whose cards open large; and the season timeline.
+ * around it): the phase card with the lock countdown and the picks and
+ * scoring buttons; the standings, which until the season goes live list
+ * every member with how far along their picks are (counts only, never
+ * cards) and a "?" for rank; after the lock, the Reveal summary below them;
+ * past seasons; and the season timeline.
  */
 export default function MtgChallengeHome({ communityId, communityName, slug, isMember, isAuthenticated }: Props) {
   const [set, setSet] = useState<MtgSetPayload | null>(null);
@@ -135,16 +77,13 @@ export default function MtgChallengeHome({ communityId, communityName, slug, isM
   // Bumped by Try again, which reruns the season load below.
   const [attempt, setAttempt] = useState(0);
   useEffect(() => { rememberChallengeGroup({ id: communityId, name: communityName, slug }); }, [communityId, communityName, slug]);
-  const [rarity, setRarity] = useState<MtgRarity>("common");
-  // Every rarity at once, so switching tabs never waits on the network.
-  const [pool, setPool] = useState<MtgCard[] | null>(null);
-  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [progress, setProgress] = useState<MtgProgressMember[] | null>(null);
+  // The pick counts didn't load; the standings' Try again bumps the attempt.
+  const [progressFailed, setProgressFailed] = useState(false);
+  const [progressAttempt, setProgressAttempt] = useState(0);
   // The seasons this group has played, for past seasons and last season's results.
   const [seasons, setSeasons] = useState<MtgSeasonRef[] | null>(null);
-  // After the lock the pool grid starts folded away, so the Reveal leads.
-  const [poolOpen, setPoolOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -177,10 +116,10 @@ export default function MtgChallengeHome({ communityId, communityName, slug, isM
     return () => clearInterval(t);
   }, [closeToLock]);
 
-  // The group's progress, which also carries the viewer's own count for the
-  // button label. Deliberately not the entry route: that one tidies picks
-  // whose card left the pool and reports it once, and the wizard should be
-  // the one to tell the player.
+  // The group's progress, for the standings before the season goes live, and
+  // the viewer's own count for the button label. Deliberately not the entry
+  // route: that one tidies picks whose card left the pool and reports it
+  // once, and the wizard should be the one to tell the player.
   const setCode = set?.code ?? null;
   useEffect(() => {
     if (!setCode || !isMember || !isAuthenticated) return;
@@ -190,11 +129,19 @@ export default function MtgChallengeHome({ communityId, communityName, slug, isM
         const pRes = await apiFetch(`/mtg/communities/${communityId}/progress`, { auth: true });
         const pData = (await pRes.json()) as { ok?: boolean; members?: MtgProgressMember[] };
         if (cancelled) return;
-        if (pData.ok && Array.isArray(pData.members)) setProgress(pData.members);
-      } catch { /* the page still works without progress */ }
+        if (pData.ok && Array.isArray(pData.members)) {
+          setProgress(pData.members);
+          setProgressFailed(false);
+        } else {
+          setProgressFailed(true);
+        }
+      } catch {
+        // The rest of the page works without progress; the standings offer to try again.
+        if (!cancelled) setProgressFailed(true);
+      }
     })();
     return () => { cancelled = true; };
-  }, [setCode, communityId, isMember, isAuthenticated]);
+  }, [setCode, communityId, isMember, isAuthenticated, progressAttempt]);
   const myPicked = progress?.find((m) => m.isViewer)?.picked ?? null;
 
   useEffect(() => {
@@ -210,24 +157,6 @@ export default function MtgChallengeHome({ communityId, communityName, slug, isM
   // The clock can pass the lock while the page is open; the minute tick then
   // switches the home to the Reveal without a reload.
   const pastLock = !!set && nowMs >= Date.parse(set.dates.lockAt);
-  const setLocked = !!set && (set.revealOpen || pastLock || set.phase === "locked" || set.phase === "live" || set.phase === "final");
-  const gridShown = !setLocked || poolOpen;
-
-  useEffect(() => {
-    if (!setCode || !gridShown || pool) return;
-    let cancelled = false;
-    apiFetch(`/mtg/sets/${setCode}/cards`, { auth: false })
-      .then((r) => r.json())
-      .then((d: { ok?: boolean; cards?: MtgCard[] }) => { if (!cancelled) setPool(d.ok && d.cards ? d.cards : []); })
-      .catch(() => { if (!cancelled) setPool([]); });
-    return () => { cancelled = true; };
-  }, [setCode, gridShown, pool]);
-
-  const byRarity = useMemo(() => {
-    const out: Record<MtgRarity, MtgCard[]> = { common: [], uncommon: [], rare: [], mythic: [] };
-    for (const card of pool ?? []) out[card.rarity]?.push(card);
-    return out;
-  }, [pool]);
 
   const lockIn = useMemo(() => (set ? countdown(set.dates.lockAt, nowMs) : null), [set, nowMs]);
 
@@ -261,7 +190,6 @@ export default function MtgChallengeHome({ communityId, communityName, slug, isM
   const copy = set.phase === "final" && !finalized
     ? EASTERN_DAY.format(new Date(nowMs)) > EASTERN_DAY.format(new Date(set.dates.finalAt)) ? FINAL_PENDING.late : FINAL_PENDING.today
     : PHASE_COPY[pastLock && (set.phase === "upcoming" || set.phase === "previews" || set.phase === "open") ? "locked" : set.phase];
-  const list = pool ? byRarity[rarity] : null;
   const picksHref = `/communities/${slug}/picks`;
   const afterLock = pastLock || set.phase === "locked" || set.phase === "live" || set.phase === "final";
   const revealOpen = set.revealOpen || afterLock;
@@ -297,12 +225,9 @@ export default function MtgChallengeHome({ communityId, communityName, slug, isM
     );
   }
 
-  const done = progress ? progress.filter((m) => m.complete).length : 0;
-
   return (
     <Stack spacing={{ xs: 2, sm: 2.5 }}>
-      {/* Phase card: what is happening, the one number people care about, and
-          until the season goes live, the standings as they will look. */}
+      {/* Phase card: what is happening, and the one number people care about. */}
       <AppCard>
         <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems={{ xs: "stretch", sm: "center" }} justifyContent="space-between">
           <Box sx={{ minWidth: 0 }}>
@@ -343,8 +268,21 @@ export default function MtgChallengeHome({ communityId, communityName, slug, isM
               : `Picks for ${set.name} are locked, so new members follow this season and play from the next one. Join to see everyone's picks and the standings.`}
           </Typography>
         )}
-        {!standingsLive && <BlankStandings firstStandingsAt={firstStandingsAt} picksOpen={picksOpenNow} />}
       </AppCard>
+
+      {/* Until the season goes live, the standings list every member and how
+          far along their picks are, with ranks and points to come. Counts
+          only: nobody's cards leave the server before the lock. */}
+      {!standingsLive && (
+        <PreSeasonStandings
+          members={progress}
+          isMember={isMember}
+          locked={revealOpen}
+          firstStandingsAt={firstStandingsAt}
+          failed={progressFailed}
+          onRetry={() => setProgressAttempt((n) => n + 1)}
+        />
+      )}
 
       {/* Between seasons, last season's podium and badges until this one locks. */}
       {isMember && lastSeason && (
@@ -373,142 +311,6 @@ export default function MtgChallengeHome({ communityId, communityName, slug, isM
       ) : isMember && standingsLive && <Leaderboard communityId={communityId} slug={slug} setCode={set.code} nowMs={nowMs} firstStandingsAt={firstStandingsAt} />}
       {revealOpen && isMember && <RevealSummary communityId={communityId} slug={slug} />}
 
-      {/* Every member and how far along their picks are. Counts only: nobody's
-          cards leave the server before the lock. */}
-      {!revealOpen && isMember && progress && progress.length > 0 && (
-        <AppCard>
-          <Stack direction="row" spacing={1.25} alignItems="center" sx={{ mb: 1.5 }}>
-            <IconDisc><GroupsRoundedIcon sx={{ fontSize: 18 }} /></IconDisc>
-            <Box sx={{ minWidth: 0 }}>
-              <Typography variant="h6" component="h2" fontWeight={700} sx={{ fontSize: "1.0625rem", lineHeight: 1.2 }}>Pick status</Typography>
-              <Typography variant="caption" color="text.secondary">
-                {done} of {progress.length} finished. Everyone&apos;s picks stay private until picks lock, then they&apos;re revealed to the group.
-              </Typography>
-            </Box>
-          </Stack>
-          <Stack spacing={0.75}>
-            {progress.map((m) => (
-              <Stack key={m.userId} direction="row" spacing={1.25} alignItems="center" sx={{ py: 0.5 }}>
-                <Avatar src={m.avatarUrl ? `${getAvatarBaseUrl()}${m.avatarUrl}` : undefined} sx={{ width: 32, height: 32, fontSize: "0.875rem", bgcolor: "grey.300" }}>
-                  {(m.name || m.username || "?").charAt(0).toUpperCase()}
-                </Avatar>
-                <Box sx={{ minWidth: 0, flex: 1 }}>
-                  <Typography variant="body2" fontWeight={600} sx={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {m.isViewer ? "You" : m.name || (m.username ? `@${m.username}` : "Member")}
-                  </Typography>
-                </Box>
-                {m.complete ? (
-                  <Stack direction="row" spacing={0.5} alignItems="center" sx={{ color: "success.main", flexShrink: 0 }}>
-                    <CheckCircleRoundedIcon sx={{ fontSize: 18 }} />
-                    <Typography variant="caption" fontWeight={700} sx={{ color: "inherit" }}>Done</Typography>
-                  </Stack>
-                ) : (
-                  <Typography variant="caption" color="text.secondary" fontWeight={600} sx={{ flexShrink: 0 }}>
-                    {m.picked === 0 ? "Not started" : `${m.picked} of ${MTG_TOTAL_PICKS}`}
-                  </Typography>
-                )}
-              </Stack>
-            ))}
-          </Stack>
-        </AppCard>
-      )}
-
-      {/* Pool as it fills during previews. */}
-      <AppCard>
-        <Stack direction="row" spacing={1.25} alignItems="center" sx={{ mb: 1.5 }}>
-          <IconDisc><StyleRoundedIcon sx={{ fontSize: 18 }} /></IconDisc>
-          <Box>
-            <Typography variant="h6" component="h2" fontWeight={700} sx={{ fontSize: "1.0625rem", lineHeight: 1.2 }}>The card pool</Typography>
-            <Typography variant="caption" color="text.secondary">
-              {set.galleryComplete ? "The full card list is in." : "Automatically updates as cards are revealed."}
-              {set.lastCardSyncAt ? ` Last checked ${formatWhen(set.lastCardSyncAt)}.` : ""}
-            </Typography>
-          </Box>
-        </Stack>
-        <Box sx={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 1 }}>
-          {MTG_RARITIES.map((r) => (
-            <Box key={r} sx={{ textAlign: "center", py: 1, borderRadius: 2, border: "1px solid", borderColor: "divider" }}>
-              <Typography sx={{ fontWeight: 800, fontSize: { xs: "1.125rem", sm: "1.375rem" }, lineHeight: 1.1 }}>{set.pool[r]}</Typography>
-              <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ display: "block", lineHeight: 1.2, mt: 0.25 }}>{RARITY_LABEL[r]}</Typography>
-            </Box>
-          ))}
-        </Box>
-        {revealOpen && (
-          <Button
-            variant="text"
-            size="small"
-            onClick={() => setPoolOpen((open) => !open)}
-            aria-expanded={poolOpen}
-            sx={{ mt: 1.5, ml: -1, minHeight: 40, textTransform: "none", fontWeight: 700, boxShadow: "none" }}
-          >
-            {poolOpen ? "Hide the cards" : "Browse the cards"}
-          </Button>
-        )}
-        {gridShown && (
-          <>
-          <Tabs
-            value={rarity}
-            onChange={(_, v) => setRarity(v as MtgRarity)}
-            variant="scrollable"
-            allowScrollButtonsMobile
-            sx={{ mt: 2, minHeight: 40, borderBottom: "1px solid", borderColor: "divider", "& .MuiTabs-indicator": { height: 3, borderRadius: 2 } }}
-          >
-            {MTG_RARITIES.map((r) => (
-              <Tab key={r} value={r} label={`${RARITY_LABEL[r]} (${set.pool[r]})`} sx={{ textTransform: "none", fontWeight: 600, minHeight: 40, fontSize: "0.875rem" }} />
-            ))}
-          </Tabs>
-          {list && list.length === 0 && (
-            <Typography variant="body2" color="text.secondary" sx={{ py: 3, textAlign: "center" }}>
-              No {RARITY_LABEL[rarity].toLowerCase()} revealed yet.
-            </Typography>
-          )}
-          {(!list || list.length > 0) && (
-            <Box
-              aria-busy={!list}
-              sx={{
-                mt: 2,
-                display: "grid",
-                gridTemplateColumns: { xs: "repeat(3, 1fr)", sm: "repeat(5, 1fr)", md: "repeat(6, 1fr)", lg: "repeat(7, 1fr)" },
-                gap: { xs: 0.75, sm: 1 },
-              }}
-            >
-              {!list
-                ? Array.from({ length: 7 }, (_, i) => (
-                    // Placeholders the size of cards, so the first load doesn't jump.
-                    <Box key={i} aria-hidden sx={{ aspectRatio: "488 / 680", borderRadius: "4.5% / 3.2%", bgcolor: "grey.100" }} />
-                  ))
-                : list.map((card, i) => (
-                    <Box key={card.id} sx={{ minWidth: 0 }}>
-                      <ButtonBase
-                        onClick={() => setViewerIndex(i)}
-                        aria-label={`Open ${card.name}`}
-                        sx={{
-                          display: "block", width: "100%", position: "relative", aspectRatio: "488 / 680", borderRadius: "4.5% / 3.2%", overflow: "hidden",
-                          bgcolor: "grey.100", border: "1px solid", borderColor: "divider",
-                          "&.Mui-focusVisible": { outline: "3px solid", outlineColor: "primary.main", outlineOffset: 2 },
-                        }}
-                      >
-                        {card.imageNormal ? (
-                          // Scryfall art is shown whole, never cropped, per their rules.
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={card.imageNormal} alt="" loading="lazy" style={{ width: "100%", height: "100%", display: "block", objectFit: "contain" }} />
-                        ) : (
-                          <Box sx={{ p: 1, height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                            <Typography variant="caption" fontWeight={600} sx={{ textAlign: "center" }}>{card.name}</Typography>
-                          </Box>
-                        )}
-                      </ButtonBase>
-                      <Typography variant="caption" sx={{ display: "block", mt: 0.5, fontWeight: 600, lineHeight: 1.25, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={card.name}>
-                        {card.name}
-                      </Typography>
-                    </Box>
-                  ))}
-            </Box>
-          )}
-          </>
-        )}
-      </AppCard>
-
       {isMember && pastSeasons.length > 0 && (
         <AppCard>
           <Stack direction="row" spacing={1.25} alignItems="center" sx={{ mb: 1.5 }}>
@@ -533,22 +335,6 @@ export default function MtgChallengeHome({ communityId, communityName, slug, isM
       <Typography variant="caption" color="text.secondary" sx={{ display: "block", lineHeight: 1.5, px: 0.5 }}>
         {MTG_ATTRIBUTION}
       </Typography>
-
-      {viewerIndex !== null && list && list.length > 0 && (
-        <CardViewer
-          open
-          cards={list}
-          index={Math.min(viewerIndex, list.length - 1)}
-          onIndexChange={setViewerIndex}
-          onClose={() => setViewerIndex(null)}
-          picks={[]}
-          locked
-          hideAction
-          onAdd={() => {}}
-          onRemove={() => {}}
-          onReplace={() => {}}
-        />
-      )}
     </Stack>
   );
 }

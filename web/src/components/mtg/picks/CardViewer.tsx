@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Dialog from "@mui/material/Dialog";
@@ -12,7 +12,7 @@ import ChevronLeftRoundedIcon from "@mui/icons-material/ChevronLeftRounded";
 import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import FlipCameraAndroidRoundedIcon from "@mui/icons-material/FlipCameraAndroidRounded";
-import { type MtgCard, type MtgCardWithNew, SLOT_MULTIPLIERS, MTG_SLOTS_PER_RARITY } from "../mtgTypes";
+import { type MtgCard, type MtgCardWithNew, MTG_LIST_MAX, MTG_SLOTS_PER_RARITY } from "../mtgTypes";
 import ManaCost from "./ManaCost";
 import { type PickSlot, formatPreviewDate } from "./pickUtils";
 
@@ -31,11 +31,22 @@ type Props = {
   hideAction?: boolean;
 };
 
+/** A two-faced card's name and cost, one face after the other:
+ *  "Semester Foreseer {3}{U}" and "Peer Review {2}{W/U}". A face without a
+ *  cost of its own (the back of a transforming card) shows just its name. */
+function cardFaces(name: string, manaCost: string | null): Array<{ name: string; cost: string | null }> {
+  const names = name.split(" // ");
+  const costs = (manaCost ?? "").split(" // ").map((c) => c.trim() || null);
+  if (names.length < 2) return [{ name, cost: manaCost }];
+  return names.map((n, i) => ({ name: n, cost: costs[i] ?? null }));
+}
+
 /**
  * Tap a card to see it large (spec 10.3): flip for double-faced cards, the
  * rules text, who previewed it, previous and next with arrows, arrow keys or
- * a swipe, and one big action. When all five slots are full the action asks
- * which pick to replace instead of failing.
+ * a swipe, and one big action. Past the five picks a card joins the shortlist,
+ * and when all ten places are taken the action asks which card to replace
+ * instead of failing.
  */
 export default function CardViewer({ open, cards, index, onIndexChange, onClose, picks, locked, onAdd, onRemove, onReplace, hideAction = false }: Props) {
   const card = cards[index];
@@ -117,7 +128,8 @@ function ViewerBody({ card, position, hasPrev, hasNext, onPrev, onNext, onClose,
   const back = card.imageBackLarge ?? card.imageBackNormal;
   const image = flipped && back ? back : front;
   const pickedIndex = picks.findIndex((p) => p.card.id === card.id);
-  const full = picks.length >= MTG_SLOTS_PER_RARITY;
+  const full = picks.length >= MTG_LIST_MAX;
+  const faces = cardFaces(card.name, card.manaCost);
   const previewDate = formatPreviewDate(card.previewedAt);
 
   return (
@@ -170,10 +182,17 @@ function ViewerBody({ card, position, hasPrev, hasNext, onPrev, onNext, onClose,
           </Box>
 
           <Box sx={{ minWidth: 0, flex: 1, width: "100%" }}>
-            <Stack direction="row" spacing={1} alignItems="center" useFlexGap flexWrap="wrap">
-              <Typography component="h2" sx={{ fontWeight: 800, fontSize: { xs: "1.25rem", sm: "1.5rem" }, lineHeight: 1.2 }}>{card.name}</Typography>
-              <ManaCost cost={card.manaCost} size={20} />
-            </Stack>
+            <Typography component="h2" sx={{ fontWeight: 800, fontSize: { xs: "1.25rem", sm: "1.5rem" }, lineHeight: 1.35 }}>
+              {faces.map((face, i) => (
+                <Fragment key={i}>
+                  {i > 0 && <Box component="span" aria-hidden sx={{ mx: 0.75, color: "text.disabled", fontWeight: 600 }}>{"//"}</Box>}
+                  <Box component="span" sx={{ display: "inline-flex", alignItems: "center", flexWrap: "wrap", columnGap: 1 }}>
+                    {face.name}
+                    {face.cost && <ManaCost cost={face.cost} size={20} />}
+                  </Box>
+                </Fragment>
+              ))}
+            </Typography>
             {card.typeLine && <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, fontWeight: 600 }}>{card.typeLine}</Typography>}
             {card.oracleText && (
               <Typography variant="body2" sx={{ mt: 1.5, whiteSpace: "pre-line", lineHeight: 1.6 }}>{card.oracleText}</Typography>
@@ -191,7 +210,7 @@ function ViewerBody({ card, position, hasPrev, hasNext, onPrev, onNext, onClose,
 
             {replacing ? (
               <Box sx={{ mt: 2.5, p: 1.5, borderRadius: 2, border: "1px solid", borderColor: "divider" }}>
-                <Typography variant="body2" fontWeight={700} sx={{ mb: 1 }}>Replace which pick?</Typography>
+                <Typography variant="body2" fontWeight={700} sx={{ mb: 1 }}>Replace which card?</Typography>
                 <Stack spacing={0.75}>
                   {picks.map((p, i) => (
                     <Button
@@ -200,7 +219,7 @@ function ViewerBody({ card, position, hasPrev, hasNext, onPrev, onNext, onClose,
                       onClick={() => { onReplace(card, i); setReplacing(false); }}
                       sx={{ justifyContent: "flex-start", textTransform: "none", borderRadius: 2, color: "text.primary", gap: 1.25, py: 0.75 }}
                     >
-                      <Typography component="span" sx={{ fontWeight: 800, color: "primary.main", minWidth: 24 }}>#{i + 1}</Typography>
+                      <Typography component="span" sx={{ fontWeight: 800, color: i < MTG_SLOTS_PER_RARITY ? "primary.main" : "text.disabled", minWidth: 24 }}>#{i + 1}</Typography>
                       <Typography component="span" sx={{ fontWeight: 600, textAlign: "left", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.card.name}</Typography>
                     </Button>
                   ))}
@@ -218,16 +237,21 @@ function ViewerBody({ card, position, hasPrev, hasNext, onPrev, onNext, onClose,
           <Button fullWidth variant="contained" disabled sx={{ textTransform: "none", fontWeight: 700, borderRadius: 2.5, py: 1.25 }}>Picks are locked</Button>
         ) : pickedIndex >= 0 ? (
           <Button fullWidth variant="outlined" color="inherit" onClick={() => onRemove(card.id)} sx={{ textTransform: "none", fontWeight: 700, borderRadius: 2.5, py: 1.25 }}>
-            Remove #{pickedIndex + 1}
+            {pickedIndex < MTG_SLOTS_PER_RARITY ? `Remove #${pickedIndex + 1}` : `Remove from your shortlist (#${pickedIndex + 1})`}
           </Button>
         ) : full ? (
           <Button fullWidth variant="contained" onClick={() => setReplacing(true)} disabled={replacing} sx={{ textTransform: "none", fontWeight: 700, borderRadius: 2.5, py: 1.25, boxShadow: "none" }}>
-            All five picked. Replace one…
+            Your list is full. Replace one…
           </Button>
-        ) : (
+        ) : picks.length < MTG_SLOTS_PER_RARITY ? (
           <Button fullWidth variant="contained" onClick={() => onAdd(card)} sx={{ textTransform: "none", fontWeight: 700, borderRadius: 2.5, py: 1.25, boxShadow: "none" }}>
             Add as #{picks.length + 1}
-            <Typography component="span" sx={{ ml: 1, fontWeight: 600, opacity: 0.8, fontSize: "0.8125rem" }}>counts {SLOT_MULTIPLIERS[picks.length]}×</Typography>
+          </Button>
+        ) : (
+          // Past the five picks a card goes on the shortlist, to compare and drag up.
+          <Button fullWidth variant="outlined" onClick={() => onAdd(card)} sx={{ textTransform: "none", fontWeight: 700, borderRadius: 2.5, py: 1.25 }}>
+            Add to your shortlist as #{picks.length + 1}
+            <Typography component="span" sx={{ ml: 1, fontWeight: 600, opacity: 0.8, fontSize: "0.8125rem" }}>not scored</Typography>
           </Button>
         )}
       </Box>

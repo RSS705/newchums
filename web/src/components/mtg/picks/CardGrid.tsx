@@ -17,7 +17,7 @@ import { useTheme } from "@mui/material/styles";
 import useMediaQuery from "@mui/material/useMediaQuery";
 import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import TuneRoundedIcon from "@mui/icons-material/TuneRounded";
-import type { MtgCardWithNew } from "../mtgTypes";
+import { MTG_SLOTS_PER_RARITY, type MtgCardWithNew } from "../mtgTypes";
 import { COLOR_FILTERS, MV_FILTERS, TYPE_FILTERS, type CardFilters, type SortKey, EMPTY_FILTERS, activeFilterCount } from "./pickUtils";
 
 type Props = {
@@ -94,7 +94,7 @@ export default function CardGrid({ cards, visible, filters, onFiltersChange, pic
           </FilterRow>
           <Stack direction={{ xs: "column", sm: "row" }} spacing={{ xs: 0.5, sm: 2 }} alignItems={{ xs: "flex-start", sm: "center" }} useFlexGap flexWrap="wrap">
             <FormControlLabel control={<Switch size="small" checked={filters.newOnly} onChange={(e) => set({ newOnly: e.target.checked })} />} label={<Typography variant="body2">New only</Typography>} />
-            <FormControlLabel control={<Switch size="small" checked={filters.hidePicked} onChange={(e) => set({ hidePicked: e.target.checked })} />} label={<Typography variant="body2">Hide picked</Typography>} />
+            <FormControlLabel control={<Switch size="small" checked={filters.hidePicked} onChange={(e) => set({ hidePicked: e.target.checked })} />} label={<Typography variant="body2">Hide picked and shortlisted</Typography>} />
             <TextField select size="small" label="Sort" value={filters.sort} onChange={(e) => set({ sort: e.target.value as SortKey })} sx={{ minWidth: 170 }}>
               <MenuItem value="number">Collector number</MenuItem>
               <MenuItem value="color">Color</MenuItem>
@@ -150,7 +150,9 @@ function FilterRow({ label, children }: { label: string; children: React.ReactNo
 /** One card in the grid. Memoised: a pick changes one tile's badge, and the
  *  other hundred should not re-render for it. */
 const CardTile = memo(function CardTile({ card, index, slot, onOpen }: { card: MtgCardWithNew; index: number; slot: number | null; onOpen: (index: number) => void }) {
-  const label = `${card.name}${slot ? `, your #${slot}` : ""}${card.isNew ? ", new" : ""}`;
+  // Past #5 a card is on the player's shortlist: marked, but in grey, since it doesn't score.
+  const shortlisted = slot !== null && slot > MTG_SLOTS_PER_RARITY;
+  const label = `${card.name}${slot ? (shortlisted ? `, on your shortlist at #${slot}` : `, your #${slot}`) : ""}${card.isNew ? ", new" : ""}`;
   return (
     <Box
       component="button"
@@ -179,8 +181,8 @@ const CardTile = memo(function CardTile({ card, index, slot, onOpen }: { card: M
           overflow: "hidden",
           bgcolor: "grey.100",
           border: "2px solid",
-          borderColor: slot ? "primary.main" : "transparent",
-          boxShadow: slot ? "0 0 0 1px rgba(230,91,19,0.25)" : "none",
+          borderColor: shortlisted ? "grey.400" : slot ? "primary.main" : "transparent",
+          boxShadow: slot && !shortlisted ? "0 0 0 1px rgba(230,91,19,0.25)" : "none",
           transition: "border-color 120ms ease",
         }}
       >
@@ -193,7 +195,7 @@ const CardTile = memo(function CardTile({ card, index, slot, onOpen }: { card: M
           </Stack>
         )}
         {slot && (
-          <Box sx={{ position: "absolute", top: 4, left: 4, minWidth: 26, height: 26, px: 0.75, borderRadius: 13, bgcolor: "primary.main", color: "#fff", fontWeight: 800, fontSize: "0.8125rem", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 4px rgba(0,0,0,0.3)" }}>
+          <Box sx={{ position: "absolute", top: 4, left: 4, minWidth: 26, height: 26, px: 0.75, borderRadius: 13, bgcolor: shortlisted ? "grey.700" : "primary.main", color: "#fff", fontWeight: 800, fontSize: "0.8125rem", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 4px rgba(0,0,0,0.3)" }}>
             #{slot}
           </Box>
         )}

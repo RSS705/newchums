@@ -7,9 +7,9 @@ import Avatar from "@mui/material/Avatar";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Link from "@mui/material/Link";
+import Skeleton from "@mui/material/Skeleton";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
-import ArrowBackRoundedIcon from "@mui/icons-material/ArrowBackRounded";
 import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
 import FlipRoundedIcon from "@mui/icons-material/FlipRounded";
 import GroupsRoundedIcon from "@mui/icons-material/GroupsRounded";
@@ -20,9 +20,9 @@ import { AppCard } from "@/components/ui";
 import { apiFetch, getAvatarBaseUrl } from "@/lib/apiClient";
 import HistoryLineChart from "../charts/HistoryLineChart";
 import { loadChallengeGroup, type ChallengeGroupRef } from "../challengeGroup";
-import { IconTitle, StatTile, srOnly } from "../pageBits";
+import { BackButton, IconTitle, StatTile, srOnly } from "../pageBits";
 import {
-  MTG_ATTRIBUTION, RARITY_PLURAL, RARITY_SINGULAR, SLOT_MULTIPLIERS,
+  MTG_ATTRIBUTION, RARITY_PLURAL, RARITY_SINGULAR,
   formatCount, formatDayKey, formatWinRate, ordinal, seasonFromSearch, seasonQuery, type MtgCardPagePayload,
 } from "../mtgTypes";
 
@@ -34,6 +34,37 @@ type Load =
 const displayName = (p: { name: string | null; username: string | null }) => p.name || (p.username ? `@${p.username}` : "Member");
 const tenths = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+/** The page's shape while it loads: the card's name, its image and its numbers. */
+function CardPageSkeleton() {
+  return (
+    <Stack spacing={{ xs: 2, sm: 2.5 }} aria-busy="true" aria-label="Loading this card">
+      <Box>
+        <Skeleton variant="text" sx={{ width: { xs: "75%", sm: 320 }, fontSize: { xs: "1.5rem", sm: "2rem" } }} />
+        <Skeleton variant="text" sx={{ width: { xs: "90%", sm: 360 }, fontSize: "0.875rem" }} />
+        <Skeleton variant="rounded" width={150} height={36} sx={{ mt: 1.25 }} />
+      </Box>
+      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "minmax(0, 1fr)", sm: "220px minmax(0, 1fr)", md: "260px minmax(0, 1fr)" }, gap: { xs: 2, sm: 2.5 }, alignItems: "start" }}>
+        <Box sx={{ width: "100%", maxWidth: { xs: 260, sm: "none" }, mx: { xs: "auto", sm: 0 } }}>
+          <Skeleton variant="rounded" sx={{ width: "100%", height: "auto", aspectRatio: "488 / 680" }} />
+        </Box>
+        <AppCard>
+          <Stack direction="row" spacing={1.25} alignItems="center" sx={{ mb: 1.5 }}>
+            <Skeleton variant="circular" width={32} height={32} sx={{ flexShrink: 0, borderRadius: "50%" }} />
+            <Box sx={{ minWidth: 0, flex: 1 }}>
+              <Skeleton variant="text" sx={{ width: { xs: "55%", sm: 160 }, fontSize: "1.0625rem" }} />
+              <Skeleton variant="text" sx={{ width: { xs: "75%", sm: 220 }, fontSize: "0.75rem" }} />
+            </Box>
+          </Stack>
+          <Box sx={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: { xs: 0.75, sm: 1.25 } }}>
+            {[0, 1, 2, 3].map((i) => <Skeleton key={i} variant="rounded" sx={{ height: { xs: 72, sm: 80 } }} />)}
+            <Skeleton variant="rounded" sx={{ gridColumn: "1 / -1", height: { xs: 72, sm: 80 } }} />
+          </Box>
+        </AppCard>
+      </Box>
+    </Stack>
+  );
+}
 
 /**
  * A card's page in a challenge group (spec 10.7): the card whole, with a flip
@@ -77,27 +108,22 @@ export default function CardPageView() {
 
   const data = load.kind === "ready" ? load.data : null;
   const groupName = data ? data.community.name : load.kind === "error" ? load.group?.name : undefined;
-  const back = (
-    <Button component={NextLink} href={season ? `/communities/${slug}/seasons/${season}` : `/communities/${slug}`} variant="text" size="small" startIcon={<ArrowBackRoundedIcon />}
-      sx={{ textTransform: "none", fontWeight: 600, color: "text.secondary", ml: -1, mb: 0.5, minHeight: 40, boxShadow: "none" }}>
-      {season && data ? data.set.name : groupName ?? "Back"}
-    </Button>
-  );
+  const back = <BackButton href={season ? `/communities/${slug}/seasons/${season}` : `/communities/${slug}`} label={season && data ? data.set.name : groupName ?? "Back"} />;
 
-  if (load.kind === "loading") return <Typography variant="body2" color="text.secondary" sx={{ py: 8, textAlign: "center" }}>Loading…</Typography>;
+  if (load.kind === "loading") return <CardPageSkeleton />;
   if (!data) {
     return (
-      <Stack spacing={2}>
-        <Box>{back}</Box>
-        <AppCard>
-          <Typography variant="body1" fontWeight={700}>{load.kind === "error" ? load.message : ""}</Typography>
+      <AppCard>
+        <Typography variant="body1" fontWeight={700}>{load.kind === "error" ? load.message : ""}</Typography>
+        <Stack direction="row" spacing={1.25} useFlexGap flexWrap="wrap" alignItems="center" sx={{ mt: 2 }}>
           {load.kind === "error" && load.retry && (
-            <Button variant="outlined" onClick={() => { setLoad({ kind: "loading" }); setAttempt((n) => n + 1); }} sx={{ mt: 1.5, textTransform: "none", fontWeight: 700, borderRadius: 2.5, minHeight: 44 }}>
+            <Button variant="outlined" onClick={() => { setLoad({ kind: "loading" }); setAttempt((n) => n + 1); }} sx={{ textTransform: "none", fontWeight: 700, borderRadius: 2.5, minHeight: 44 }}>
               Try again
             </Button>
           )}
-        </AppCard>
-      </Stack>
+          {back}
+        </Stack>
+      </AppCard>
     );
   }
 
@@ -115,11 +141,11 @@ export default function CardPageView() {
   return (
     <Stack spacing={{ xs: 2, sm: 2.5 }}>
       <Box>
-        {back}
         <Typography component="h1" sx={{ fontWeight: 800, fontSize: { xs: "1.5rem", sm: "2rem" }, lineHeight: 1.15, overflowWrap: "anywhere" }}>{card.name}</Typography>
         <Typography variant="body2" color="text.secondary">
           {capitalize(RARITY_SINGULAR[rarity])}{card.typeLine ? ` · ${card.typeLine}` : ""} · {data.set.name}{card.voided ? " · Removed from scoring" : ""}
         </Typography>
+        <Box sx={{ mt: 1.25 }}>{back}</Box>
       </Box>
 
       <Box sx={{ display: "grid", gridTemplateColumns: { xs: "minmax(0, 1fr)", sm: "220px minmax(0, 1fr)", md: "260px minmax(0, 1fr)" }, gap: { xs: 2, sm: 2.5 }, alignItems: "start" }}>
@@ -228,7 +254,7 @@ export default function CardPageView() {
                       {who}
                     </Link>
                     <Typography variant="caption" color="text.secondary" sx={{ display: "block", lineHeight: 1.35 }}>
-                      #{p.slot} {RARITY_SINGULAR[rarity]} · ×{SLOT_MULTIPLIERS[p.slot - 1]}
+                      #{p.slot} {RARITY_SINGULAR[rarity]}
                     </Typography>
                     {p.note && <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25, fontStyle: "italic", overflowWrap: "anywhere" }}>&ldquo;{p.note}&rdquo;</Typography>}
                   </Box>

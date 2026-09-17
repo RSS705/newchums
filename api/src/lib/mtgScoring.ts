@@ -1,9 +1,7 @@
-import { MTG_RARITIES, easternDateKey, easternHour, type MtgRarity } from "./mtg";
+import { MTG_RARITIES, MTG_SLOTS_PER_RARITY, easternDateKey, easternHour, type MtgRarity } from "./mtg";
 
 // ── Constants from the spec ──────────────────────────────────────────────────
 
-/** Slot multipliers, #1 to #5 (spec 6.3). */
-export const MTG_SLOT_WEIGHTS = [1.5, 1.25, 1, 0.75, 0.5] as const;
 /** "Average" games blended into every win rate (spec 6.4). */
 export const MTG_PRIOR_GAMES = 200;
 /** Under this many games in hand a card carries a "low data" tag. */
@@ -264,16 +262,18 @@ export type EntryScore = { total: number; common: number; uncommon: number; rare
 const round4 = (n: number) => Math.round(n * 10000) / 10000;
 
 /**
- * One entry's points (spec 6.3): Card Score × slot multiplier over its picks.
- * Empty slots score 0; a card outside the scoring pool (voided later, say)
- * scores a neutral 50. Rounded to four decimals so equal picks tie exactly.
+ * One entry's points (spec 6.3): the Card Scores of its picks, added up. Every
+ * slot counts the same (Version 21 dropped the slot multipliers); the order
+ * still matters, because the #1 picks' points are the first tie-break and
+ * some badges look at it. Empty slots score 0; a card outside the scoring pool
+ * (voided later, say) scores a neutral 50. Rounded to four decimals so equal
+ * picks tie exactly.
  */
 export function scoreEntry(picks: Array<{ rarity: MtgRarity; slot: number; cardId: string }>, scores: Map<string, { score: number }>): EntryScore {
   const out: EntryScore = { total: 0, common: 0, uncommon: 0, rare: 0, mythic: 0, slot1: 0 };
   for (const p of picks) {
-    const weight = MTG_SLOT_WEIGHTS[p.slot - 1];
-    if (weight === undefined || !(p.rarity in out)) continue;
-    const points = (scores.get(p.cardId)?.score ?? 50) * weight;
+    if (!Number.isInteger(p.slot) || p.slot < 1 || p.slot > MTG_SLOTS_PER_RARITY || !(p.rarity in out)) continue;
+    const points = scores.get(p.cardId)?.score ?? 50;
     out[p.rarity] += points;
     out.total += points;
     if (p.slot === 1) out.slot1 += points;

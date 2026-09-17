@@ -188,12 +188,13 @@ describe("group honors", () => {
     expect(mine(badges, "c", "mythic_vision")).toHaveLength(0);
   });
 
-  it("Pick of the Season is the pick worth the most points", () => {
-    const three = [entry("a", { rare: [2, 1, 3, 4, 5] }), entry("b", { rare: [1, 2, 3, 4, 5] }), entry("c")];
+  it("Pick of the Season is the pick worth the most points, whatever its slot", () => {
+    const three = [entry("a", { rare: [2, 1, 3, 4, 5] }), entry("b", { rare: [1, 2, 3, 4, 5] }), entry("c", { rare: [3, 4, 5, 6, 7] })];
     const badges = computeSeasonBadges({ cards, entries: three, groups: [group(three)] });
-    // b's #1 rare scores 100 × 1.5; a's best is the #2 rare at 1.5, or the #1 at 1.25.
-    expect(mine(badges, "b", "pick_of_the_season")[0].detail.cards).toEqual([{ name: "rare card 1", rarity: "rare", rank: 1, ranked: 20, slot: 1, points: 150 }]);
-    expect(mine(badges, "a", "pick_of_the_season")).toHaveLength(0);
+    // Every slot counts the same, so the #1 rare earns 100 at a's #2 as at b's #1; c's best is the #3 rare.
+    expect(mine(badges, "b", "pick_of_the_season")[0].detail.cards).toEqual([{ name: "rare card 1", rarity: "rare", rank: 1, ranked: 20, slot: 1, points: 100 }]);
+    expect(mine(badges, "a", "pick_of_the_season")[0].detail.cards).toEqual([{ name: "rare card 1", rarity: "rare", rank: 1, ranked: 20, slot: 2, points: 100 }]);
+    expect(mine(badges, "c", "pick_of_the_season")).toHaveLength(0);
   });
 
   it("Comeback Kid, King of the Hill, Wire to Wire and Rollercoaster read the days", () => {
@@ -277,7 +278,7 @@ describe("group honors", () => {
   });
 
   it("Pick of the Season settles equal points on the higher adjusted win rate", () => {
-    // a's #1 common and b's #1 mythic both finish #1 at slot 1: 150 points each.
+    // a's #1 common and b's #1 mythic both finish #1: 100 points each.
     const adj = (rarity: MtgRarity, rank: number) => (rarity === "mythic" ? 0.66 : 0.6) - rank / 200;
     const thinAdj = pool({ adj });
     const three = [entry("a", { common: [1, 6, 7, 8, 9] }, thinAdj), entry("b", { mythic: [1, 6, 7, 8, 9] }, thinAdj), entry("c", {}, thinAdj)];

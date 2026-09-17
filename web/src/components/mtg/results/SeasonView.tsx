@@ -6,15 +6,16 @@ import { useParams, useRouter } from "next/navigation";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import MenuItem from "@mui/material/MenuItem";
+import Skeleton from "@mui/material/Skeleton";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
-import ArrowBackRoundedIcon from "@mui/icons-material/ArrowBackRounded";
 import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
 import { AppCard } from "@/components/ui";
 import { apiFetch } from "@/lib/apiClient";
 import { loadChallengeGroup, type ChallengeGroupRef } from "../challengeGroup";
 import Leaderboard from "../leaderboard/Leaderboard";
+import { BackButton } from "../pageBits";
 import { MTG_ATTRIBUTION, seasonPageHref, seasonQuery, type MtgSeasonRef } from "../mtgTypes";
 import SeasonResults from "./SeasonResults";
 
@@ -22,6 +23,50 @@ type Load =
   | { kind: "loading" }
   | { kind: "error"; message: string; group: ChallengeGroupRef | null; retry: boolean }
   | { kind: "ready"; group: ChallengeGroupRef; seasons: MtgSeasonRef[] };
+
+/** A card heading's shape while it loads: the icon disc, a title and a caption. */
+function TitleSkeleton() {
+  return (
+    <Stack direction="row" spacing={1.25} alignItems="center" sx={{ mb: 1.5 }}>
+      <Skeleton variant="circular" width={32} height={32} sx={{ flexShrink: 0, borderRadius: "50%" }} />
+      <Box sx={{ minWidth: 0, flex: 1 }}>
+        <Skeleton variant="text" sx={{ width: { xs: "55%", sm: 200 }, fontSize: "1.0625rem" }} />
+        <Skeleton variant="text" sx={{ width: { xs: "85%", sm: 320 }, fontSize: "0.75rem" }} />
+      </Box>
+    </Stack>
+  );
+}
+
+/** The page's shape while it loads: the season's name, the podium and the final standings. */
+function SeasonSkeleton() {
+  return (
+    <Stack spacing={{ xs: 2, sm: 2.5 }} aria-busy="true" aria-label="Loading this season">
+      <Box>
+        <Skeleton variant="text" sx={{ width: { xs: "65%", sm: 300 }, fontSize: { xs: "1.75rem", sm: "2.25rem" } }} />
+        <Skeleton variant="text" sx={{ width: { xs: "80%", sm: 280 }, fontSize: "0.875rem", mt: 0.5 }} />
+        <Skeleton variant="rounded" width={150} height={36} sx={{ mt: 1.25 }} />
+      </Box>
+      <AppCard>
+        <TitleSkeleton />
+        <Box sx={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 1fr)", alignItems: "end", columnGap: { xs: 0.75, sm: 1.5 }, pt: 1 }}>
+          {[{ xs: 46, sm: 62 }, { xs: 64, sm: 88 }, { xs: 34, sm: 46 }].map((height, i) => (
+            <Stack key={i} alignItems="center" spacing={0.75}>
+              <Skeleton variant="circular" sx={{ width: i === 1 ? { xs: 44, sm: 56 } : { xs: 36, sm: 44 }, height: i === 1 ? { xs: 44, sm: 56 } : { xs: 36, sm: 44 }, borderRadius: "50%" }} />
+              <Skeleton variant="text" sx={{ width: "60%", fontSize: "0.875rem" }} />
+              <Skeleton variant="rounded" sx={{ width: "100%", height }} />
+            </Stack>
+          ))}
+        </Box>
+      </AppCard>
+      <AppCard>
+        <TitleSkeleton />
+        <Stack spacing={0.75}>
+          {[0, 1, 2].map((i) => <Skeleton key={i} variant="rounded" height={56} />)}
+        </Stack>
+      </AppCard>
+    </Stack>
+  );
+}
 
 /**
  * A season a group played (spec 10.8): the podium, the final standings, every
@@ -62,27 +107,22 @@ export default function SeasonView() {
   }, [slug, attempt]);
 
   const group = load.kind === "ready" || load.kind === "error" ? load.group : null;
-  const back = (
-    <Button component={NextLink} href={`/communities/${slug}`} variant="text" size="small" startIcon={<ArrowBackRoundedIcon />}
-      sx={{ textTransform: "none", fontWeight: 600, color: "text.secondary", ml: -1, mb: 0.5, minHeight: 40, boxShadow: "none" }}>
-      {group?.name ?? "Back"}
-    </Button>
-  );
+  const back = <BackButton href={`/communities/${slug}`} label={group?.name ?? "Back"} />;
 
-  if (load.kind === "loading") return <Typography variant="body2" color="text.secondary" sx={{ py: 8, textAlign: "center" }}>Loading…</Typography>;
+  if (load.kind === "loading") return <SeasonSkeleton />;
   if (load.kind === "error") {
     return (
-      <Stack spacing={2}>
-        <Box>{back}</Box>
-        <AppCard>
-          <Typography variant="body1" fontWeight={700}>{load.message}</Typography>
+      <AppCard>
+        <Typography variant="body1" fontWeight={700}>{load.message}</Typography>
+        <Stack direction="row" spacing={1.25} useFlexGap flexWrap="wrap" alignItems="center" sx={{ mt: 2 }}>
           {load.retry && (
-            <Button variant="outlined" onClick={() => { setLoad({ kind: "loading" }); setAttempt((n) => n + 1); }} sx={{ mt: 1.5, textTransform: "none", fontWeight: 700, borderRadius: 2.5, minHeight: 44 }}>
+            <Button variant="outlined" onClick={() => { setLoad({ kind: "loading" }); setAttempt((n) => n + 1); }} sx={{ textTransform: "none", fontWeight: 700, borderRadius: 2.5, minHeight: 44 }}>
               Try again
             </Button>
           )}
-        </AppCard>
-      </Stack>
+          {back}
+        </Stack>
+      </AppCard>
     );
   }
 
@@ -111,7 +151,6 @@ export default function SeasonView() {
   return (
     <Stack spacing={{ xs: 2, sm: 2.5 }}>
       <Box>
-        {back}
         <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ xs: "flex-start", sm: "flex-end" }} justifyContent="space-between">
           <Box sx={{ minWidth: 0 }}>
             <Typography component="h1" sx={{ fontWeight: 800, fontSize: { xs: "1.75rem", sm: "2.25rem" }, lineHeight: 1.1, overflowWrap: "anywhere" }}>
@@ -120,6 +159,7 @@ export default function SeasonView() {
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
               {season?.final ? `A finished season of ${load.group.name}.` : season ? "This season is still being played." : `${load.group.name} didn't play this season.`}
             </Typography>
+            <Box sx={{ mt: 1.25 }}>{back}</Box>
           </Box>
           {switcher}
         </Stack>

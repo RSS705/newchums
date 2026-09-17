@@ -1,5 +1,5 @@
 import { MTG_RARITIES, MTG_SLOTS_PER_RARITY, type MtgRarity } from "./mtg";
-import { MTG_SLOT_WEIGHTS, rankStandings, scoreEntry } from "./mtgScoring";
+import { rankStandings, scoreEntry } from "./mtgScoring";
 
 // ── Season badges (spec 7.2, 7.3 and 7.5) ────────────────────────────────────
 //
@@ -219,13 +219,14 @@ function groupBadges(group: SeasonGroup, entries: Map<string, SeasonEntry>, card
     for (const p of top.rows) add(p.userId, SUBTOTAL_HONOR[rarity], { rarity, points: top.best });
   }
 
-  // Pick of the Season: the most points any one pick earned. A Card Score tops
-  // out at 100, so every #1 pick that finishes #1 earns 150; the higher
-  // adjusted win rate settles those ties, and only the same card shares.
+  // Pick of the Season: the most points any one pick earned, which is its Card
+  // Score now that every slot counts the same. A Card Score tops out at 100, so
+  // every pick of a card that finishes #1 earns 100; the higher adjusted win
+  // rate settles those ties, and only the same card shares.
   const bestPicks = players.flatMap((p) => {
     const scored = p.entry.picks.flatMap((pick) => {
       const c = cards.get(pick.cardId);
-      return judged(c) ? [{ c, slot: pick.slot, points: round4(c.cardScore * (MTG_SLOT_WEIGHTS[pick.slot - 1] ?? 0)), adj: c.adjWr ?? -1 }] : [];
+      return judged(c) && pick.slot >= 1 && pick.slot <= MTG_SLOTS_PER_RARITY ? [{ c, slot: pick.slot, points: round4(c.cardScore), adj: c.adjWr ?? -1 }] : [];
     });
     if (scored.length === 0) return [];
     const most = Math.max(...scored.map((x) => x.points));

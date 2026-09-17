@@ -10,10 +10,10 @@ import Chip from "@mui/material/Chip";
 import Collapse from "@mui/material/Collapse";
 import FormControlLabel from "@mui/material/FormControlLabel";
 import Link from "@mui/material/Link";
+import Skeleton from "@mui/material/Skeleton";
 import Stack from "@mui/material/Stack";
 import Switch from "@mui/material/Switch";
 import Typography from "@mui/material/Typography";
-import ArrowBackRoundedIcon from "@mui/icons-material/ArrowBackRounded";
 import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
 import EmojiEventsRoundedIcon from "@mui/icons-material/EmojiEventsRounded";
 import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
@@ -23,10 +23,10 @@ import { AppCard } from "@/components/ui";
 import { apiFetch, getAvatarBaseUrl } from "@/lib/apiClient";
 import HistoryLineChart from "../charts/HistoryLineChart";
 import { loadChallengeGroup, type ChallengeGroupRef } from "../challengeGroup";
-import { IconTitle, StatTile, srOnly } from "../pageBits";
+import { BackButton, IconTitle, StatTile, srOnly } from "../pageBits";
 import BadgeChip from "../reveal/BadgeChip";
 import {
-  MTG_ATTRIBUTION, MTG_RARITIES, MTG_SLOTS_PER_RARITY, MTG_TOTAL_PICKS, RARITY_LABEL, RARITY_PLURAL, SLOT_MULTIPLIERS,
+  MTG_ATTRIBUTION, MTG_RARITIES, MTG_SLOTS_PER_RARITY, MTG_TOTAL_PICKS, RARITY_LABEL, RARITY_PLURAL,
   formatCount, formatDayKey, formatWhenZoned, formatWinRate, ordinal, seasonFromSearch, seasonQuery, smallCardImage,
   type MtgBadge, type MtgCard, type MtgPlayerPayload, type MtgPlayerPick, type MtgRarity, type MtgTopCard,
 } from "../mtgTypes";
@@ -135,10 +135,9 @@ function PickNumbers({ pick, rarity }: { pick: MtgPlayerPick; rarity: MtgRarity 
           ? <><Box component="span" sx={{ whiteSpace: "nowrap" }}>{formatCount(s.gihGames)} games</Box> · no win rate yet</>
           : <><Box component="span" sx={{ whiteSpace: "nowrap" }}>{formatWinRate(s.gihWr)} GIH WR</Box> · <Box component="span" sx={{ whiteSpace: "nowrap" }}>{formatCount(s.gihGames)} games</Box></>}
       </Typography>
+      {/* The Card Score is the pick's points, shown with its change at the row's right. */}
       <Typography variant="caption" color="text.secondary" sx={{ display: "block", lineHeight: 1.4 }}>
-        <Box component="span" sx={{ whiteSpace: "nowrap" }}>{ranked ? `${ordinal(s.rank as number)} of ${s.rankedCount} ${RARITY_PLURAL[rarity]}` : "Not ranked yet"}</Box> ·{" "}
-        {/* The score and its change wrap as one piece. */}
-        <Box component="span" sx={{ whiteSpace: "nowrap" }}>Score {tenths(pick.cardScore ?? 50)}<Trend value={ranked ? pick.trend : null} /></Box>
+        <Box component="span" sx={{ whiteSpace: "nowrap" }}>{ranked ? `${ordinal(s.rank as number)} of ${s.rankedCount} ${RARITY_PLURAL[rarity]}` : "Not ranked yet"}</Box>
       </Typography>
     </>
   );
@@ -153,17 +152,16 @@ const SlotRow = memo(function SlotRow({ slot, pick, rarity, cardHref, comparing,
   comparing: boolean;
   mine: MtgPlayerPick | undefined;
 }) {
-  const multiplier = SLOT_MULTIPLIERS[slot - 1];
   return (
     <Box component="li" sx={{ listStyle: "none", position: "relative", py: 1.25, borderTop: "1px solid", borderColor: "divider", "&:first-of-type": { borderTop: 0, pt: 0.25 }, "@media (hover: hover)": { "&:hover .pick-chevron": { color: "primary.main" } } }}>
       {!pick ? (
-        <Typography variant="body2" color="text.secondary">#{slot} · ×{multiplier} · No pick</Typography>
+        <Typography variant="body2" color="text.secondary">#{slot} · No pick</Typography>
       ) : (
         // The whole row opens the card's page; the chevron says so on phones, which have no hover.
         <Box sx={{ display: "grid", gridTemplateColumns: "44px minmax(0, 1fr) auto 18px", columnGap: { xs: 1, sm: 1.25 }, alignItems: "start" }}>
           <CardThumb card={pick.card} width={44} />
           <Box sx={{ minWidth: 0 }}>
-            <Typography variant="caption" color="text.secondary" sx={{ display: "block", fontWeight: 700, lineHeight: 1.3 }}>#{slot} · ×{multiplier}</Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ display: "block", fontWeight: 700, lineHeight: 1.3 }}>#{slot}</Typography>
             <Link component={NextLink} href={cardHref(pick.card.id)} underline="hover" color="text.primary" title={pick.card.name}
               sx={{ ...clampTwo, ...stretchedLink, fontWeight: 700, fontSize: "0.9375rem", lineHeight: 1.3 }}>
               {pick.card.name}
@@ -176,7 +174,9 @@ const SlotRow = memo(function SlotRow({ slot, pick, rarity, cardHref, comparing,
           {pick.points !== null ? (
             <Box sx={{ textAlign: "right" }}>
               <Typography sx={{ fontWeight: 800, fontSize: "1rem", lineHeight: 1.25, fontVariantNumeric: "tabular-nums" }}>{tenths(pick.points)}</Typography>
-              <Typography variant="caption" color="text.secondary">points</Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ display: "block", whiteSpace: "nowrap" }}>
+                points<Trend value={pick.stats && pick.stats.rank !== null && pick.stats.rankedCount !== null ? pick.trend : null} />
+              </Typography>
             </Box>
           ) : <span />}
           <ChevronRightRoundedIcon className="pick-chevron" aria-hidden sx={{ fontSize: 18, color: "text.disabled", alignSelf: "center" }} />
@@ -242,6 +242,51 @@ function TopFive({ top, picks, rarity, cardHref, whose, final }: { top: MtgTopCa
   );
 }
 
+/** The page's shape while it loads: the player's name, their standing and a rarity's picks. */
+function PlayerSkeleton() {
+  return (
+    <Stack spacing={{ xs: 2, sm: 2.5 }} aria-busy="true" aria-label="Loading this player">
+      <Box>
+        <Stack direction="row" spacing={1.5} alignItems="center">
+          <Skeleton variant="circular" width={56} height={56} sx={{ flexShrink: 0, borderRadius: "50%" }} />
+          <Box sx={{ minWidth: 0, flex: 1 }}>
+            <Skeleton variant="text" sx={{ width: { xs: "70%", sm: 260 }, fontSize: { xs: "1.5rem", sm: "2rem" } }} />
+            <Skeleton variant="text" sx={{ width: { xs: "90%", sm: 280 }, fontSize: "0.875rem" }} />
+          </Box>
+        </Stack>
+        <Skeleton variant="rounded" width={150} height={36} sx={{ mt: 1.25 }} />
+      </Box>
+      <AppCard>
+        <Stack direction="row" spacing={1.25} alignItems="center" sx={{ mb: 1.5 }}>
+          <Skeleton variant="circular" width={32} height={32} sx={{ flexShrink: 0, borderRadius: "50%" }} />
+          <Box sx={{ minWidth: 0, flex: 1 }}>
+            <Skeleton variant="text" sx={{ width: { xs: "60%", sm: 220 }, fontSize: "1.0625rem" }} />
+            <Skeleton variant="text" sx={{ width: { xs: "85%", sm: 320 }, fontSize: "0.75rem" }} />
+          </Box>
+        </Stack>
+        <Box sx={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: { xs: 0.75, sm: 1.25 } }}>
+          {[0, 1, 2].map((i) => <Skeleton key={i} variant="rounded" sx={{ height: { xs: 72, sm: 80 } }} />)}
+        </Box>
+      </AppCard>
+      <AppCard>
+        <Skeleton variant="text" width={110} sx={{ fontSize: "1.0625rem", mb: 1 }} />
+        <Stack spacing={1.5}>
+          {[0, 1, 2].map((i) => (
+            <Stack key={i} direction="row" spacing={1.25} alignItems="center">
+              <Skeleton variant="rounded" width={44} height={61} sx={{ flexShrink: 0 }} />
+              <Box sx={{ minWidth: 0, flex: 1 }}>
+                <Skeleton variant="text" width="20%" sx={{ fontSize: "0.75rem" }} />
+                <Skeleton variant="text" width="60%" sx={{ fontSize: "0.9375rem" }} />
+                <Skeleton variant="text" width="80%" sx={{ fontSize: "0.75rem" }} />
+              </Box>
+            </Stack>
+          ))}
+        </Stack>
+      </AppCard>
+    </Stack>
+  );
+}
+
 /**
  * A player's page in a challenge group (spec 10.6): their standing and points
  * over time, their badges, and each rarity's five picks with the card's win
@@ -292,32 +337,27 @@ export default function PlayerView() {
   );
 
   const groupName = data ? data.community.name : load.kind === "sealed" || load.kind === "error" ? load.group?.name : undefined;
-  const back = (
-    <Button component={NextLink} href={season ? `/communities/${slug}/seasons/${season}` : `/communities/${slug}`} variant="text" size="small" startIcon={<ArrowBackRoundedIcon />}
-      sx={{ textTransform: "none", fontWeight: 600, color: "text.secondary", ml: -1, mb: 0.5, minHeight: 40, boxShadow: "none" }}>
-      {season && data ? data.set.name : groupName ?? "Back"}
-    </Button>
-  );
+  const back = <BackButton href={season ? `/communities/${slug}/seasons/${season}` : `/communities/${slug}`} label={season && data ? data.set.name : groupName ?? "Back"} />;
 
-  if (load.kind === "loading") return <Typography variant="body2" color="text.secondary" sx={{ py: 8, textAlign: "center" }}>Loading…</Typography>;
+  if (load.kind === "loading") return <PlayerSkeleton />;
   if (!data) {
     return (
-      <Stack spacing={2}>
-        <Box>{back}</Box>
-        <AppCard>
-          <Typography variant="body1" fontWeight={700}>{load.kind === "sealed" ? "Other players' picks show here once picks lock" : load.kind === "error" ? load.message : ""}</Typography>
-          {load.kind === "sealed" && (
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-              {load.lockAt ? `Picks lock ${formatWhenZoned(load.lockAt)}. ` : ""}Then everyone&apos;s picks in {load.group.name} are revealed.
-            </Typography>
-          )}
+      <AppCard>
+        <Typography variant="body1" fontWeight={700}>{load.kind === "sealed" ? "Other players' picks show here once picks lock" : load.kind === "error" ? load.message : ""}</Typography>
+        {load.kind === "sealed" && (
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+            {load.lockAt ? `Picks lock ${formatWhenZoned(load.lockAt)}. ` : ""}Then everyone&apos;s picks in {load.group.name} are revealed.
+          </Typography>
+        )}
+        <Stack direction="row" spacing={1.25} useFlexGap flexWrap="wrap" alignItems="center" sx={{ mt: 2 }}>
           {load.kind === "error" && load.retry && (
-            <Button variant="outlined" onClick={() => { setLoad({ kind: "loading" }); setAttempt((n) => n + 1); }} sx={{ mt: 1.5, textTransform: "none", fontWeight: 700, borderRadius: 2.5, minHeight: 44 }}>
+            <Button variant="outlined" onClick={() => { setLoad({ kind: "loading" }); setAttempt((n) => n + 1); }} sx={{ textTransform: "none", fontWeight: 700, borderRadius: 2.5, minHeight: 44 }}>
               Try again
             </Button>
           )}
-        </AppCard>
-      </Stack>
+          {back}
+        </Stack>
+      </AppCard>
     );
   }
 
@@ -330,7 +370,6 @@ export default function PlayerView() {
   return (
     <Stack spacing={{ xs: 2, sm: 2.5 }}>
       <Box>
-        {back}
         <Stack direction="row" spacing={1.5} alignItems="center" sx={{ minWidth: 0 }}>
           <Avatar src={player.avatarUrl ? `${getAvatarBaseUrl()}${player.avatarUrl}` : undefined} sx={{ width: 56, height: 56, fontSize: "1.375rem", bgcolor: "grey.300" }}>
             {name.replace(/^@/, "").charAt(0).toUpperCase()}
@@ -345,6 +384,7 @@ export default function PlayerView() {
             </Typography>
           </Box>
         </Stack>
+        <Box sx={{ mt: 1.25 }}>{back}</Box>
       </Box>
 
       {standing && (
@@ -390,7 +430,7 @@ export default function PlayerView() {
             detailName="Group rank"
             points={chartPoints}
             format={whole}
-            reference={{ value: 1000, label: "Random picks ≈ 1,000" }}
+            reference={{ value: 1000, label: "Random picks score about 1,000" }}
             summary={`${name}'s points on ${days(data.history.length)}, ${whole(lastPoint.total)} on the latest.`}
           />
         </AppCard>

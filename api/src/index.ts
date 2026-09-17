@@ -69,8 +69,8 @@ import {
   hardDeleteUser,
 } from "./lib/adminHardDelete";
 import { KUDOS_TAGS, KUDOS_MAX_PER_PLAN, KUDOS_WINDOW_MS, isKudosTag, kudosTagInfo } from "./lib/kudos";
-import { MTG_USER_AGENT, MTG_SPECIALIZATION, MTG_RARITIES, MTG_SLOTS_PER_RARITY, type MtgRarity, type MtgSetRow, type ValidatedPick, MTG_BADGES, MTG_FINALIZE_GRACE_MS, badgeDescription, badgeLabel, buildIcsEvent, compareBadges, computeEntryBadges, computeGroupMind, earlyBirdWinners, easternDateKey, easternHour, easternToUtc, formatEasternDate, formatEasternLong, formatEasternShort, mtgLockWarningAt, mtgMorningAfter, mtgPhase, mtgFinalizeDue, mtgPicksOpen, mtgPicksOpenAt, mtgResultsEmailAt, mtgRevealedEmailAt, mtgTimeline, ordinal, revealFunFact, syncScryfallSet, validateEntryPicks } from "./lib/mtg";
-import { MTG_SLOT_WEIGHTS,
+import { MTG_USER_AGENT, MTG_SPECIALIZATION, MTG_RARITIES, MTG_SLOTS_PER_RARITY, MTG_LIST_MAX, type MtgRarity, type MtgSetRow, type ValidatedPick, MTG_BADGES, MTG_FINALIZE_GRACE_MS, badgeDescription, badgeLabel, buildIcsEvent, compareBadges, computeEntryBadges, computeGroupMind, earlyBirdWinners, easternDateKey, easternHour, easternToUtc, formatEasternDate, formatEasternLong, formatEasternShort, mtgLockWarningAt, mtgMorningAfter, mtgPhase, mtgFinalizeDue, mtgPicksOpen, mtgPicksOpenAt, mtgResultsEmailAt, mtgRevealedEmailAt, mtgTimeline, ordinal, revealFunFact, syncScryfallSet, validateEntryPicks } from "./lib/mtg";
+import {
   checkSnapshot, computeCardScores, isDateKey, matchFeed, mtgIngestSlot, mtgIngestDateAllowed,
   mtgIngestWindow, mtgStandingsDay, parseCardDataFeed, rankGroupDay,
   rankStandings, scoreEntry, shiftDateKey, type FeedRecord, type PoolCard } from "./lib/mtgScoring";
@@ -1289,6 +1289,10 @@ app.post("/mtg/sets/:code/reviewed", async (c) => {
  * over these. With `expectRevision` the write only happens while the entry is
  * still at that revision (isMtgStaleWrite tells that refusal apart).
  *
+ * `picks` is each rarity's whole list in order: slots 1 to 5 are the picks
+ * (mtg_picks), and slots 6 to 10 the shortlist (mtg_pick_shortlist), which
+ * never scores and never counts toward the twenty.
+ *
  * completed_at records when the entry most recently became complete: kept
  * while it stays at twenty, cleared when it drops below. Back at twenty within
  * 30 minutes of the player's change that dropped it, or at any time after a
@@ -1302,7 +1306,9 @@ async function writeMtgPicks(
   picks: ValidatedPick[],
   opts: { playerChange: boolean; setId: string; lockCleanup?: boolean; expectRevision?: number },
 ) {
-  const complete = picks.length === MTG_RARITIES.length * MTG_SLOTS_PER_RARITY;
+  const scored = picks.filter((p) => p.slot <= MTG_SLOTS_PER_RARITY);
+  const listed = picks.filter((p) => p.slot > MTG_SLOTS_PER_RARITY);
+  const complete = scored.length === MTG_RARITIES.length * MTG_SLOTS_PER_RARITY;
   const queries = [
     // The lock, checked inside the transaction so a save that started just
     // before lock_at cannot commit after it. Dividing by zero is the simplest
@@ -1318,16 +1324,29 @@ async function writeMtgPicks(
       ? sql`SELECT 1 FROM newchums.mtg_entries e WHERE e.id = ${entryId} FOR UPDATE`
       : sql`SELECT ln(CASE WHEN e.revision = ${opts.expectRevision} THEN 1 ELSE 0 END) FROM newchums.mtg_entries e WHERE e.id = ${entryId} FOR UPDATE`,
     sql`DELETE FROM newchums.mtg_picks WHERE entry_id = ${entryId}`,
+    sql`DELETE FROM newchums.mtg_pick_shortlist WHERE entry_id = ${entryId}`,
   ];
-  if (picks.length > 0) {
+  if (scored.length > 0) {
     queries.push(sql`
       INSERT INTO newchums.mtg_picks (entry_id, rarity, slot, card_id, note)
       SELECT ${entryId}::uuid, x.rarity, x.slot, x.card_id, x.note
       FROM UNNEST(
-        ${picks.map((p) => p.rarity)}::text[],
-        ${picks.map((p) => p.slot)}::smallint[],
-        ${picks.map((p) => p.cardId)}::uuid[],
-        ${picks.map((p) => p.note)}::text[]
+        ${scored.map((p) => p.rarity)}::text[],
+        ${scored.map((p) => p.slot)}::smallint[],
+        ${scored.map((p) => p.cardId)}::uuid[],
+        ${scored.map((p) => p.note)}::text[]
+      ) AS x(rarity, slot, card_id, note)
+    `);
+  }
+  if (listed.length > 0) {
+    queries.push(sql`
+      INSERT INTO newchums.mtg_pick_shortlist (entry_id, rarity, slot, card_id, note)
+      SELECT ${entryId}::uuid, x.rarity, x.slot, x.card_id, x.note
+      FROM UNNEST(
+        ${listed.map((p) => p.rarity)}::text[],
+        ${listed.map((p) => p.slot)}::smallint[],
+        ${listed.map((p) => p.cardId)}::uuid[],
+        ${listed.map((p) => p.note)}::text[]
       ) AS x(rarity, slot, card_id, note)
     `);
   }
@@ -1392,14 +1411,18 @@ app.get("/mtg/sets/:code/entry", async (c) => {
         entry = await readEntry();
         if (!entry) return c.json({ ok: true, set: setOut, entry: null });
       }
+      // The picks (slots 1 to 5) and the shortlist below them (6 to 10), as one list per rarity.
       const rows = (await sql`
         SELECT p.rarity AS pick_rarity, p.slot, p.note, (c.in_pool AND NOT c.voided AND c.rarity = p.rarity) AS valid,
                c.id, c.scryfall_id, c.arena_id, c.name, c.rarity, c.collector_number, c.layout, c.colors, c.mana_cost, c.mana_value,
                c.type_line, c.oracle_text, c.image_normal, c.image_large, c.image_back_normal, c.image_back_large, c.image_status,
                c.previewed_at, c.preview_source, c.preview_source_uri, c.first_seen_at
-        FROM newchums.mtg_picks p
+        FROM (
+          SELECT rarity, slot, card_id, note FROM newchums.mtg_picks WHERE entry_id = ${entry.id}
+          UNION ALL
+          SELECT rarity, slot, card_id, note FROM newchums.mtg_pick_shortlist WHERE entry_id = ${entry.id}
+        ) p
         JOIN newchums.mtg_cards c ON c.id = p.card_id
-        WHERE p.entry_id = ${entry.id}
         ORDER BY p.rarity, p.slot
       `) as Record<string, unknown>[];
       dropped.length = 0;
@@ -1442,7 +1465,9 @@ app.get("/mtg/sets/:code/entry", async (c) => {
 });
 
 /** PUT /mtg/sets/:code/entry { picks: { common: [{ cardId, slot, note }], ... }, baseRevision }
- *  Full replace of the caller's entry. The server clock is the lock: 423
+ *  Full replace of the caller's entry. Each rarity's list holds up to ten cards
+ *  in order: slots 1 to 5 are the picks, and 6 to 10 a shortlist that never
+ *  scores (`picked` and `complete` count only the picks). The server clock is the lock: 423
  *  after lock_at, whatever the page thinks. 409 before picks open.
  *  `baseRevision` is the revision the page last loaded or saved; when the
  *  entry has moved on since (another tab or device saved), the save is
@@ -1468,8 +1493,8 @@ app.put("/mtg/sets/:code/entry", async (c) => {
     return c.json({ ok: false, error: "VALIDATION", message: "Picks must be grouped by rarity" }, 400);
   for (const [key, list] of Object.entries(shape as Record<string, unknown>)) {
     if (!(MTG_RARITIES as readonly string[]).includes(key)) return c.json({ ok: false, error: "VALIDATION", message: `Unknown rarity "${key}"` }, 400);
-    if (Array.isArray(list) && list.length > MTG_SLOTS_PER_RARITY)
-      return c.json({ ok: false, error: "VALIDATION", message: `At most ${MTG_SLOTS_PER_RARITY} ${key} picks` }, 400);
+    if (Array.isArray(list) && list.length > MTG_LIST_MAX)
+      return c.json({ ok: false, error: "VALIDATION", message: `At most ${MTG_LIST_MAX} ${key} cards on your list` }, 400);
   }
   const base = body.baseRevision;
   if (base !== undefined && base !== null && !(typeof base === "number" && Number.isInteger(base) && base >= 0))
@@ -1540,9 +1565,15 @@ app.put("/mtg/sets/:code/entry", async (c) => {
             .sort((x, y) => Number((x as { slot?: unknown })?.slot) - Number((y as { slot?: unknown })?.slot))
             .map((item, i) => ({ ...(item as object), slot: i + 1 }));
     }
-    const validation = validateEntryPicks(cleaned, pool);
+    const validation = validateEntryPicks(cleaned, pool, MTG_LIST_MAX);
     if (!validation.ok) return c.json({ ok: false, error: "VALIDATION", message: validation.message }, 400);
-    const picked = validation.picks.length;
+    // Each rarity is one list in order, the five picks then the shortlist, so
+    // close any gap: a card only reaches the shortlist once the picks are full.
+    const listed: ValidatedPick[] = [];
+    for (const rarity of MTG_RARITIES) {
+      validation.picks.filter((p) => p.rarity === rarity).forEach((p, i) => listed.push({ ...p, slot: i + 1 }));
+    }
+    const picked = listed.filter((p) => p.slot <= MTG_SLOTS_PER_RARITY).length;
 
     type EntryRow = { id: string; updated_at: string; completed_at: string | null; revision: number };
     const existing = ((await sql`
@@ -1557,8 +1588,10 @@ app.put("/mtg/sets/:code/entry", async (c) => {
     if (existing) {
       const current = (await sql`
         SELECT rarity, slot, card_id, note FROM newchums.mtg_picks WHERE entry_id = ${existing.id}
+        UNION ALL
+        SELECT rarity, slot, card_id, note FROM newchums.mtg_pick_shortlist WHERE entry_id = ${existing.id}
       `) as { rarity: string; slot: number; card_id: string; note: string | null }[];
-      if (signature(current.map((r) => ({ rarity: r.rarity, slot: Number(r.slot), cardId: r.card_id, note: r.note }))) === signature(validation.picks)) {
+      if (signature(current.map((r) => ({ rarity: r.rarity, slot: Number(r.slot), cardId: r.card_id, note: r.note }))) === signature(listed)) {
         return c.json({
           ok: true,
           unchanged: true,
@@ -1574,7 +1607,7 @@ app.put("/mtg/sets/:code/entry", async (c) => {
       RETURNING id
     `) as { id: string }[])[0].id;
     try {
-      await writeMtgPicks(sql, entryId, validation.picks, { playerChange: true, setId: set.id, expectRevision: baseRevision });
+      await writeMtgPicks(sql, entryId, listed, { playerChange: true, setId: set.id, expectRevision: baseRevision });
     } catch (err) {
       if (isMtgLockedWrite(err)) return c.json({ ok: false, error: "LOCKED", message: "Picks are locked" }, 423);
       if (isMtgStaleWrite(err)) return c.json(stale, 409);
@@ -2052,10 +2085,16 @@ async function processMtgLock(sql: ReturnType<typeof getSql>, only?: MtgSetRow, 
   }
   const firstRunAt = set.locked_at ? new Date(set.locked_at) : new Date();
 
-  // The pool rule, applied once to entries not yet stamped.
+  // The pool rule, applied once to entries not yet stamped. Each rarity is one
+  // list, picks then shortlist, so when a pick is dropped the cards below it
+  // move up, as they would on the player's next visit.
   const current = (await sql`
     SELECT p.entry_id, p.rarity, p.slot, p.card_id, p.note, (c.in_pool AND NOT c.voided AND c.rarity = p.rarity) AS valid
-    FROM newchums.mtg_picks p
+    FROM (
+      SELECT entry_id, rarity, slot, card_id, note FROM newchums.mtg_picks
+      UNION ALL
+      SELECT entry_id, rarity, slot, card_id, note FROM newchums.mtg_pick_shortlist
+    ) p
     JOIN newchums.mtg_entries e ON e.id = p.entry_id
     JOIN newchums.mtg_cards c ON c.id = p.card_id
     WHERE e.set_id = ${set.id} AND e.locked_at IS NULL
@@ -3933,13 +3972,11 @@ app.get("/mtg/communities/:id/players/:userId", async (c) => {
 
     const pickJson = (r: Record<string, unknown>) => {
       const slot = Number(r.slot);
-      const multiplier = MTG_SLOT_WEIGHTS[slot - 1] ?? 0;
       const today = r.has_today === true;
       // No stats row (a voided card, or one out of the pool): a neutral 50, as scoreEntry scores it.
       const cardScore = current ? (today ? Number(r.card_score) : 50) : null;
       return {
         slot,
-        multiplier,
         note: (r.note as string | null) ?? null,
         card: mapMtgCard(r),
         voided: r.voided === true,
@@ -3948,7 +3985,8 @@ app.get("/mtg/communities/:id/players/:userId", async (c) => {
           rankedCount: mtgNumber(r.ranked), alsa: mtgNumber(r.alsa), ata: mtgNumber(r.ata),
         } : null,
         cardScore,
-        points: cardScore === null ? null : mtgRound4(cardScore * multiplier),
+        // Every slot counts the same, so a pick's points are its Card Score.
+        points: cardScore === null ? null : mtgRound4(cardScore),
         trend: today && r.card_score_before !== null && r.card_score_before !== undefined ? mtgRound4(Number(r.card_score) - Number(r.card_score_before)) : null,
       };
     };

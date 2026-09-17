@@ -203,14 +203,17 @@ function GroupMindRow({ mind, sinceLabel }: { mind: NonNullable<Standings["group
   );
 }
 
+/** A benchmark placed where its points fall among the players: what 20 cards
+ *  chosen at random score on average. The rules keep a little length even on
+ *  a 320 px phone. */
 function RandomPicksLine({ value }: { value: number }) {
   return (
     <Box component="li" sx={{ listStyle: "none", position: "relative" }}>
-      <Box component="span" sx={srOnly}>Random picks average about {points(value)} points</Box>
+      <Box component="span" sx={srOnly}>Random picks score about {points(value)} points</Box>
       <Stack direction="row" alignItems="center" spacing={1} sx={{ px: 1 }}>
-        <Box aria-hidden sx={{ flex: 1, borderTop: "2px dashed", borderColor: "divider" }} />
-        <Typography aria-hidden variant="caption" color="text.secondary" fontWeight={700} sx={{ whiteSpace: "nowrap" }}>Random picks ≈ {points(value)}</Typography>
-        <Box aria-hidden sx={{ flex: 1, borderTop: "2px dashed", borderColor: "divider" }} />
+        <Box aria-hidden sx={{ flex: 1, minWidth: "12px", borderTop: "2px dashed", borderColor: "divider" }} />
+        <Typography aria-hidden variant="caption" color="text.secondary" fontWeight={700} sx={{ whiteSpace: "nowrap" }}>Random picks score about {points(value)}</Typography>
+        <Box aria-hidden sx={{ flex: 1, minWidth: "12px", borderTop: "2px dashed", borderColor: "divider" }} />
       </Stack>
     </Box>
   );

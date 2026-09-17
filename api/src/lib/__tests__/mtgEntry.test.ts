@@ -25,6 +25,16 @@ describe("validateEntryPicks", () => {
     expect(validateEntryPicks({ common: six }, pool).ok).toBe(false);
   });
 
+  it("takes a list of up to ten with the shortlist, slots 1 to 10", () => {
+    const big = new Map<string, MtgRarity>(Array.from({ length: 11 }, (_, i) => [`k${i + 1}`, "common" as MtgRarity]));
+    const list = (n: number) => Array.from({ length: n }, (_, i) => ({ cardId: `k${i + 1}`, slot: i + 1 }));
+    const ten = validateEntryPicks({ common: list(10) }, big, 10);
+    expect(ten.ok && ten.picks.map((p) => p.slot)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    expect(validateEntryPicks({ common: list(11) }, big, 10)).toEqual({ ok: false, message: "At most 10 common cards on your list" });
+    // Without the shortlist, slot 6 is still out of range.
+    expect(validateEntryPicks({ common: [{ cardId: "k1", slot: 6 }] }, big).ok).toBe(false);
+  });
+
   it("rejects a shared slot, a slot out of range and a fractional slot", () => {
     expect(validateEntryPicks({ common: [{ cardId: "c1", slot: 1 }, { cardId: "c2", slot: 1 }] }, pool).ok).toBe(false);
     expect(validateEntryPicks({ common: [{ cardId: "c1", slot: 6 }] }, pool).ok).toBe(false);

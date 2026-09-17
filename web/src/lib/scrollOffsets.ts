@@ -60,6 +60,18 @@ function idealTopFor(el: Element, container: HTMLElement | null): number {
   return portTop + scrollMarginTop;
 }
 
+/**
+ * Scroll the page back to its top, whichever element is scrolling: from the
+ * 600px breakpoint `#app-scroll-root`, below it the window. `window.scrollTo`
+ * alone does nothing on desktop.
+ */
+export function scrollPageToTop(behavior: ScrollBehavior = "smooth"): void {
+  if (typeof document === "undefined") return;
+  const container = getScrollContainer();
+  if (container) container.scrollTo({ top: 0, behavior });
+  window.scrollTo({ top: 0, behavior });
+}
+
 /** Absorbs sub-pixel rounding and the tail of a smooth scroll. */
 const SETTLE_TOLERANCE_PX = 12;
 

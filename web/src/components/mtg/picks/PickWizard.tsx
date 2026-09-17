@@ -3,21 +3,24 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Chip from "@mui/material/Chip";
-import Snackbar from "@mui/material/Snackbar";
+import Skeleton from "@mui/material/Skeleton";
 import Stack from "@mui/material/Stack";
 import Tab from "@mui/material/Tab";
 import Tabs from "@mui/material/Tabs";
 import Typography from "@mui/material/Typography";
-import ArrowBackRoundedIcon from "@mui/icons-material/ArrowBackRounded";
+import CloudOffRoundedIcon from "@mui/icons-material/CloudOffRounded";
 import LockClockOutlinedIcon from "@mui/icons-material/LockClockOutlined";
+import LockRoundedIcon from "@mui/icons-material/LockRounded";
+import RemoveCircleOutlineRoundedIcon from "@mui/icons-material/RemoveCircleOutlineRounded";
 import { AppCard, useToast } from "@/components/ui";
 import { apiFetch } from "@/lib/apiClient";
+import { scrollPageToTop } from "@/lib/scrollOffsets";
+import { BackButton, Notice } from "../pageBits";
 import {
-  MTG_ATTRIBUTION, MTG_RARITIES, MTG_SLOTS_PER_RARITY, MTG_TOTAL_PICKS, RARITY_LABEL, RARITY_PLURAL,
+  MTG_ATTRIBUTION, MTG_LIST_MAX, MTG_RARITIES, MTG_SLOTS_PER_RARITY, MTG_TOTAL_PICKS, RARITY_LABEL, RARITY_PLURAL,
   type MtgCard, type MtgCardWithNew, type MtgEntryPayload, type MtgRarity, countdown, formatWhenZoned,
 } from "../mtgTypes";
 import CardGrid from "./CardGrid";
@@ -25,7 +28,7 @@ import CardViewer from "./CardViewer";
 import PickTray, { SaveStatus, type SaveState } from "./PickTray";
 import ReviewStep from "./ReviewStep";
 import {
-  EMPTY_FILTERS, type CardFilters, type PickSlot, type PickState, applyFilters, emptyPickState, fitNote, moveItem, toPutBody, totalPicked,
+  EMPTY_FILTERS, type CardFilters, type PickSlot, type PickState, applyFilters, emptyPickState, fitNote, moveItem, scoredCount, toPutBody, totalPicked,
 } from "./pickUtils";
 
 type Step = MtgRarity | "review";
@@ -99,7 +102,6 @@ export default function PickWizard() {
   const [filters, setFilters] = useState<CardFilters>(EMPTY_FILTERS);
   const [viewer, setViewer] = useState<Viewer | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
-  const [undo, setUndo] = useState<{ rarity: MtgRarity; index: number; slot: PickSlot } | null>(null);
   const [cardsFailed, setCardsFailed] = useState<MtgRarity | null>(null);
   const [cardsAttempt, setCardsAttempt] = useState(0);
 
@@ -182,6 +184,16 @@ export default function PickWizard() {
 
   useEffect(() => { setCodeRef.current = setCode; }, [setCode]);
   useEffect(() => { readOnlyRef.current = readOnly; }, [readOnly]);
+
+  // On a phone the pick bar is pinned to the bottom of the screen; toasts sit
+  // above it rather than over it while it shows.
+  const trayBarShown = !!rarity && !readOnly && load.kind === "ready";
+  useEffect(() => {
+    if (!trayBarShown) return;
+    const root = document.documentElement;
+    root.style.setProperty("--toast-bottom-offset", "72px");
+    return () => { root.style.removeProperty("--toast-bottom-offset"); };
+  }, [trayBarShown]);
 
   // Cards for the open step, fetched once per rarity. Opening a rarity also
   // stamps the visit, so NEW ribbons stay for this visit and clear next time.
@@ -389,8 +401,18 @@ export default function PickWizard() {
   const addPick = useCallback((card: MtgCard) => {
     mutate((p) => {
       const list = p[card.rarity];
-      if (list.length >= MTG_SLOTS_PER_RARITY || list.some((s) => s.card.id === card.id)) return p;
+      if (list.length >= MTG_LIST_MAX || list.some((s) => s.card.id === card.id)) return p;
       return { ...p, [card.rarity]: [...list, { card, note: "" }] };
+    });
+  }, [mutate]);
+
+  /** Put a removed card back where it was, if there's still room for it. */
+  const restorePick = useCallback((r: MtgRarity, index: number, slot: PickSlot) => {
+    mutate((p) => {
+      if (p[r].length >= MTG_LIST_MAX || p[r].some((s) => s.card.id === slot.card.id)) return p;
+      const next = p[r].slice();
+      next.splice(Math.min(index, next.length), 0, slot);
+      return { ...p, [r]: next };
     });
   }, [mutate]);
 
@@ -399,20 +421,9 @@ export default function PickWizard() {
     if (index < 0 || readOnlyRef.current) return;
     const slot = picksRef.current[r][index];
     mutate((p) => ({ ...p, [r]: p[r].filter((s) => s.card.id !== cardId) }));
-    setUndo({ rarity: r, index, slot });
-  }, [mutate]);
-
-  const undoRemove = useCallback(() => {
-    if (!undo) return;
-    const { rarity: r, index, slot } = undo;
-    mutate((p) => {
-      if (p[r].length >= MTG_SLOTS_PER_RARITY || p[r].some((s) => s.card.id === slot.card.id)) return p;
-      const next = p[r].slice();
-      next.splice(Math.min(index, next.length), 0, slot);
-      return { ...p, [r]: next };
-    });
-    setUndo(null);
-  }, [undo, mutate]);
+    // The app's confirmation toast, green like its others, with a way back.
+    toast.success(`Removed ${slot.card.name}`, { action: { label: "Undo", onClick: () => restorePick(r, index, slot) }, duration: 6000 });
+  }, [mutate, restorePick, toast]);
 
   const replacePick = useCallback((card: MtgCard, slotIndex: number) => {
     mutate((p) => {
@@ -443,12 +454,23 @@ export default function PickWizard() {
     });
   }, [mutate]);
 
+  // A new step starts at the top of the page. The scroll waits until the step
+  // has rendered, since a smooth scroll started before a taller or shorter
+  // grid lays out gets cut short, and on desktop it's #app-scroll-root that
+  // scrolls, not the window.
+  const scrollOnStepRef = useRef(false);
   const goToStep = useCallback((next: number) => {
+    scrollOnStepRef.current = true;
     setStep(next);
     setFilters((f) => ({ ...EMPTY_FILTERS, sort: f.sort }));
     setViewer(null);
-    window.scrollTo({ top: 0, behavior: "smooth" });
   }, []);
+  useEffect(() => {
+    if (!scrollOnStepRef.current) return;
+    scrollOnStepRef.current = false;
+    const frame = requestAnimationFrame(() => scrollPageToTop("auto"));
+    return () => cancelAnimationFrame(frame);
+  }, [step]);
 
   const rarityCards = rarity ? cards[rarity] : undefined;
   const pickedIds = useMemo(() => new Set(rarity ? picks[rarity].map((s) => s.card.id) : []), [picks, rarity]);
@@ -474,9 +496,7 @@ export default function PickWizard() {
     setViewer({ rarity: card.rarity, list, index: Math.max(0, list.findIndex((c) => c.id === card.id)) });
   }, [cards]);
 
-  if (load.kind === "loading") {
-    return <Typography variant="body2" color="text.secondary" sx={{ py: 8, textAlign: "center" }}>Loading your picks…</Typography>;
-  }
+  if (load.kind === "loading") return <PicksSkeleton />;
   if (load.kind !== "ready" || !setInfo) {
     const message =
       load.kind === "error" ? load.message
@@ -487,9 +507,7 @@ export default function PickWizard() {
       <AppCard>
         <Stack spacing={2} alignItems="flex-start">
           <Typography variant="body1" fontWeight={600}>{message}</Typography>
-          <Button component={Link} href={`/communities/${slug}`} variant="outlined" startIcon={<ArrowBackRoundedIcon />} sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5 }}>
-            Back to the community
-          </Button>
+          <BackButton href={`/communities/${slug}`} label={communityName || "Back to the community"} />
         </Stack>
       </AppCard>
     );
@@ -504,15 +522,15 @@ export default function PickWizard() {
       <Box role="status" aria-live="polite" sx={VISUALLY_HIDDEN}>{LIVE_TEXT[saveState]}</Box>
 
       <Box>
-        <Button component={Link} href={communityHref} onClick={leaveTo(communityHref)} variant="text" size="small" startIcon={<ArrowBackRoundedIcon />} sx={{ textTransform: "none", fontWeight: 600, color: "text.secondary", ml: -1, mb: 0.5, minHeight: 40, boxShadow: "none", "&:hover": { bgcolor: "action.hover", boxShadow: "none" } }}>
-          {communityName || "Back"}
-        </Button>
         <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} justifyContent="space-between" alignItems={{ xs: "flex-start", sm: "flex-end" }}>
           <Box sx={{ minWidth: 0 }}>
             <Typography component="h1" sx={{ fontWeight: 800, fontSize: { xs: "1.625rem", sm: "2rem" }, lineHeight: 1.15 }}>Your picks</Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-              Current Set: {setInfo.name}. You pick once, and these picks count in every challenge group you&apos;re in when picks lock.
+              Current Set: {setInfo.name}. Your picks count in every challenge group you&apos;re in.
             </Typography>
+            <Box sx={{ mt: 1.25 }}>
+              <BackButton href={communityHref} onClick={leaveTo(communityHref)} label={communityName || "Back"} />
+            </Box>
           </Box>
           <Stack direction="row" spacing={1.25} alignItems="center" useFlexGap flexWrap="wrap">
             <Chip label={`${total} of ${MTG_TOTAL_PICKS}`} color={total === MTG_TOTAL_PICKS ? "success" : "default"} sx={{ fontWeight: 700 }} />
@@ -528,24 +546,24 @@ export default function PickWizard() {
       </Box>
 
       {signedOut && (
-        <Alert
-          severity="warning"
-          sx={{ borderRadius: 2.5 }}
+        <Notice
+          tone="warning"
+          icon={<CloudOffRoundedIcon />}
+          role="alert"
           action={
-            <Button component={Link} href={`/login?next=${encodeURIComponent(`/communities/${slug}/picks`)}`} variant="text" color="inherit" size="small" sx={{ textTransform: "none", fontWeight: 700 }}>
+            <Button component={Link} href={`/login?next=${encodeURIComponent(`/communities/${slug}/picks`)}`} variant="outlined" size="small" sx={noticeButtonSx}>
               Sign in
             </Button>
           }
         >
           You&apos;ve been signed out, so your latest change isn&apos;t saved. Sign in and make it again.
-        </Alert>
+        </Notice>
       )}
       {readOnly && !signedOut && (
-        <Alert
-          severity="info"
-          sx={{ borderRadius: 2.5 }}
+        <Notice
+          icon={<LockRoundedIcon />}
           action={setInfo.locked || pastLock ? (
-            <Button component={Link} href={`/communities/${slug}/reveal`} variant="text" color="inherit" size="small" sx={{ textTransform: "none", fontWeight: 700, whiteSpace: "nowrap" }}>
+            <Button component={Link} href={`/communities/${slug}/reveal`} variant="outlined" size="small" sx={noticeButtonSx}>
               See the Reveal
             </Button>
           ) : undefined}
@@ -553,12 +571,12 @@ export default function PickWizard() {
           {setInfo.locked || pastLock
             ? `Picks locked ${formatWhenZoned(setInfo.lockAt)}. These are your final picks.`
             : "Picks aren't open yet. They open when previews begin."}
-        </Alert>
+        </Notice>
       )}
       {dropped.length > 0 && (
-        <Alert severity="warning" onClose={() => setDropped([])} sx={{ borderRadius: 2.5 }}>
-          {dropped.map((d) => d.name).join(", ")} {dropped.length === 1 ? "is" : "are"} no longer in the card pool at that rarity, so {dropped.length === 1 ? "it was" : "they were"} taken off your picks.
-        </Alert>
+        <Notice tone="warning" icon={<RemoveCircleOutlineRoundedIcon />} onClose={() => setDropped([])}>
+          {dropped.map((d) => d.name).join(", ")} {dropped.length === 1 ? "is" : "are"} no longer in the card pool at that rarity, so {dropped.length === 1 ? "it was" : "they were"} taken off your list.
+        </Notice>
       )}
 
       <Box sx={{ borderBottom: "1px solid", borderColor: "divider" }}>
@@ -573,7 +591,7 @@ export default function PickWizard() {
           {STEPS.map((s) => (
             <Tab
               key={s}
-              label={s === "review" ? `Review ${total}/${MTG_TOTAL_PICKS}` : `${RARITY_LABEL[s]} ${picks[s].length}/${MTG_SLOTS_PER_RARITY}`}
+              label={s === "review" ? `Review ${total}/${MTG_TOTAL_PICKS}` : `${RARITY_LABEL[s]} ${scoredCount(picks[s])}/${MTG_SLOTS_PER_RARITY}`}
               sx={{ textTransform: "none", fontWeight: 700, minHeight: 44, fontSize: "0.875rem" }}
             />
           ))}
@@ -581,10 +599,10 @@ export default function PickWizard() {
       </Box>
 
       {rarity ? (
-        <Box sx={{ display: "grid", gridTemplateColumns: { xs: "minmax(0, 1fr)", md: "minmax(0, 1fr) 290px" }, gap: 2.5, alignItems: "start" }}>
+        <Box sx={{ display: "grid", gridTemplateColumns: { xs: "minmax(0, 1fr)", md: "minmax(0, 1fr) 290px", lg: "minmax(0, 1fr) 320px" }, gap: 2.5, alignItems: "start" }}>
           <AppCard>
             <Typography variant="body1" sx={{ fontWeight: 700, lineHeight: 1.45 }}>
-              Pick the 5 {RARITY_PLURAL[rarity]} you think will post the highest GIH WR on 17Lands. Your #1 counts 1.5×.
+              Pick the 5 {RARITY_PLURAL[rarity]} you think will post the highest GIH WR on 17Lands, best first.
             </Typography>
             <Stack direction="row" spacing={1} alignItems="center" useFlexGap flexWrap="wrap" sx={{ mt: 0.75, mb: 2 }}>
               {inPreviews && (
@@ -595,17 +613,18 @@ export default function PickWizard() {
               {newCount > 0 && <Chip label={`${newCount} new`} size="small" sx={{ height: 20, fontSize: "0.6875rem", fontWeight: 800, bgcolor: "#1E8E5A", color: "#fff" }} />}
             </Stack>
             {cardsFailed === rarity && !rarityCards ? (
-              <Alert
-                severity="error"
-                sx={{ borderRadius: 2.5 }}
+              <Notice
+                tone="error"
+                icon={<CloudOffRoundedIcon />}
+                role="alert"
                 action={
-                  <Button color="inherit" size="small" onClick={() => { setCardsFailed(null); setCardsAttempt((n) => n + 1); }} sx={{ textTransform: "none", fontWeight: 700, whiteSpace: "nowrap" }}>
+                  <Button variant="outlined" size="small" onClick={() => { setCardsFailed(null); setCardsAttempt((n) => n + 1); }} sx={noticeButtonSx}>
                     Try again
                   </Button>
                 }
               >
                 We couldn&apos;t load the {RARITY_PLURAL[rarity]}. Check your connection and try again.
-              </Alert>
+              </Notice>
             ) : (
               <CardGrid
                 cards={rarityCards}
@@ -637,6 +656,7 @@ export default function PickWizard() {
           onRemove={(r, i) => { const s = picks[r][i]; if (s) removePick(r, s.card.id); }}
           onNote={setNote}
           onEdit={(r) => goToStep(MTG_RARITIES.indexOf(r))}
+          onOpenCard={openCard}
         />
       )}
 
@@ -671,24 +691,45 @@ export default function PickWizard() {
           onReplace={replacePick}
         />
       )}
+    </Stack>
+  );
+}
 
-      <Snackbar
-        open={!!undo}
-        autoHideDuration={6000}
-        onClose={(_, reason) => { if (reason !== "clickaway") setUndo(null); }}
-        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
-        sx={{ bottom: { xs: rarity && !readOnly ? 88 : 16, md: 24 } }}
-      >
-        <Alert
-          severity="info"
-          variant="filled"
-          onClose={() => setUndo(null)}
-          action={<Button color="inherit" size="small" onClick={undoRemove} sx={{ textTransform: "none", fontWeight: 800, minHeight: 36 }}>Undo</Button>}
-          sx={{ alignItems: "center", borderRadius: 2.5 }}
-        >
-          Removed {undo?.slot.card.name}
-        </Alert>
-      </Snackbar>
+const noticeButtonSx = { textTransform: "none", fontWeight: 700, borderRadius: 2, whiteSpace: "nowrap", flexShrink: 0, boxShadow: "none" } as const;
+
+/** The page's shape while the season and picks load: title, the step tabs, a
+ *  grid of card-sized placeholders and, on desktop, the list beside it. */
+function PicksSkeleton() {
+  return (
+    <Stack spacing={{ xs: 2, sm: 2.5 }} aria-busy="true" aria-label="Loading your picks">
+      <Box>
+        <Typography component="h1" sx={{ fontWeight: 800, fontSize: { xs: "1.625rem", sm: "2rem" }, lineHeight: 1.15 }}>Your picks</Typography>
+        <Skeleton variant="text" sx={{ width: { xs: "90%", sm: 420 }, fontSize: "0.875rem", mt: 0.5 }} />
+        <Skeleton variant="rounded" width={180} height={36} sx={{ mt: 1.25 }} />
+      </Box>
+      <Stack direction="row" spacing={1.5} sx={{ borderBottom: "1px solid", borderColor: "divider", pb: 1.25 }}>
+        {[92, 108, 72, 84, 86].map((w, i) => <Skeleton key={i} variant="rounded" width={w} height={24} />)}
+      </Stack>
+      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "minmax(0, 1fr)", md: "minmax(0, 1fr) 290px", lg: "minmax(0, 1fr) 320px" }, gap: 2.5, alignItems: "start" }}>
+        <AppCard>
+          <Skeleton variant="text" sx={{ width: "75%", fontSize: "1rem" }} />
+          <Skeleton variant="rounded" height={40} sx={{ mt: 1.5, mb: 2 }} />
+          <Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(3, minmax(0, 1fr))", sm: "repeat(auto-fill, minmax(112px, 1fr))" }, gap: { xs: 1, sm: 1.25 } }}>
+            {Array.from({ length: 12 }, (_, i) => (
+              <Skeleton key={i} variant="rounded" sx={{ width: "100%", height: "auto", aspectRatio: "488 / 680" }} />
+            ))}
+          </Box>
+        </AppCard>
+        <Box sx={{ display: { xs: "none", md: "block" } }}>
+          <AppCard>
+            <Skeleton variant="text" width={120} sx={{ fontSize: "0.875rem" }} />
+            <Skeleton variant="text" width={90} sx={{ fontSize: "0.75rem", mb: 1 }} />
+            <Stack spacing={0.75}>
+              {Array.from({ length: 5 }, (_, i) => <Skeleton key={i} variant="rounded" height={40} />)}
+            </Stack>
+          </AppCard>
+        </Box>
+      </Box>
     </Stack>
   );
 }

@@ -1,4 +1,4 @@
-import { MTG_RARITIES, type MtgCard, type MtgCardWithNew, type MtgRarity, MTG_NOTE_MAX, MTG_SLOTS_PER_RARITY } from "../mtgTypes";
+import { MTG_LIST_MAX, MTG_RARITIES, type MtgCard, type MtgCardWithNew, type MtgRarity, MTG_NOTE_MAX, MTG_SLOTS_PER_RARITY } from "../mtgTypes";
 
 export const COLOR_FILTERS = [
   { key: "W", label: "White" },
@@ -81,12 +81,20 @@ export function applyFilters(cards: MtgCardWithNew[], f: CardFilters, pickedIds:
 }
 
 export type PickSlot = { card: MtgCard; note: string };
+/** Each rarity's list in order, up to ten cards: the first five are the picks,
+ *  and the rest a shortlist that never scores. */
 export type PickState = Record<MtgRarity, PickSlot[]>;
 
 export const emptyPickState = (): PickState => ({ common: [], uncommon: [], rare: [], mythic: [] });
 
+/** How many of a list's cards are picks (the top five). */
+export const scoredCount = (list: PickSlot[]) => Math.min(list.length, MTG_SLOTS_PER_RARITY);
+/** How many are on the shortlist below the picks. */
+export const shortlistCount = (list: PickSlot[]) => Math.max(0, list.length - MTG_SLOTS_PER_RARITY);
+
+/** Picks across all four rarities, out of twenty; shortlisted cards don't count. */
 export function totalPicked(p: PickState): number {
-  return MTG_RARITIES.reduce((n, r) => n + p[r].length, 0);
+  return MTG_RARITIES.reduce((n, r) => n + scoredCount(p[r]), 0);
 }
 
 export function noteLength(note: string): number {
@@ -116,11 +124,11 @@ export function fitNote(prev: string, next: string): string {
 }
 
 /** Full-replace body for PUT /mtg/sets/:code/entry. Slots follow list order,
- *  so a list never has gaps. */
+ *  so a list never has gaps: 1 to 5 are the picks, 6 to 10 the shortlist. */
 export function toPutBody(p: PickState) {
   return {
     picks: Object.fromEntries(
-      MTG_RARITIES.map((r) => [r, p[r].slice(0, MTG_SLOTS_PER_RARITY).map((s, i) => ({ cardId: s.card.id, slot: i + 1, note: s.note.trim() || null }))]),
+      MTG_RARITIES.map((r) => [r, p[r].slice(0, MTG_LIST_MAX).map((s, i) => ({ cardId: s.card.id, slot: i + 1, note: s.note.trim() || null }))]),
     ),
   };
 }

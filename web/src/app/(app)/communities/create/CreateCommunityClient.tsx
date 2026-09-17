@@ -660,7 +660,7 @@ export default function CreateCommunityClient() {
           )}
           {specialized && (
             <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.5, display: "block" }}>
-              Members predict which cards in the next Magic set will perform best, then 17Lands data keeps score after the Arena launch. Members, visibility and Plans work like any other community.
+              Members predict which cards in the next Magic set will perform best, then 17Lands data keeps score after the Arena launch.
             </Typography>
           )}
         </Stack>

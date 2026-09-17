@@ -115,9 +115,10 @@ export function countdown(iso: string, nowMs: number): string | null {
 
 export const MTG_NOTE_MAX = 140;
 export const MTG_SLOTS_PER_RARITY = 5;
+/** Cards a player may keep in order at a rarity: the five picks, then a
+ *  shortlist of up to five more that never score. */
+export const MTG_LIST_MAX = 10;
 export const MTG_TOTAL_PICKS = 20;
-/** Points multiplier by slot, #1 first (spec 6.3). */
-export const SLOT_MULTIPLIERS = [1.5, 1.25, 1, 0.75, 0.5] as const;
 export const RARITY_SINGULAR: Record<MtgRarity, string> = { common: "common", uncommon: "uncommon", rare: "rare", mythic: "mythic" };
 export const RARITY_PLURAL: Record<MtgRarity, string> = { common: "commons", uncommon: "uncommons", rare: "rares", mythic: "mythics" };
 
@@ -276,7 +277,6 @@ export type MtgCardNumbers = {
 
 export type MtgPlayerPick = {
   slot: number;
-  multiplier: number;
   note: string | null;
   card: MtgCard;
   /** Removed from scoring by an admin, so the pick scores a neutral 50. */
@@ -285,6 +285,7 @@ export type MtgPlayerPick = {
   stats: MtgCardNumbers | null;
   /** Null before the first standings; a neutral 50 for a card without numbers. */
   cardScore: number | null;
+  /** The pick's points, which are its Card Score since every slot counts the same. */
   points: number | null;
   /** Card Score change since the day before. */
   trend: number | null;
