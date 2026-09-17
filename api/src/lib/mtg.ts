@@ -144,7 +144,14 @@ export function collectorSort(cn: string): number {
   return m ? Number(m[0]) : 0;
 }
 
-export type CardSyncSummary = { seen: number; kept: number; inserted: number; updated: number; pages: number; rawKeys: string[]; notes: string[] };
+export type CardSyncSummary = {
+  seen: number; kept: number; inserted: number; updated: number; pages: number; rawKeys: string[]; notes: string[];
+  /** Set when the sync would have taken a large share of the pool out at once, so it kept the pool as it was. */
+  poolHeld?: { leaving: number; total: number };
+};
+
+/** Before the lock, a sync may take at most this share of the pool out in one run (and always a few cards). */
+const MTG_POOL_DROP_LIMIT = 0.1;
 
 /**
  * Pull the set from Scryfall, keep one row per oracle card (lowest collector
@@ -154,7 +161,16 @@ export type CardSyncSummary = { seen: number; kept: number; inserted: number; up
  * Pool rule: a card is in the pool when its rarity is one of the four and,
  * once the gallery is complete, Scryfall flags it as a booster card. During
  * previews the booster flag is unreliable, so every previewed card of the
- * four rarities is in until the gallery date passes.
+ * four rarities is in until the gallery date passes. Scryfall adds the flags
+ * weeks or months after a set's release (none of Reality Fracture's printings
+ * had one on September 17, 2026, nor any set's released since April), so the
+ * flag narrows the pool only once some printing in the set carries it.
+ *
+ * Before the lock a sync never takes more than a tenth of the pool out at
+ * once: a pool that shrinks that fast is Scryfall misbehaving (flags half
+ * added, a page missing), not a retraction, and every pick of a card that
+ * leaves the pool is deleted when its player next opens their picks. Such a
+ * run keeps the pool as it was, says so in its notes and sets `poolHeld`.
  */
 export async function syncScryfallSet(
   sql: SqlTag,
@@ -201,6 +217,23 @@ export async function syncScryfallSet(
     if (!current || collectorSort(card.collector_number) < collectorSort(current.collector_number)) byOracle.set(card.oracle_id, card);
   }
   const galleryDone = !!set.gallery_complete_at && now.getTime() >= new Date(set.gallery_complete_at).getTime();
+  const byBooster = galleryDone && all.some((card) => card.booster === true);
+  if (galleryDone && !byBooster) summary.notes.push("Scryfall marks no booster cards for this set yet, so every card stays in the pool");
+  const wantsPool = (card: ScryfallCard) => (byBooster ? card.booster === true : true);
+
+  const beforeLock = now.getTime() < new Date(set.lock_at).getTime();
+  let held = new Set<string>();
+  if (beforeLock) {
+    const current = (await sql`
+      SELECT oracle_id::text AS oracle_id FROM newchums.mtg_cards WHERE set_id = ${set.id} AND in_pool = true
+    `) as { oracle_id: string }[];
+    const leaving = current.filter((r) => { const card = byOracle.get(r.oracle_id); return !card || !wantsPool(card); }).length;
+    if (leaving > Math.max(3, Math.floor(current.length * MTG_POOL_DROP_LIMIT))) {
+      held = new Set(current.map((r) => r.oracle_id));
+      summary.poolHeld = { leaving, total: current.length };
+      summary.notes.push(`Kept the pool as it was: this sync would have taken ${leaving} of ${current.length} cards out`);
+    }
+  }
 
   for (const card of byOracle.values()) {
     const front = card.image_uris ?? card.card_faces?.[0]?.image_uris;
@@ -208,7 +241,7 @@ export async function syncScryfallSet(
     const colors = (card.colors ?? Array.from(new Set((card.card_faces ?? []).flatMap((f) => f.colors ?? [])))).join("");
     const manaCost = card.mana_cost ?? (card.card_faces ?? []).map((f) => f.mana_cost).filter(Boolean).join(" // ") ?? null;
     const oracleText = card.oracle_text ?? (card.card_faces ?? []).map((f) => f.oracle_text).filter(Boolean).join("\n//\n") ?? null;
-    const inPool = galleryDone ? card.booster === true : true;
+    const inPool = wantsPool(card) || held.has(card.oracle_id as string);
     const rows = (await sql`
       INSERT INTO newchums.mtg_cards (
         set_id, scryfall_id, oracle_id, arena_id, name, rarity, collector_number, collector_sort, layout, colors,
@@ -242,7 +275,7 @@ export async function syncScryfallSet(
   // Retractions and renumbered previews: a card the complete sync didn't see
   // leaves the pool, so it can't be picked or counted against the ingest's
   // match check. Only before the lock, when the pool is still allowed to move.
-  if (byOracle.size > 0 && now.getTime() < new Date(set.lock_at).getTime()) {
+  if (byOracle.size > 0 && beforeLock && !summary.poolHeld) {
     const dropped = (await sql`
       UPDATE newchums.mtg_cards SET in_pool = false, updated_at = now()
       WHERE set_id = ${set.id} AND in_pool = true AND oracle_id::text <> ALL(${Array.from(byOracle.keys())}::text[])

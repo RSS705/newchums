@@ -4339,6 +4339,10 @@ async function runMtgCardSync(sql: ReturnType<typeof getSql>, env: Bindings, set
       VALUES (${set.id}, 'ok', ${summary.kept}, ${summary.inserted}, ${summary.notes.join("; ") || null}, ${summary.rawKeys})
     `;
     console.log(`[mtg-sync] ${set.code}: pages=${summary.pages} seen=${summary.seen} kept=${summary.kept} new=${summary.inserted}`);
+    // Picks of cards that leave the pool are deleted, so a held pool needs a person to look.
+    if (summary.poolHeld) {
+      Sentry.captureMessage(`MTG ${set.code} card sync kept the pool: it would have taken ${summary.poolHeld.leaving} of ${summary.poolHeld.total} cards out`, "warning");
+    }
     return summary;
   } catch (err) {
     await sql`

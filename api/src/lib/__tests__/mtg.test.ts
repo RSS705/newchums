@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { MTG_BADGES, MTG_FINALIZE_GRACE_MS, collectorSort, easternHour, mtgFinalizeDue, mtgPhase, mtgPicksOpenAt, mtgResultsEmailAt, mtgTimeline, type MtgSetRow } from "../mtg";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { MTG_BADGES, MTG_FINALIZE_GRACE_MS, collectorSort, easternHour, mtgFinalizeDue, mtgPhase, mtgPicksOpenAt, mtgResultsEmailAt, mtgTimeline, syncScryfallSet, type MtgSetRow } from "../mtg";
 
 // Reality Fracture as seeded by migration 123.
 const fra: MtgSetRow = {
@@ -128,5 +128,59 @@ describe("badge tiers (Version 18)", () => {
       expect(MTG_BADGES[code].tier).toBe("uncommon");
     }
     expect(MTG_BADGES.third_place.tier).toBe("common");
+  });
+});
+
+describe("syncScryfallSet pool rule", () => {
+  const set = { ...fra, gallery_complete_at: "2026-09-18T14:00:00Z", lock_at: "2026-09-25T22:00:00Z", final_at: "2026-11-13T14:00:00Z" };
+  const oracle = (i: number) => `00000000-0000-4000-8000-${String(i).padStart(12, "0")}`;
+  const cards = (n: number, boosterFor = 0) => Array.from({ length: n }, (_, i) => ({
+    id: `10000000-0000-4000-8000-${String(i).padStart(12, "0")}`, oracle_id: oracle(i), name: `Card ${i}`, rarity: ["common", "uncommon", "rare", "mythic"][i % 4],
+    collector_number: String(i + 1), ...(i < boosterFor ? { booster: true } : {}),
+  }));
+  /** Serves one Scryfall page and records what the sync writes. */
+  function run(opts: { now: string; cards: ReturnType<typeof cards>; inPool: string[] }) {
+    vi.stubGlobal("fetch", async () => new Response(JSON.stringify({ data: opts.cards, has_more: false }), { status: 200 }));
+    const written = new Map<string, boolean>();
+    let retraction = false;
+    const sql = async (strings: TemplateStringsArray, ...values: unknown[]) => {
+      const text = strings.join("?");
+      if (text.includes("SELECT oracle_id::text AS oracle_id")) return opts.inPool.map((oracle_id) => ({ oracle_id }));
+      if (text.includes("INSERT INTO newchums.mtg_cards")) { written.set(String(values[2]), values[23] === true); return [{ inserted: false }]; }
+      if (text.includes("SET in_pool = false")) retraction = true;
+      return [];
+    };
+    return syncScryfallSet(sql as never, undefined as never, set, new Date(opts.now)).then((summary) => ({ summary, written, retraction }));
+  }
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  it("keeps every card after the gallery date while Scryfall marks no booster cards", async () => {
+    const all = Array.from({ length: 40 }, (_, i) => oracle(i));
+    const { summary, written } = await run({ now: "2026-09-18T14:00:20Z", cards: cards(40), inPool: all });
+    expect([...written.values()].every(Boolean)).toBe(true);
+    expect(summary.poolHeld).toBeUndefined();
+    expect(summary.notes.join(" ")).toMatch(/no booster cards/);
+  });
+
+  it("narrows to booster cards once the set has them, a few at a time", async () => {
+    const all = Array.from({ length: 40 }, (_, i) => oracle(i));
+    const { summary, written } = await run({ now: "2026-09-19T14:00:20Z", cards: cards(40, 37), inPool: all });
+    expect([...written.values()].filter((v) => !v)).toHaveLength(3);
+    expect(summary.poolHeld).toBeUndefined();
+  });
+
+  it("holds the pool, and says so, when a sync would take a large share out before the lock", async () => {
+    const all = Array.from({ length: 40 }, (_, i) => oracle(i));
+    const { summary, written, retraction } = await run({ now: "2026-09-19T14:00:20Z", cards: cards(40, 5), inPool: all });
+    expect([...written.values()].every(Boolean)).toBe(true);
+    expect(summary.poolHeld).toEqual({ leaving: 35, total: 40 });
+    expect(retraction).toBe(false);
+  });
+
+  it("still lets a couple of retracted cards leave", async () => {
+    const all = [...Array.from({ length: 40 }, (_, i) => oracle(i)), oracle(900), oracle(901)];
+    const { summary, retraction } = await run({ now: "2026-09-16T14:00:20Z", cards: cards(40), inPool: all });
+    expect(summary.poolHeld).toBeUndefined();
+    expect(retraction).toBe(true);
   });
 });
