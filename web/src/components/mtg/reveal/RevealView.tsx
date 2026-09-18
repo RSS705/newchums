@@ -97,14 +97,13 @@ function Thumb({ card, slot, onOpen, marker, detail, detailLabel }: {
   );
 }
 
-/** One player's picks at a rarity, their Receipts, then their lock badges.
+/** One player's picks at a rarity, then their lock badges.
  *  Memoised, so paging through the card viewer doesn't re-render every
  *  player. */
 const PlayerRow = memo(function PlayerRow({ player, rarity, onOpen }: { player: MtgRevealPlayer; rarity: MtgRarity; onOpen: (list: MtgCard[], index: number) => void }) {
   const picks = player.picks[rarity];
   const display = displayName(player);
   const list = picks.map((p) => p.card);
-  const notes = picks.filter((p) => p.note);
   return (
     <AppCard sx={player.isViewer ? { border: "2px solid", borderColor: "primary.main" } : undefined}>
       <Stack direction="row" spacing={1.25} alignItems="center" sx={{ mb: 1.25, minWidth: 0 }}>
@@ -143,15 +142,6 @@ const PlayerRow = memo(function PlayerRow({ player, rarity, onOpen }: { player: 
             );
           })}
         </Box>
-      )}
-      {notes.length > 0 && (
-        <Stack spacing={0.5} sx={{ mt: 1.25 }}>
-          {notes.map((p) => (
-            <Typography key={p.card.id} variant="body2" color="text.secondary" sx={{ lineHeight: 1.45 }}>
-              <Box component="span" sx={{ fontWeight: 800, color: "text.primary" }}>#{p.slot}</Box> {p.card.name}: <Box component="span" sx={{ fontStyle: "italic" }}>&ldquo;{p.note}&rdquo;</Box>
-            </Typography>
-          ))}
-        </Stack>
       )}
       {player.badges.length > 0 && (
         <Stack direction="row" spacing={0.5} useFlexGap flexWrap="wrap" sx={{ mt: 1.5 }}>
@@ -209,7 +199,7 @@ function RevealSkeleton() {
 /**
  * The Reveal (spec 10.4): opened at the lock. For one rarity at a time, the
  * Group Mind, the most-picked cards, then every player's five picks side by
- * side with solo markers, their Receipts and their lock badges. Players
+ * side with solo markers and their lock badges. Players
  * without picks are listed at the end as following along. The first visit
  * each season opens with a burst of confetti.
  */

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
+import ButtonBase from "@mui/material/ButtonBase";
 import Drawer from "@mui/material/Drawer";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
@@ -11,10 +12,11 @@ import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
 import CloudOffRoundedIcon from "@mui/icons-material/CloudOffRounded";
 import LockClockOutlinedIcon from "@mui/icons-material/LockClockOutlined";
 import LockRoundedIcon from "@mui/icons-material/LockRounded";
+import SwapVertRoundedIcon from "@mui/icons-material/SwapVertRounded";
 import SyncRoundedIcon from "@mui/icons-material/SyncRounded";
 import { AppCard } from "@/components/ui";
 import { type MtgCard, type MtgRarity, MTG_LIST_MAX, MTG_SLOTS_PER_RARITY, RARITY_LABEL } from "../mtgTypes";
-import PickList from "./PickList";
+import PickList, { useArrowReorder } from "./PickList";
 import { type PickSlot, scoredCount, shortlistCount } from "./pickUtils";
 
 export type SaveState = "idle" | "saving" | "saved" | "error" | "locked" | "signedOut";
@@ -70,13 +72,15 @@ export function SaveStatus({ state, compact = false }: { state: SaveState; compa
 
 /**
  * The list for the rarity being picked: five picks, then up to five more on a
- * shortlist to compare, dragged into order. A sticky rail beside the grid on
- * desktop; on phones a slim bar pinned to the bottom of the screen that opens
- * the full list in a sheet, so the grid keeps the whole width. The bar is
- * hidden once picks are read-only.
+ * shortlist to compare, put into order. A sticky rail beside the grid on
+ * desktop; on phones a slim bar pinned to the bottom of the screen whose
+ * Reorder button (or the row of picks itself) opens the full list in a sheet,
+ * where each card moves with up and down buttons, so the grid keeps the whole
+ * width. The bar is hidden once picks are read-only.
  */
 export default function PickTray({ rarity, slots, locked, saveState, lockCountdown, onReorder, onRemove, onOpenCard }: Props) {
   const [sheetOpen, setSheetOpen] = useState(false);
+  const arrows = useArrowReorder();
   const label = RARITY_LABEL[rarity].toLowerCase();
   const picked = scoredCount(slots);
   const extra = shortlistCount(slots);
@@ -95,7 +99,7 @@ export default function PickTray({ rarity, slots, locked, saveState, lockCountdo
   const hint = !locked && (
     <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1.25, lineHeight: 1.45 }}>
       {slots.length < MTG_LIST_MAX
-        ? `List up to ${MTG_LIST_MAX} ${label} and drag your best five to the top. Only the top five score.`
+        ? `List up to ${MTG_LIST_MAX} ${label} and ${arrows ? "move" : "drag"} your best five to the top. Only the top five score.`
         : `Your list is full. Only the top five score.`}
     </Typography>
   );
@@ -136,12 +140,11 @@ export default function PickTray({ rarity, slots, locked, saveState, lockCountdo
           }}
         >
           <Stack direction="row" alignItems="center" spacing={1}>
-            <Stack
-              direction="row"
-              spacing={0.5}
-              alignItems="center"
-              sx={{ flex: 1, minWidth: 0, overflow: "hidden" }}
-              aria-label={`${picked} of ${MTG_SLOTS_PER_RARITY} ${label} picked${extra > 0 ? `, ${extra} on your shortlist` : ""}`}
+            {/* The row of picks opens the list too, not just the button beside it. */}
+            <ButtonBase
+              onClick={() => setSheetOpen(true)}
+              aria-label={`${picked} of ${MTG_SLOTS_PER_RARITY} ${label} picked${extra > 0 ? `, ${extra} on your shortlist` : ""}. Open your list`}
+              sx={{ flex: 1, minWidth: 0, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "flex-start", gap: 0.5, borderRadius: 1.5, py: 0.25, "&.Mui-focusVisible": { outline: "2px solid", outlineColor: "primary.main", outlineOffset: 2 } }}
             >
               {Array.from({ length: MTG_SLOTS_PER_RARITY }, (_, i) => {
                 const s = slots[i];
@@ -159,7 +162,7 @@ export default function PickTray({ rarity, slots, locked, saveState, lockCountdo
               {extra > 0 && (
                 <Typography aria-hidden variant="caption" fontWeight={800} color="text.secondary" sx={{ flexShrink: 0, pl: 0.25 }}>+{extra}</Typography>
               )}
-            </Stack>
+            </ButtonBase>
             <Stack alignItems="flex-end" spacing={0.25} sx={{ flexShrink: 0, minWidth: 0 }}>
               <SaveStatus state={saveState} compact />
               {lockCountdown && (
@@ -168,8 +171,15 @@ export default function PickTray({ rarity, slots, locked, saveState, lockCountdo
                 </Typography>
               )}
             </Stack>
-            <Button variant="contained" size="small" onClick={() => setSheetOpen(true)} aria-label={`Open your ${label}, ${picked} of ${MTG_SLOTS_PER_RARITY} picked`} sx={{ textTransform: "none", fontWeight: 700, borderRadius: 2, boxShadow: "none", flexShrink: 0, minHeight: 40, minWidth: 52 }}>
-              {picked}/{MTG_SLOTS_PER_RARITY}
+            <Button
+              variant="contained"
+              size="small"
+              onClick={() => setSheetOpen(true)}
+              startIcon={<SwapVertRoundedIcon sx={{ fontSize: 18 }} />}
+              aria-label={`Reorder your ${label}, ${picked} of ${MTG_SLOTS_PER_RARITY} picked`}
+              sx={{ textTransform: "none", fontWeight: 700, borderRadius: 2, boxShadow: "none", flexShrink: 0, minHeight: 40, px: 1.5, "& .MuiButton-startIcon": { mr: 0.5 } }}
+            >
+              Reorder
             </Button>
           </Stack>
         </Box>
@@ -192,7 +202,7 @@ export default function PickTray({ rarity, slots, locked, saveState, lockCountdo
         />
         {hint}
         {countdown}
-        <Button variant="text" onClick={() => setSheetOpen(false)} fullWidth sx={{ mt: 1.5, textTransform: "none", fontWeight: 600, minHeight: 44 }}>Done</Button>
+        <Button variant="outlined" onClick={() => setSheetOpen(false)} fullWidth sx={{ mt: 1.5, textTransform: "none", fontWeight: 700, borderRadius: 2.5, minHeight: 44 }}>Done</Button>
       </Drawer>
     </>
   );

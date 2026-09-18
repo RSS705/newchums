@@ -1081,6 +1081,38 @@ export default function CommunityDetailClient({
   const isOwner = viewerMembership?.role === "owner";
   const isMember = !!viewerMembership;
 
+  // The access tag of a private community ("Invite only" or "Approval
+  // required"). From sm up it sits beside the name; on a phone it drops into
+  // the hobby tags' row, so the name gets the whole width and can wrap.
+  const accessTag = (where: "title" | "tags") => (
+    <Chip
+      icon={<LockRoundedIcon sx={{ fontSize: "13px !important" }} />}
+      label={community.join_mode === "invite_only" ? "Invite only" : "Approval required"}
+      size="small"
+      variant="outlined"
+      sx={{
+        display: where === "title" ? { xs: "none", sm: "inline-flex" } : { xs: "inline-flex", sm: "none" },
+        flexShrink: 0, height: where === "title" ? 22 : 24, fontSize: "0.6875rem", fontWeight: 500, borderRadius: 1.5, borderColor: "divider", color: "text.secondary",
+      }}
+    />
+  );
+  const nameSx = {
+    // A long name (they run to 100 characters) steps down a size on a phone.
+    fontSize: { xs: community.name.length > 24 ? "1.375rem" : "1.625rem", sm: "2.125rem" },
+    fontWeight: 700,
+    lineHeight: 1.15,
+    letterSpacing: "-0.025em",
+    minWidth: 0,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    // One line beside the tag from sm up; on a phone up to four lines of its own.
+    whiteSpace: { xs: "normal", sm: "nowrap" },
+    overflowWrap: "anywhere",
+    display: { xs: "-webkit-box", sm: "block" },
+    WebkitLineClamp: { xs: 4, sm: "unset" },
+    WebkitBoxOrient: "vertical",
+  } as const;
+
   if (restricted) {
     return (
       <Stack spacing={{ xs: 2, sm: 3 }}>
@@ -1141,28 +1173,10 @@ export default function CommunityDetailClient({
             </Avatar>
             <Box sx={{ gridArea: "title", minWidth: 0, alignSelf: "flex-start" }}>
               <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 0.75 }}>
-                <Typography
-                  component="h1"
-                  sx={{
-                    fontSize: { xs: "1.625rem", sm: "2.125rem" },
-                    fontWeight: 700,
-                    lineHeight: 1.15,
-                    letterSpacing: "-0.025em",
-                    minWidth: 0,
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                >
+                <Typography component="h1" title={community.name} sx={nameSx}>
                   {community.name}
                 </Typography>
-                <Chip
-                  icon={<LockRoundedIcon sx={{ fontSize: "13px !important" }} />}
-                  label={community.join_mode === "invite_only" ? "Invite only" : "Approval required"}
-                  size="small"
-                  variant="outlined"
-                  sx={{ flexShrink: 0, height: 22, fontSize: "0.6875rem", fontWeight: 500, borderRadius: 1.5, borderColor: "divider", color: "text.secondary" }}
-                />
+                {accessTag("title")}
               </Stack>
 
               {/* "Run by" owner identity row. Same trust signal as the full
@@ -1204,27 +1218,26 @@ export default function CommunityDetailClient({
                 </Stack>
               )}
 
-              {/* Hobby chips */}
-              {community.hobbies && community.hobbies.length > 0 && (
-                <Stack direction="row" gap={0.5} flexWrap="wrap" useFlexGap>
-                  {community.hobbies.map((h) => {
-                    const isMatch = viewerHobbyCategories?.has(h.name.toLowerCase()) || viewerHobbyCategories?.has(h.slug.toLowerCase());
-                    return (
-                      <Chip
-                        key={h.slug}
-                        label={h.name}
-                        size="small"
-                        color={isMatch ? "primary" : "default"}
-                        variant={isMatch ? "filled" : "outlined"}
-                        sx={{
-                          height: 24, fontSize: "0.75rem", fontWeight: 500, borderRadius: 1.5,
-                          ...(isMatch ? { bgcolor: "primary.light", color: "primary.dark" } : { borderColor: "divider", color: "text.secondary", bgcolor: "background.paper" }),
-                        }}
-                      />
-                    );
-                  })}
-                </Stack>
-              )}
+              {/* Hobby chips, led on a phone by the access tag. */}
+              <Stack direction="row" gap={0.5} flexWrap="wrap" useFlexGap>
+                {accessTag("tags")}
+                {(community.hobbies ?? []).map((h) => {
+                  const isMatch = viewerHobbyCategories?.has(h.name.toLowerCase()) || viewerHobbyCategories?.has(h.slug.toLowerCase());
+                  return (
+                    <Chip
+                      key={h.slug}
+                      label={h.name}
+                      size="small"
+                      color={isMatch ? "primary" : "default"}
+                      variant={isMatch ? "filled" : "outlined"}
+                      sx={{
+                        height: 24, fontSize: "0.75rem", fontWeight: 500, borderRadius: 1.5,
+                        ...(isMatch ? { bgcolor: "primary.light", color: "primary.dark" } : { borderColor: "divider", color: "text.secondary", bgcolor: "background.paper" }),
+                      }}
+                    />
+                  );
+                })}
+              </Stack>
             </Box>
             <Box sx={{ gridArea: "body", minWidth: 0 }}>
               {community.description && (
@@ -1706,30 +1719,10 @@ export default function CommunityDetailClient({
           </Avatar>
           <Box sx={{ gridArea: "title", minWidth: 0, alignSelf: "flex-start" }}>
             <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 0.75 }}>
-              <Typography
-                component="h1"
-                sx={{
-                  fontSize: { xs: "1.625rem", sm: "2.125rem" },
-                  fontWeight: 700,
-                  lineHeight: 1.15,
-                  letterSpacing: "-0.025em",
-                  minWidth: 0,
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
+              <Typography component="h1" title={community.name} sx={nameSx}>
                 {community.name}
               </Typography>
-              {community.visibility === "private" && (
-                <Chip
-                  icon={<LockRoundedIcon sx={{ fontSize: "13px !important" }} />}
-                  label={community.join_mode === "invite_only" ? "Invite only" : "Approval required"}
-                  size="small"
-                  variant="outlined"
-                  sx={{ flexShrink: 0, height: 22, fontSize: "0.6875rem", fontWeight: 500, borderRadius: 1.5, borderColor: "divider", color: "text.secondary" }}
-                />
-              )}
+              {community.visibility === "private" && accessTag("title")}
             </Stack>
             {/* "Run by" owner identity row. Surfaces the community lead at
                 the top of the page so the community feels lived in, not a
@@ -1773,10 +1766,11 @@ export default function CommunityDetailClient({
                 </Typography>
               </Stack>
             )}
-            {/* Hobby chips */}
-            {community.hobbies && community.hobbies.length > 0 && (
+            {/* Hobby chips, led on a phone by a private community's access tag. */}
+            {((community.hobbies && community.hobbies.length > 0) || community.visibility === "private") && (
               <Stack direction="row" gap={0.5} flexWrap="wrap" useFlexGap>
-                {community.hobbies.map((h) => {
+                {community.visibility === "private" && accessTag("tags")}
+                {(community.hobbies ?? []).map((h) => {
                   const isMatch = viewerHobbyCategories?.has(h.name.toLowerCase()) || viewerHobbyCategories?.has(h.slug.toLowerCase());
                   return (
                     <Chip

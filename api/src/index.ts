@@ -1191,7 +1191,7 @@ app.get("/mtg/sets/:code", async (c) => {
 });
 
 const MTG_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-/** The largest picks save read, in characters: twenty picks with full notes are about 8 KB. */
+/** The largest picks save read, in characters: a full list of forty cards is about 4 KB. */
 const MTG_ENTRY_BODY_MAX = 32000;
 
 /** Card fields the pick screens use, shared by the pool and entry routes. */
@@ -1328,26 +1328,24 @@ async function writeMtgPicks(
   ];
   if (scored.length > 0) {
     queries.push(sql`
-      INSERT INTO newchums.mtg_picks (entry_id, rarity, slot, card_id, note)
-      SELECT ${entryId}::uuid, x.rarity, x.slot, x.card_id, x.note
+      INSERT INTO newchums.mtg_picks (entry_id, rarity, slot, card_id)
+      SELECT ${entryId}::uuid, x.rarity, x.slot, x.card_id
       FROM UNNEST(
         ${scored.map((p) => p.rarity)}::text[],
         ${scored.map((p) => p.slot)}::smallint[],
-        ${scored.map((p) => p.cardId)}::uuid[],
-        ${scored.map((p) => p.note)}::text[]
-      ) AS x(rarity, slot, card_id, note)
+        ${scored.map((p) => p.cardId)}::uuid[]
+      ) AS x(rarity, slot, card_id)
     `);
   }
   if (listed.length > 0) {
     queries.push(sql`
-      INSERT INTO newchums.mtg_pick_shortlist (entry_id, rarity, slot, card_id, note)
-      SELECT ${entryId}::uuid, x.rarity, x.slot, x.card_id, x.note
+      INSERT INTO newchums.mtg_pick_shortlist (entry_id, rarity, slot, card_id)
+      SELECT ${entryId}::uuid, x.rarity, x.slot, x.card_id
       FROM UNNEST(
         ${listed.map((p) => p.rarity)}::text[],
         ${listed.map((p) => p.slot)}::smallint[],
-        ${listed.map((p) => p.cardId)}::uuid[],
-        ${listed.map((p) => p.note)}::text[]
-      ) AS x(rarity, slot, card_id, note)
+        ${listed.map((p) => p.cardId)}::uuid[]
+      ) AS x(rarity, slot, card_id)
     `);
   }
   queries.push(opts.playerChange
@@ -1413,14 +1411,14 @@ app.get("/mtg/sets/:code/entry", async (c) => {
       }
       // The picks (slots 1 to 5) and the shortlist below them (6 to 10), as one list per rarity.
       const rows = (await sql`
-        SELECT p.rarity AS pick_rarity, p.slot, p.note, (c.in_pool AND NOT c.voided AND c.rarity = p.rarity) AS valid,
+        SELECT p.rarity AS pick_rarity, p.slot, (c.in_pool AND NOT c.voided AND c.rarity = p.rarity) AS valid,
                c.id, c.scryfall_id, c.arena_id, c.name, c.rarity, c.collector_number, c.layout, c.colors, c.mana_cost, c.mana_value,
                c.type_line, c.oracle_text, c.image_normal, c.image_large, c.image_back_normal, c.image_back_large, c.image_status,
                c.previewed_at, c.preview_source, c.preview_source_uri, c.first_seen_at
         FROM (
-          SELECT rarity, slot, card_id, note FROM newchums.mtg_picks WHERE entry_id = ${entry.id}
+          SELECT rarity, slot, card_id FROM newchums.mtg_picks WHERE entry_id = ${entry.id}
           UNION ALL
-          SELECT rarity, slot, card_id, note FROM newchums.mtg_pick_shortlist WHERE entry_id = ${entry.id}
+          SELECT rarity, slot, card_id FROM newchums.mtg_pick_shortlist WHERE entry_id = ${entry.id}
         ) p
         JOIN newchums.mtg_cards c ON c.id = p.card_id
         ORDER BY p.rarity, p.slot
@@ -1435,7 +1433,7 @@ app.get("/mtg/sets/:code/entry", async (c) => {
       const renumbered: ValidatedPick[] = [];
       for (const rarity of MTG_RARITIES) {
         keep.filter((r) => r.pick_rarity === rarity).forEach((r, i) => {
-          renumbered.push({ rarity, slot: i + 1, cardId: String(r.id), note: (r.note as string | null) ?? null });
+          renumbered.push({ rarity, slot: i + 1, cardId: String(r.id) });
         });
       }
       try {
@@ -1447,10 +1445,10 @@ app.get("/mtg/sets/:code/entry", async (c) => {
       }
     }
 
-    const picks: Record<string, Array<{ slot: number; note: string | null; card: ReturnType<typeof mapMtgCard> }>> = { common: [], uncommon: [], rare: [], mythic: [] };
+    const picks: Record<string, Array<{ slot: number; card: ReturnType<typeof mapMtgCard> }>> = { common: [], uncommon: [], rare: [], mythic: [] };
     for (const rarity of MTG_RARITIES) {
       keep.filter((r) => r.pick_rarity === rarity).forEach((r, i) => {
-        picks[rarity].push({ slot: dropped.length > 0 ? i + 1 : Number(r.slot), note: (r.note as string | null) ?? null, card: mapMtgCard(r) });
+        picks[rarity].push({ slot: dropped.length > 0 ? i + 1 : Number(r.slot), card: mapMtgCard(r) });
       });
     }
     return c.json({
@@ -1464,7 +1462,7 @@ app.get("/mtg/sets/:code/entry", async (c) => {
   }
 });
 
-/** PUT /mtg/sets/:code/entry { picks: { common: [{ cardId, slot, note }], ... }, baseRevision }
+/** PUT /mtg/sets/:code/entry { picks: { common: [{ cardId, slot }], ... }, baseRevision }
  *  Full replace of the caller's entry. Each rarity's list holds up to ten cards
  *  in order: slots 1 to 5 are the picks, and 6 to 10 a shortlist that never
  *  scores (`picked` and `complete` count only the picks). The server clock is the lock: 423
@@ -1477,7 +1475,7 @@ app.get("/mtg/sets/:code/entry", async (c) => {
 app.put("/mtg/sets/:code/entry", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email) return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
-  // A full set of picks with notes is a few kilobytes; nothing bigger is read.
+  // A full set of picks is a few kilobytes; nothing bigger is read.
   if (Number(c.req.header("content-length") ?? 0) > MTG_ENTRY_BODY_MAX)
     return c.json({ ok: false, error: "TOO_LARGE", message: "That's too much to save" }, 413);
   let body: Record<string, unknown>;
@@ -1583,15 +1581,15 @@ app.put("/mtg/sets/:code/entry", async (c) => {
     // A save that changes nothing does not touch the entry, so it cannot move
     // the tie-break time. It is checked before staleness: a retry of a save
     // whose response was lost finds its own picks already stored.
-    const signature = (rows: { rarity: string; slot: number; cardId: string; note: string | null }[]) =>
-      rows.map((r) => `${r.rarity}|${r.slot}|${r.cardId}|${r.note ?? ""}`).sort().join("\n");
+    const signature = (rows: { rarity: string; slot: number; cardId: string }[]) =>
+      rows.map((r) => `${r.rarity}|${r.slot}|${r.cardId}`).sort().join("\n");
     if (existing) {
       const current = (await sql`
-        SELECT rarity, slot, card_id, note FROM newchums.mtg_picks WHERE entry_id = ${existing.id}
+        SELECT rarity, slot, card_id FROM newchums.mtg_picks WHERE entry_id = ${existing.id}
         UNION ALL
-        SELECT rarity, slot, card_id, note FROM newchums.mtg_pick_shortlist WHERE entry_id = ${existing.id}
-      `) as { rarity: string; slot: number; card_id: string; note: string | null }[];
-      if (signature(current.map((r) => ({ rarity: r.rarity, slot: Number(r.slot), cardId: r.card_id, note: r.note }))) === signature(listed)) {
+        SELECT rarity, slot, card_id FROM newchums.mtg_pick_shortlist WHERE entry_id = ${existing.id}
+      `) as { rarity: string; slot: number; card_id: string }[];
+      if (signature(current.map((r) => ({ rarity: r.rarity, slot: Number(r.slot), cardId: r.card_id }))) === signature(listed)) {
         return c.json({
           ok: true,
           unchanged: true,
@@ -2089,24 +2087,24 @@ async function processMtgLock(sql: ReturnType<typeof getSql>, only?: MtgSetRow, 
   // list, picks then shortlist, so when a pick is dropped the cards below it
   // move up, as they would on the player's next visit.
   const current = (await sql`
-    SELECT p.entry_id, p.rarity, p.slot, p.card_id, p.note, (c.in_pool AND NOT c.voided AND c.rarity = p.rarity) AS valid
+    SELECT p.entry_id, p.rarity, p.slot, p.card_id, (c.in_pool AND NOT c.voided AND c.rarity = p.rarity) AS valid
     FROM (
-      SELECT entry_id, rarity, slot, card_id, note FROM newchums.mtg_picks
+      SELECT entry_id, rarity, slot, card_id FROM newchums.mtg_picks
       UNION ALL
-      SELECT entry_id, rarity, slot, card_id, note FROM newchums.mtg_pick_shortlist
+      SELECT entry_id, rarity, slot, card_id FROM newchums.mtg_pick_shortlist
     ) p
     JOIN newchums.mtg_entries e ON e.id = p.entry_id
     JOIN newchums.mtg_cards c ON c.id = p.card_id
     WHERE e.set_id = ${set.id} AND e.locked_at IS NULL
     ORDER BY p.entry_id, p.rarity, p.slot
-  `) as { entry_id: string; rarity: MtgRarity; slot: number; card_id: string; note: string | null; valid: boolean }[];
+  `) as { entry_id: string; rarity: MtgRarity; slot: number; card_id: string; valid: boolean }[];
   const stale = current.filter((r) => r.valid !== true);
   for (const entryId of new Set(stale.map((r) => r.entry_id))) {
     const kept: ValidatedPick[] = [];
     for (const rarity of MTG_RARITIES) {
       current
         .filter((r) => r.entry_id === entryId && r.rarity === rarity && r.valid === true)
-        .forEach((r, i) => kept.push({ rarity, slot: i + 1, cardId: r.card_id, note: r.note }));
+        .forEach((r, i) => kept.push({ rarity, slot: i + 1, cardId: r.card_id }));
     }
     await writeMtgPicks(sql, entryId, kept, { playerChange: false, setId: set.id, lockCleanup: true });
   }
@@ -2119,16 +2117,16 @@ async function processMtgLock(sql: ReturnType<typeof getSql>, only?: MtgSetRow, 
   `;
 
   const rows = (await sql`
-    SELECT e.user_id, e.completed_at, e.updated_at, p.rarity, p.slot, p.note, c.colors
+    SELECT e.user_id, e.completed_at, e.updated_at, p.rarity, p.slot, c.colors
     FROM newchums.mtg_entries e
     JOIN newchums.mtg_picks p ON p.entry_id = e.id
     JOIN newchums.mtg_cards c ON c.id = p.card_id
     WHERE e.set_id = ${set.id}
-  `) as { user_id: string; completed_at: string | Date | null; updated_at: string | Date; rarity: MtgRarity; slot: number; note: string | null; colors: string | null }[];
-  const byUser = new Map<string, { completedAt: string | Date | null; updatedAt: string | Date; picks: { rarity: MtgRarity; slot: number; note: string | null; colors: string | null }[] }>();
+  `) as { user_id: string; completed_at: string | Date | null; updated_at: string | Date; rarity: MtgRarity; slot: number; colors: string | null }[];
+  const byUser = new Map<string, { completedAt: string | Date | null; updatedAt: string | Date; picks: { rarity: MtgRarity; slot: number; colors: string | null }[] }>();
   for (const r of rows) {
     const e = byUser.get(r.user_id) ?? { completedAt: r.completed_at, updatedAt: r.updated_at, picks: [] };
-    e.picks.push({ rarity: r.rarity, slot: Number(r.slot), note: r.note, colors: r.colors });
+    e.picks.push({ rarity: r.rarity, slot: Number(r.slot), colors: r.colors });
     byUser.set(r.user_id, e);
   }
   const awardUsers: string[] = [];
@@ -2223,7 +2221,7 @@ app.get("/mtg/communities/:id/reveal", async (c) => {
 
     const members = await loadMtgGroupMembers(sql, set.id, communityId);
     const pickRows = (await sql`
-      SELECT e.user_id, p.rarity AS pick_rarity, p.slot, p.note, c.collector_sort,
+      SELECT e.user_id, p.rarity AS pick_rarity, p.slot, c.collector_sort,
              c.id, c.scryfall_id, c.arena_id, c.name, c.rarity, c.collector_number, c.layout, c.colors, c.mana_cost, c.mana_value,
              c.type_line, c.oracle_text, c.image_normal, c.image_large, c.image_back_normal, c.image_back_large, c.image_status,
              c.previewed_at, c.preview_source, c.preview_source_uri, c.first_seen_at
@@ -2270,7 +2268,6 @@ app.get("/mtg/communities/:id/reveal", async (c) => {
       for (const r of mine) {
         picks[r.pick_rarity as MtgRarity].push({
           slot: Number(r.slot),
-          note: (r.note as string | null) ?? null,
           onlyYou: (pickers.get(`${r.pick_rarity}|${r.id}`)?.size ?? 0) === 1 && entryCount > 1,
           card: mapMtgCard(r),
         });
@@ -3085,7 +3082,7 @@ async function judgeMtgSeason(sql: ReturnType<typeof getSql>, set: MtgSetRow, ta
       )
     `,
     sql`
-      SELECT p.entry_id, p.rarity, p.slot, p.card_id, p.note, c.collector_sort
+      SELECT p.entry_id, p.rarity, p.slot, p.card_id, c.collector_sort
       FROM newchums.mtg_picks p
       JOIN newchums.mtg_entries e ON e.id = p.entry_id
       JOIN newchums.mtg_cards c ON c.id = p.card_id
@@ -3130,9 +3127,9 @@ async function judgeMtgSeason(sql: ReturnType<typeof getSql>, set: MtgSetRow, ta
 
   const picksByEntry = new Map<string, SeasonPick[]>();
   const collectorOrder = new Map<string, number>();
-  for (const p of pickRows as { entry_id: string; rarity: MtgRarity; slot: number; card_id: string; note: string | null; collector_sort: number }[]) {
+  for (const p of pickRows as { entry_id: string; rarity: MtgRarity; slot: number; card_id: string; collector_sort: number }[]) {
     const list = picksByEntry.get(p.entry_id) ?? [];
-    list.push({ rarity: p.rarity, slot: Number(p.slot), cardId: p.card_id, note: p.note });
+    list.push({ rarity: p.rarity, slot: Number(p.slot), cardId: p.card_id });
     picksByEntry.set(p.entry_id, list);
     collectorOrder.set(p.card_id, Number(p.collector_sort));
   }
@@ -3891,7 +3888,7 @@ app.get("/mtg/communities/:id/players/:userId", async (c) => {
     const [pickRows, scoreRows, topRows, badgeRows] = await Promise.all([
       // Each pick with its card's numbers on the latest day and its Card Score the day before.
       entryIds.length === 0 ? Promise.resolve([] as Record<string, unknown>[]) : mtgRows<Record<string, unknown>>(sql`
-        SELECT p.entry_id, p.rarity AS pick_rarity, p.slot, p.note, c.voided,
+        SELECT p.entry_id, p.rarity AS pick_rarity, p.slot, c.voided,
                c.id, c.scryfall_id, c.arena_id, c.name, c.rarity, c.collector_number, c.layout, c.colors, c.mana_cost, c.mana_value, c.type_line, c.oracle_text, c.image_normal, c.image_large, c.image_back_normal, c.image_back_large, c.image_status, c.previewed_at, c.preview_source, c.preview_source_uri, c.first_seen_at,
                cur.card_id IS NOT NULL AS has_today, cur.gih_games, cur.gih_wr, cur.rarity_rank, cur.ranked, cur.card_score, cur.alsa, cur.ata,
                prev.card_score AS card_score_before
@@ -3977,7 +3974,6 @@ app.get("/mtg/communities/:id/players/:userId", async (c) => {
       const cardScore = current ? (today ? Number(r.card_score) : 50) : null;
       return {
         slot,
-        note: (r.note as string | null) ?? null,
         card: mapMtgCard(r),
         voided: r.voided === true,
         stats: today ? {
@@ -4055,7 +4051,7 @@ app.get("/mtg/communities/:id/cards/:cardId", async (c) => {
     if (!set) return c.json({ ok: false, error: "NO_SEASON" }, 404);
     // Other players' picks stay sealed until the lock (spec 12.6).
     const locked = Date.now() >= new Date(set.lock_at).getTime();
-    type Picker = { id: string; name: string | null; username: string | null; avatar_key: string | null; avatar_updated_at: string | null; slot: number; note: string | null };
+    type Picker = { id: string; name: string | null; username: string | null; avatar_key: string | null; avatar_updated_at: string | null; slot: number };
     const [cardRows, history, latestRows, pickers] = await Promise.all([
       mtgRows<Record<string, unknown>>(sql`
         SELECT c.in_pool, c.voided, c.id, c.scryfall_id, c.arena_id, c.name, c.rarity, c.collector_number, c.layout, c.colors, c.mana_cost, c.mana_value, c.type_line, c.oracle_text, c.image_normal, c.image_large, c.image_back_normal, c.image_back_large, c.image_status, c.previewed_at, c.preview_source, c.preview_source_uri, c.first_seen_at FROM newchums.mtg_cards c WHERE c.id = ${cardId} AND c.set_id = ${set.id} LIMIT 1
@@ -4070,7 +4066,7 @@ app.get("/mtg/communities/:id/cards/:cardId", async (c) => {
         SELECT snapshot_date::text AS d FROM newchums.mtg_snapshots WHERE set_id = ${set.id} ORDER BY snapshot_date DESC LIMIT 1
       `),
       !locked ? Promise.resolve([] as Picker[]) : mtgRows<Picker>(sql`
-        SELECT u.id, u.name, u.username, u.avatar_key, u.avatar_updated_at, p.slot, p.note
+        SELECT u.id, u.name, u.username, u.avatar_key, u.avatar_updated_at, p.slot
         FROM newchums.mtg_picks p
         JOIN newchums.mtg_entries e ON e.id = p.entry_id AND e.set_id = ${set.id}
         JOIN newchums.mtg_group_season_players(${communityId}::uuid, ${set.id}::uuid) gp ON gp.user_id = e.user_id
@@ -4115,7 +4111,6 @@ app.get("/mtg/communities/:id/cards/:cardId", async (c) => {
         avatarUrl: buildAvatarUrl(u.id, u.avatar_key, u.avatar_updated_at, c.env.MEDIA_BUCKET),
         isViewer: u.id === viewer.id,
         slot: Number(u.slot),
-        note: u.note,
       })),
       links: {
         scryfall: `https://scryfall.com/card/${encodeURIComponent(set.code)}/${encodeURIComponent(String(card.collector_number))}`,
@@ -4457,7 +4452,7 @@ app.put("/admin/mtg/sets/:code", async (c) => {
 });
 
 /** The badges awarded at the lock, which ending or reopening a season never touches. */
-const MTG_LOCK_BADGE_CODES = ["early_bird", "on_the_record", "locked_and_loaded", "buzzer_beater", "receipts_on_file", "rainbow", "loyalist", "gold_rush", "artificer"];
+const MTG_LOCK_BADGE_CODES = ["early_bird", "on_the_record", "locked_and_loaded", "buzzer_beater", "rainbow", "loyalist", "gold_rush", "artificer"];
 
 /**
  * End a season (spec 12.3): judge the chosen day (the latest by default) as

@@ -9,7 +9,7 @@ import PlaylistAddCheckRoundedIcon from "@mui/icons-material/PlaylistAddCheckRou
 import { AppCard } from "@/components/ui";
 import { Notice } from "../pageBits";
 import { type MtgCard, MTG_RARITIES, MTG_SLOTS_PER_RARITY, MTG_TOTAL_PICKS, RARITY_LABEL, type MtgRarity } from "../mtgTypes";
-import PickList from "./PickList";
+import PickList, { useArrowReorder } from "./PickList";
 import { type PickState, scoredCount, totalPicked } from "./pickUtils";
 
 type Props = {
@@ -17,17 +17,17 @@ type Props = {
   locked: boolean;
   onReorder: (rarity: MtgRarity, from: number, to: number) => void;
   onRemove: (rarity: MtgRarity, index: number) => void;
-  onNote: (rarity: MtgRarity, index: number, note: string) => void;
   onEdit: (rarity: MtgRarity) => void;
   onOpenCard: (card: MtgCard) => void;
 };
 
-/** All twenty picks in order, reorderable, each with an optional field for
- *  the player's thoughts on it, which nobody else sees until picks lock. A
- *  rarity's shortlist isn't scored, so it's only named here, with a way back
- *  to that rarity to sort it out. */
-export default function ReviewStep({ picks, locked, onReorder, onRemove, onNote, onEdit, onOpenCard }: Props) {
+/** All twenty picks in order, reorderable: dragged with a mouse, moved with
+ *  up and down buttons on phones and touch screens. A rarity's shortlist isn't
+ *  scored, so it's only named here, with a way back to that rarity to sort it
+ *  out. */
+export default function ReviewStep({ picks, locked, onReorder, onRemove, onEdit, onOpenCard }: Props) {
   const total = totalPicked(picks);
+  const arrows = useArrowReorder();
   return (
     <Stack spacing={{ xs: 2, sm: 2.5 }}>
       {total === MTG_TOTAL_PICKS ? (
@@ -40,7 +40,9 @@ export default function ReviewStep({ picks, locked, onReorder, onRemove, onNote,
         </Notice>
       )}
       <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
-        Drag to reorder. Nobody sees your picks, or your thoughts on them, until picks lock.
+        {locked
+          ? "These are your picks, in the order you ranked them."
+          : `${arrows ? "Use the arrows to reorder." : "Drag to reorder."} Nobody sees your picks until picks lock.`}
       </Typography>
       <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "repeat(2, minmax(0, 1fr))" }, gap: { xs: 2, sm: 2.5 } }}>
         {MTG_RARITIES.map((rarity) => {
@@ -68,7 +70,6 @@ export default function ReviewStep({ picks, locked, onReorder, onRemove, onNote,
                 onReorder={(from, to) => onReorder(rarity, from, to)}
                 onRemove={(i) => onRemove(rarity, i)}
                 onOpenCard={onOpenCard}
-                onNoteChange={(i, note) => onNote(rarity, i, note)}
               />
               {shortlist.length > 0 && (
                 <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1.25, lineHeight: 1.45 }}>

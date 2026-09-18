@@ -1,4 +1,4 @@
-import { MTG_LIST_MAX, MTG_RARITIES, type MtgCard, type MtgCardWithNew, type MtgRarity, MTG_NOTE_MAX, MTG_SLOTS_PER_RARITY } from "../mtgTypes";
+import { MTG_LIST_MAX, MTG_RARITIES, type MtgCard, type MtgCardWithNew, type MtgRarity, MTG_SLOTS_PER_RARITY } from "../mtgTypes";
 
 export const COLOR_FILTERS = [
   { key: "W", label: "White" },
@@ -80,7 +80,7 @@ export function applyFilters(cards: MtgCardWithNew[], f: CardFilters, pickedIds:
   return out;
 }
 
-export type PickSlot = { card: MtgCard; note: string };
+export type PickSlot = { card: MtgCard };
 /** Each rarity's list in order, up to ten cards: the first five are the picks,
  *  and the rest a shortlist that never scores. */
 export type PickState = Record<MtgRarity, PickSlot[]>;
@@ -97,38 +97,12 @@ export function totalPicked(p: PickState): number {
   return MTG_RARITIES.reduce((n, r) => n + scoredCount(p[r]), 0);
 }
 
-export function noteLength(note: string): number {
-  return [...note].length;
-}
-
-/**
- * A note edit kept within the limit, counted in characters (code points, as
- * the server counts them). Typing or pasting into the middle of a full note
- * is refused rather than cutting words off its end; a paste at the end is
- * trimmed to fit, a whole emoji or letter at a time.
- */
-export function fitNote(prev: string, next: string): string {
-  if (noteLength(next) <= MTG_NOTE_MAX) return next;
-  const room = MTG_NOTE_MAX - noteLength(prev);
-  if (!next.startsWith(prev) || room <= 0) return prev;
-  const added = next.slice(prev.length);
-  const pieces = typeof Intl !== "undefined" && "Segmenter" in Intl
-    ? Array.from(new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(added), (s) => s.segment)
-    : [...added];
-  let kept = "";
-  for (const piece of pieces) {
-    if (noteLength(kept) + noteLength(piece) > room) break;
-    kept += piece;
-  }
-  return prev + kept;
-}
-
 /** Full-replace body for PUT /mtg/sets/:code/entry. Slots follow list order,
  *  so a list never has gaps: 1 to 5 are the picks, 6 to 10 the shortlist. */
 export function toPutBody(p: PickState) {
   return {
     picks: Object.fromEntries(
-      MTG_RARITIES.map((r) => [r, p[r].slice(0, MTG_LIST_MAX).map((s, i) => ({ cardId: s.card.id, slot: i + 1, note: s.note.trim() || null }))]),
+      MTG_RARITIES.map((r) => [r, p[r].slice(0, MTG_LIST_MAX).map((s, i) => ({ cardId: s.card.id, slot: i + 1 }))]),
     ),
   };
 }

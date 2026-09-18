@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cleanPickNote, mtgPicksOpen, validateEntryPicks, type MtgRarity } from "../mtg";
+import { mtgPicksOpen, validateEntryPicks, type MtgRarity } from "../mtg";
 
 const pool = new Map<string, MtgRarity>([
   ["c1", "common"], ["c2", "common"], ["c3", "common"], ["c4", "common"], ["c5", "common"], ["c6", "common"],
@@ -8,11 +8,11 @@ const pool = new Map<string, MtgRarity>([
 
 describe("validateEntryPicks", () => {
   it("accepts a partial entry and returns picks in rarity then slot order", () => {
-    const v = validateEntryPicks({ rare: [{ cardId: "r1", slot: 1, note: null }], common: [{ cardId: "c2", slot: 2, note: "  a house " }, { cardId: "c1", slot: 1 }] }, pool);
+    const v = validateEntryPicks({ rare: [{ cardId: "r1", slot: 1 }], common: [{ cardId: "c2", slot: 2 }, { cardId: "c1", slot: 1 }] }, pool);
     expect(v).toEqual({ ok: true, picks: [
-      { rarity: "common", slot: 1, cardId: "c1", note: null },
-      { rarity: "common", slot: 2, cardId: "c2", note: "a house" },
-      { rarity: "rare", slot: 1, cardId: "r1", note: null },
+      { rarity: "common", slot: 1, cardId: "c1" },
+      { rarity: "common", slot: 2, cardId: "c2" },
+      { rarity: "rare", slot: 1, cardId: "r1" },
     ] });
   });
 
@@ -56,22 +56,9 @@ describe("validateEntryPicks", () => {
     expect(validateEntryPicks({ common: [{ slot: 1 }] }, pool).ok).toBe(false);
   });
 
-  it("enforces the 140-character Receipts limit in code points", () => {
-    expect(validateEntryPicks({ common: [{ cardId: "c1", slot: 1, note: "x".repeat(140) }] }, pool).ok).toBe(true);
-    expect(validateEntryPicks({ common: [{ cardId: "c1", slot: 1, note: "x".repeat(141) }] }, pool).ok).toBe(false);
-    // 140 emoji are 280 UTF-16 units but 140 characters.
-    expect(validateEntryPicks({ common: [{ cardId: "c1", slot: 1, note: "🔥".repeat(140) }] }, pool).ok).toBe(true);
-    expect(validateEntryPicks({ common: [{ cardId: "c1", slot: 1, note: 42 }] }, pool).ok).toBe(false);
-  });
-});
-
-describe("cleanPickNote", () => {
-  it("collapses whitespace, strips control characters and nulls empties", () => {
-    const messy = "  this" + String.fromCharCode(10, 9) + "common   is a house" + String.fromCharCode(0) + " ";
-    expect(cleanPickNote(messy)).toBe("this common is a house");
-    expect(cleanPickNote("   ")).toBeNull();
-    expect(cleanPickNote(undefined)).toBeNull();
-    expect(cleanPickNote(7)).toBeUndefined();
+  it("ignores a note sent by a page from before notes were removed", () => {
+    const v = validateEntryPicks({ common: [{ cardId: "c1", slot: 1, note: "x".repeat(500) }, { cardId: "c2", slot: 2, note: 42 }] }, pool);
+    expect(v).toEqual({ ok: true, picks: [{ rarity: "common", slot: 1, cardId: "c1" }, { rarity: "common", slot: 2, cardId: "c2" }] });
   });
 });
 

@@ -32,10 +32,10 @@ const BORING = [12, 11, 14, 13, 15];
 const DEFAULT: Record<MtgRarity, number[]> = { common: BORING, uncommon: BORING, rare: BORING, mythic: BORING };
 
 /** An entry picking the cards at `ranks`, slot order, scored against `cards`. */
-function entry(userId: string, ranks: Ranks = {}, cards: SeasonCard[] = pool(), opts: { notes?: string[]; hidden?: boolean; completedAt?: string } = {}): SeasonEntry {
+function entry(userId: string, ranks: Ranks = {}, cards: SeasonCard[] = pool(), opts: { hidden?: boolean; completedAt?: string } = {}): SeasonEntry {
   const picks: SeasonPick[] = MTG_RARITIES.flatMap((rarity) => (ranks[rarity] ?? DEFAULT[rarity]).map((rank, i) => {
     const cardId = `${rarity[0]}${rank}`;
-    return { rarity, slot: i + 1, cardId, note: opts.notes?.includes(cardId) ? "Calling it now" : null };
+    return { rarity, slot: i + 1, cardId };
   }));
   const s = scoreEntry(picks, new Map(cards.map((c) => [c.cardId, { score: c.cardScore }])));
   return {
@@ -115,11 +115,16 @@ describe("prediction achievements", () => {
     expect(mine(computeSeasonBadges({ cards: late, entries: [entry("b", {}, late)], groups: [] }), "b", "sleeper_agent")).toHaveLength(0);
   });
 
-  it("Rock Bottom is dead last; Eats Words is a noted pick in the bottom quarter", () => {
-    const e = entry("a", { rare: [6, 7, 8, 9, 20], uncommon: [6, 7, 8, 17, 9] }, pool(), { notes: ["u17", "c6"] });
+  it("Rock Bottom is dead last", () => {
+    const e = entry("a", { rare: [6, 7, 8, 9, 20], uncommon: [6, 7, 8, 17, 9] });
     const badges = computeSeasonBadges({ cards: pool(), entries: [e], groups: [] });
     expect(mine(badges, "a", "rock_bottom")[0].detail.cards).toEqual([{ name: "rare card 20", rarity: "rare", rank: 20, ranked: 20, slot: 5 }]);
-    expect(mine(badges, "a", "eats_words")[0].detail.cards).toEqual([{ name: "uncommon card 17", rarity: "uncommon", rank: 17, ranked: 20, slot: 4 }]);
+  });
+
+  it("the badges that needed a note on a pick are retired", () => {
+    for (const code of ["told_you_so", "receipts_on_file", "eats_words"]) expect(MTG_BADGES[code]).toBeUndefined();
+    const e = entry("a", { uncommon: [6, 7, 8, 17, 9] });
+    expect(codesFor(computeSeasonBadges({ cards: pool(), entries: [e], groups: [] }), "a")).not.toContain("eats_words");
   });
 
   it("Oracle and Sharp Eye need 20 on the Everyone board, and hidden entries aren't on it", () => {
@@ -267,16 +272,6 @@ describe("group honors", () => {
     expect(badges.filter((x) => x.code === "lone_wolf").map((x) => x.userId)).toEqual(["a"]);
   });
 
-  it("Told You So is a noted pick the Group Mind left out, in the top five, in a group of three", () => {
-    const mindPicks = [{ rarity: "common" as const, slot: 1, cardId: "c1" }];
-    const three = [entry("a", { common: [1, 3, 7, 8, 9] }, cards, { notes: ["c1", "c3"] }), entry("b", {}, cards, { notes: ["c6"] }), entry("c")];
-    const badges = computeSeasonBadges({ cards, entries: three, groups: [group(three, { mind: mindPicks })] });
-    expect(mine(badges, "a", "told_you_so")[0]).toMatchObject({ communityId: "g1", detail: { cards: [{ name: "common card 3", rank: 3 }] } });
-    expect(mine(badges, "b", "told_you_so")).toHaveLength(0);
-    expect(computeSeasonBadges({ cards, entries: three, groups: [group(three)] }).filter((x) => x.code === "told_you_so")).toEqual([]);
-    expect(computeSeasonBadges({ cards, entries: three.slice(0, 2), groups: [group(three.slice(0, 2), { mind: mindPicks })] }).filter((x) => x.code === "told_you_so")).toEqual([]);
-  });
-
   it("Pick of the Season settles equal points on the higher adjusted win rate", () => {
     // a's #1 common and b's #1 mythic both finish #1: 100 points each.
     const adj = (rarity: MtgRarity, rank: number) => (rarity === "mythic" ? 0.66 : 0.6) - rank / 200;
@@ -324,9 +319,10 @@ describe("group honors", () => {
 });
 
 describe("badge catalogue and reasons", () => {
-  it("has all 46 badges, numbered once each", () => {
+  it("has all 43 badges, numbered once each, with the three retired numbers left out", () => {
     const numbers = Object.values(MTG_BADGES).map((b) => b.number).sort((a, b) => a - b);
-    expect(numbers).toEqual(Array.from({ length: 46 }, (_, i) => i + 1));
+    // 22, 36 and 45 needed a note on a pick and went with it.
+    expect(numbers).toEqual(Array.from({ length: 46 }, (_, i) => i + 1).filter((n) => ![22, 36, 45].includes(n)));
     expect(["called_it", "champion", "wooden_spoon", "hive_mind"].sort(compareBadges)).toEqual(["champion", "called_it", "hive_mind", "wooden_spoon"]);
   });
 

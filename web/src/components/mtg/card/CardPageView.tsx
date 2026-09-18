@@ -256,7 +256,6 @@ export default function CardPageView() {
                     <Typography variant="caption" color="text.secondary" sx={{ display: "block", lineHeight: 1.35 }}>
                       #{p.slot} {RARITY_SINGULAR[rarity]}
                     </Typography>
-                    {p.note && <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25, fontStyle: "italic", overflowWrap: "anywhere" }}>&ldquo;{p.note}&rdquo;</Typography>}
                   </Box>
                   <ChevronRightRoundedIcon aria-hidden sx={{ fontSize: 18, color: "text.disabled", alignSelf: "center", flexShrink: 0 }} />
                 </Box>

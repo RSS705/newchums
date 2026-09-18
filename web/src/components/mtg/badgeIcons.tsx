@@ -30,11 +30,8 @@ import PaidRoundedIcon from "@mui/icons-material/PaidRounded";
 import PaletteRoundedIcon from "@mui/icons-material/PaletteRounded";
 import PetsRoundedIcon from "@mui/icons-material/PetsRounded";
 import PhotoCameraRoundedIcon from "@mui/icons-material/PhotoCameraRounded";
-import ReceiptLongRoundedIcon from "@mui/icons-material/ReceiptLongRounded";
-import RecordVoiceOverRoundedIcon from "@mui/icons-material/RecordVoiceOverRounded";
 import RestaurantRoundedIcon from "@mui/icons-material/RestaurantRounded";
 import SensorsRoundedIcon from "@mui/icons-material/SensorsRounded";
-import SentimentVeryDissatisfiedRoundedIcon from "@mui/icons-material/SentimentVeryDissatisfiedRounded";
 import SportsBaseballRoundedIcon from "@mui/icons-material/SportsBaseballRounded";
 import SportsScoreRoundedIcon from "@mui/icons-material/SportsScoreRounded";
 import SsidChartRoundedIcon from "@mui/icons-material/SsidChartRounded";
@@ -73,7 +70,6 @@ const BADGE_ICONS: Record<string, SvgIconComponent> = {
   perfect_order: FormatListNumberedRoundedIcon,
   oracle: VisibilityRoundedIcon,
   sleeper_agent: BedtimeRoundedIcon,
-  told_you_so: RecordVoiceOverRoundedIcon,
   called_it: CampaignRoundedIcon,
   sniper: GpsFixedRoundedIcon,
   grand_slam: SportsBaseballRoundedIcon,
@@ -87,7 +83,6 @@ const BADGE_ICONS: Record<string, SvgIconComponent> = {
   on_the_record: FactCheckRoundedIcon,
   locked_and_loaded: LockRoundedIcon,
   buzzer_beater: AlarmRoundedIcon,
-  receipts_on_file: ReceiptLongRoundedIcon,
   rainbow: PaletteRoundedIcon,
   loyalist: FavoriteRoundedIcon,
   gold_rush: PaidRoundedIcon,
@@ -96,7 +91,6 @@ const BADGE_ICONS: Record<string, SvgIconComponent> = {
   whiff_of_the_season: AirRoundedIcon,
   bust: TrendingDownRoundedIcon,
   rock_bottom: VerticalAlignBottomRoundedIcon,
-  eats_words: SentimentVeryDissatisfiedRoundedIcon,
   monkey_business: CasinoRoundedIcon,
 };
 

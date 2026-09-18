@@ -113,7 +113,6 @@ export function countdown(iso: string, nowMs: number): string | null {
 
 // ── Picks (Batch 2) ──────────────────────────────────────────────────────────
 
-export const MTG_NOTE_MAX = 140;
 export const MTG_SLOTS_PER_RARITY = 5;
 /** Cards a player may keep in order at a rarity: the five picks, then a
  *  shortlist of up to five more that never score. */
@@ -126,7 +125,7 @@ export const RARITY_PLURAL: Record<MtgRarity, string> = { common: "commons", unc
  *  they last opened this rarity. */
 export type MtgCardWithNew = MtgCard & { isNew?: boolean };
 
-export type MtgEntryPick = { slot: number; note: string | null; card: MtgCard };
+export type MtgEntryPick = { slot: number; card: MtgCard };
 
 /** GET /mtg/sets/:code/entry. The caller's own entry only: other players'
  *  picks never leave the server before the lock. */
@@ -191,7 +190,7 @@ export const BADGE_TIER_STYLE: Record<MtgBadgeTier, { bg: string; fg: string; bo
   shame: { bg: "#F5F5F4", fg: "#57534E", border: "#78716C" },
 };
 
-export type MtgRevealPick = { slot: number; note: string | null; onlyYou: boolean; card: MtgCard };
+export type MtgRevealPick = { slot: number; onlyYou: boolean; card: MtgCard };
 
 export type MtgRevealPlayer = {
   userId: string;
@@ -277,7 +276,6 @@ export type MtgCardNumbers = {
 
 export type MtgPlayerPick = {
   slot: number;
-  note: string | null;
   card: MtgCard;
   /** Removed from scoring by an admin, so the pick scores a neutral 50. */
   voided?: boolean;
@@ -333,7 +331,7 @@ export type MtgCardPagePayload = {
   latest: null | { date: string; gihWr: number | null; gihGames: number | null; alsa: number | null; ata: number | null; iwd: number | null; cardScore: number; rank: number | null; rankedCount: number | null };
   history: Array<{ date: string; rank: number | null; rankedCount: number | null; cardScore: number; gihWr: number | null; gihGames: number | null }>;
   /** Null until the lock. */
-  pickedBy: null | Array<{ userId: string; name: string | null; username: string | null; avatarUrl: string | null; isViewer: boolean; slot: number; note: string | null }>;
+  pickedBy: null | Array<{ userId: string; name: string | null; username: string | null; avatarUrl: string | null; isViewer: boolean; slot: number }>;
   links: { scryfall: string; seventeenLands: string };
 };
 

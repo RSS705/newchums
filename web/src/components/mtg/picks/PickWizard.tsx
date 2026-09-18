@@ -28,7 +28,7 @@ import CardViewer from "./CardViewer";
 import PickTray, { SaveStatus, type SaveState } from "./PickTray";
 import ReviewStep from "./ReviewStep";
 import {
-  EMPTY_FILTERS, type CardFilters, type PickState, applyFilters, emptyPickState, fitNote, moveItem, scoredCount, toPutBody, totalPicked,
+  EMPTY_FILTERS, type CardFilters, type PickState, applyFilters, emptyPickState, moveItem, scoredCount, toPutBody, totalPicked,
 } from "./pickUtils";
 
 type Step = MtgRarity | "review";
@@ -65,14 +65,14 @@ function pickStateFromEntry(entry: MtgEntryPayload["entry"]): PickState {
   const state = emptyPickState();
   if (!entry) return state;
   for (const r of MTG_RARITIES) {
-    state[r] = [...(entry.picks[r] ?? [])].sort((a, b) => a.slot - b.slot).map((p) => ({ card: p.card, note: p.note ?? "" }));
+    state[r] = [...(entry.picks[r] ?? [])].sort((a, b) => a.slot - b.slot).map((p) => ({ card: p.card }));
   }
   return state;
 }
 
 /**
  * The pick wizard (spec 10.3): Commons, Uncommons, Rares, Mythics, then a
- * review with Receipts.
+ * review of all twenty.
  *
  * Saving: every change bumps a counter and saves the whole entry about 0.7 s
  * later. Saves run strictly one after another on a promise chain, so an older
@@ -402,7 +402,7 @@ export default function PickWizard() {
     mutate((p) => {
       const list = p[card.rarity];
       if (list.length >= MTG_LIST_MAX || list.some((s) => s.card.id === card.id)) return p;
-      return { ...p, [card.rarity]: [...list, { card, note: "" }] };
+      return { ...p, [card.rarity]: [...list, { card }] };
     });
   }, [mutate]);
 
@@ -419,7 +419,7 @@ export default function PickWizard() {
       const list = p[card.rarity];
       if (list.some((s) => s.card.id === card.id) || !list[slotIndex]) return p;
       const next = list.slice();
-      next[slotIndex] = { card, note: "" };
+      next[slotIndex] = { card };
       return { ...p, [card.rarity]: next };
     });
   }, [mutate]);
@@ -428,18 +428,6 @@ export default function PickWizard() {
     mutate((p) => {
       const moved = moveItem(p[r], from, to);
       return moved === p[r] ? p : { ...p, [r]: moved };
-    });
-  }, [mutate]);
-
-  const setNote = useCallback((r: MtgRarity, index: number, note: string) => {
-    mutate((p) => {
-      const current = p[r][index];
-      if (!current) return p;
-      const fitted = fitNote(current.note, note);
-      if (fitted === current.note) return p;
-      const next = p[r].slice();
-      next[index] = { ...current, note: fitted };
-      return { ...p, [r]: next };
     });
   }, [mutate]);
 
@@ -643,7 +631,6 @@ export default function PickWizard() {
           locked={readOnly}
           onReorder={reorder}
           onRemove={(r, i) => { const s = picks[r][i]; if (s) removePick(r, s.card.id); }}
-          onNote={setNote}
           onEdit={(r) => goToStep(MTG_RARITIES.indexOf(r))}
           onOpenCard={openCard}
         />

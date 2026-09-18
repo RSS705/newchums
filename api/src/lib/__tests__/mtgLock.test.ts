@@ -3,12 +3,11 @@ import { MTG_BADGES, badgeDescription, badgeLabel, compareBadges, computeEntryBa
 
 const LOCK = "2026-09-29T03:59:00Z";
 const RARITIES: MtgRarity[] = ["common", "uncommon", "rare", "mythic"];
-function entry(colorsFor: (i: number) => string, opts: { notes?: number; completedAt?: string | null; updatedAt?: string; count?: number } = {}) {
+function entry(colorsFor: (i: number) => string, opts: { completedAt?: string | null; updatedAt?: string; count?: number } = {}) {
   const count = opts.count ?? 20;
   const picks = Array.from({ length: count }, (_, i) => ({
     rarity: RARITIES[Math.floor(i / 5)],
     slot: (i % 5) + 1,
-    note: i < (opts.notes ?? 0) ? "calling it" : null,
     colors: colorsFor(i),
   }));
   return { completedAt: opts.completedAt ?? null, updatedAt: opts.updatedAt ?? "2026-09-20T00:00:00Z", picks };
@@ -33,11 +32,6 @@ describe("computeEntryBadges", () => {
   it("Buzzer Beater is a change in the final hour, not after the lock", () => {
     expect(codes(computeEntryBadges(entry(() => "W", { updatedAt: "2026-09-29T03:30:00Z" }), LOCK))).toContain("buzzer_beater");
     expect(codes(computeEntryBadges(entry(() => "W", { updatedAt: "2026-09-29T02:30:00Z" }), LOCK))).not.toContain("buzzer_beater");
-  });
-
-  it("Receipts on File needs five notes", () => {
-    expect(codes(computeEntryBadges(entry(() => "W", { notes: 5 }), LOCK))).toContain("receipts_on_file");
-    expect(codes(computeEntryBadges(entry(() => "W", { notes: 4 }), LOCK))).not.toContain("receipts_on_file");
   });
 
   it("colour badges: Rainbow, Loyalist with its colour, Gold Rush and Artificer", () => {

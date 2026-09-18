@@ -355,8 +355,6 @@ export async function syncScryfallSet(
 
 // ── Picks (Batch 2) ──────────────────────────────────────────────────────────
 
-/** The limit on a player's thoughts on a pick (Receipts in the spec), in characters (spec 10.3). */
-export const MTG_NOTE_MAX = 140;
 /** Picks per rarity; four rarities make a twenty-card entry. */
 export const MTG_SLOTS_PER_RARITY = 5;
 /** Cards a player may keep in order at a rarity: the five picks, then a shortlist of up to five more that never score (slots 6 to 10). */
@@ -384,29 +382,16 @@ export function mtgPicksOpen(
   return starts.length === 0 || t >= Math.min(...starts);
 }
 
-export type ValidatedPick = { rarity: MtgRarity; slot: number; cardId: string; note: string | null };
+export type ValidatedPick = { rarity: MtgRarity; slot: number; cardId: string };
 export type EntryValidation = { ok: true; picks: ValidatedPick[] } | { ok: false; message: string };
-
-/**
- * Normalise a note on a pick (the player's thoughts, called Receipts in the spec): control characters become spaces, runs of
- * whitespace collapse, and an empty note is null. Returns undefined when the
- * value is not text at all, so the caller can reject it.
- */
-export function cleanPickNote(raw: unknown): string | null | undefined {
-  if (raw === undefined || raw === null) return null;
-  if (typeof raw !== "string") return undefined;
-  // eslint-disable-next-line no-control-regex
-  const cleaned = raw.replace(/[\x00-\x1F\x7F]/g, " ").replace(/\s+/g, " ").trim();
-  return cleaned.length > 0 ? cleaned : null;
-}
 
 /**
  * Validate a full-replace entry against the set's pool (spec 12.6): at most
  * `maxSlots` cards per rarity (five picks, or ten with the shortlist), slots
  * from 1 to `maxSlots` and unique within a rarity, every card in the pool at
- * the rarity it is listed under, no card twice, and notes of at most 140
- * characters. `pool` maps card id to rarity for cards that are in the pool and
- * not voided.
+ * the rarity it is listed under, and no card twice. `pool` maps card id to
+ * rarity for cards that are in the pool and not voided. Picks carried a note
+ * ("Receipts") until Version 22; a `note` sent by an older page is ignored.
  */
 export function validateEntryPicks(input: unknown, pool: Map<string, MtgRarity>, maxSlots: number = MTG_SLOTS_PER_RARITY): EntryValidation {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
@@ -426,7 +411,7 @@ export function validateEntryPicks(input: unknown, pool: Map<string, MtgRarity>,
     const seenSlots = new Set<number>();
     for (const item of list) {
       if (!item || typeof item !== "object") return { ok: false, message: "Each pick needs a card and a slot" };
-      const { cardId, slot, note } = item as Record<string, unknown>;
+      const { cardId, slot } = item as Record<string, unknown>;
       if (typeof cardId !== "string" || cardId.length === 0) return { ok: false, message: "Each pick needs a card" };
       if (typeof slot !== "number" || !Number.isInteger(slot) || slot < 1 || slot > maxSlots) {
         return { ok: false, message: `Slots run from 1 to ${maxSlots}` };
@@ -438,13 +423,7 @@ export function validateEntryPicks(input: unknown, pool: Map<string, MtgRarity>,
       if (cardRarity !== rarity) return { ok: false, message: `That card is a ${cardRarity}, not a ${rarity}` };
       if (seenCards.has(cardId)) return { ok: false, message: "A card can only be picked once" };
       seenCards.add(cardId);
-      const cleaned = cleanPickNote(note);
-      if (cleaned === undefined) return { ok: false, message: "Your thoughts on a pick must be text" };
-      // Count code points, the way Postgres char_length does.
-      if (cleaned !== null && [...cleaned].length > MTG_NOTE_MAX) {
-        return { ok: false, message: `Your thoughts on a pick can be ${MTG_NOTE_MAX} characters at most` };
-      }
-      picks.push({ rarity, slot, cardId, note: cleaned });
+      picks.push({ rarity, slot, cardId });
     }
   }
   const order = (r: MtgRarity) => MTG_RARITIES.indexOf(r);
@@ -588,7 +567,9 @@ export type MtgBadgeTier = "common" | "uncommon" | "rare" | "mythic" | "shame";
 
 /** Badge definitions (spec section 7, where `number` comes from). The
  *  description is the fallback reason; `badgeDescription` writes the real one
- *  from what the award remembers. */
+ *  from what the award remembers. Numbers 22, 36 and 45 (Told You So, Food for
+ *  Thought and Eats Words) were retired in Version 22 with the notes on picks
+ *  they depended on. */
 export const MTG_BADGES: Record<string, { number: number; name: string; tier: MtgBadgeTier; description: string }> = {
   champion: { number: 1, name: "Champion", tier: "mythic", description: "Finished first in the group." },
   // Tiers recalibrated in Version 18: every group hands out these honors, so as
@@ -613,7 +594,6 @@ export const MTG_BADGES: Record<string, { number: number; name: string; tier: Mt
   perfect_order: { number: 19, name: "Perfect Order", tier: "rare", description: "The five picks at a rarity finished in the order they were ranked." },
   oracle: { number: 20, name: "Oracle", tier: "rare", description: "Finished in the top 5% of the Everyone board." },
   sleeper_agent: { number: 21, name: "Sleeper Agent", tier: "uncommon", description: "Picked a card that finished in the top 10 though drafters took it late." },
-  told_you_so: { number: 22, name: "Told You So", tier: "rare", description: "A pick you shared your thoughts on, left out of the Group Mind, finished in the top five." },
   called_it: { number: 23, name: "Called It", tier: "uncommon", description: "A #1 pick finished #1 at its rarity." },
   sniper: { number: 24, name: "Sniper", tier: "uncommon", description: "All five picks at a rarity finished in its top 10." },
   grand_slam: { number: 25, name: "Grand Slam", tier: "uncommon", description: "At every rarity, a pick finished in the top five." },
@@ -627,8 +607,6 @@ export const MTG_BADGES: Record<string, { number: number; name: string; tier: Mt
   on_the_record: { number: 33, name: "On the Record", tier: "common", description: "Made all 20 picks before the lock." },
   locked_and_loaded: { number: 34, name: "Locked and Loaded", tier: "common", description: "Had a complete entry at least seven days before the lock." },
   buzzer_beater: { number: 35, name: "Buzzer Beater", tier: "common", description: "Made a last change in the final hour before the lock." },
-  // Named Receipts on File until Version 21, when the notes became "your thoughts" on a pick.
-  receipts_on_file: { number: 36, name: "Food for Thought", tier: "common", description: "Shared your thoughts on at least five picks." },
   rainbow: { number: 37, name: "Rainbow", tier: "common", description: "Picked at least one card of each of the five colors." },
   loyalist: { number: 38, name: "Loyalist", tier: "common", description: "At least 10 of 20 picks share a color." },
   gold_rush: { number: 39, name: "Gold Rush", tier: "uncommon", description: "Picked at least five multicolored cards." },
@@ -637,7 +615,6 @@ export const MTG_BADGES: Record<string, { number: number; name: string; tier: Mt
   whiff_of_the_season: { number: 42, name: "Whiff of the Season", tier: "shame", description: "A #1 pick had the lowest Card Score of every #1 pick in the group." },
   bust: { number: 43, name: "Bust", tier: "shame", description: "A #1 pick finished in the bottom quarter of its rarity." },
   rock_bottom: { number: 44, name: "Rock Bottom", tier: "shame", description: "A pick finished dead last at its rarity." },
-  eats_words: { number: 45, name: "Eats Words", tier: "shame", description: "A pick you shared your thoughts on finished in the bottom quarter of its rarity." },
   monkey_business: { number: 46, name: "Monkey Business", tier: "shame", description: "Finished below the 1,000 points random picks would score." },
 };
 
@@ -815,9 +792,6 @@ export function badgeDescription(code: string, detail: Record<string, unknown> |
         : when(`First in the group on all ${days} days of standings.`, `First in the group on all ${days} days of standings so far.`);
       break;
     }
-    case "told_you_so":
-      text = cardList("Picked with your thoughts on it, left out of the Group Mind, and finished in the top five", "Picked with your thoughts on it, left out of the Group Mind, and in the top five right now");
-      break;
     case "lone_wolf":
       text = cardList("Picked by no one else in the group, and finished in the top five", "Picked by no one else in the group, and in the top five right now");
       break;
@@ -870,9 +844,6 @@ export function badgeDescription(code: string, detail: Record<string, unknown> |
     case "rock_bottom":
       text = cardList("Finished dead last", "Dead last right now");
       break;
-    case "eats_words":
-      text = cardList("Picked with your thoughts on it, and finished in the bottom quarter", "Picked with your thoughts on it, and in the bottom quarter right now");
-      break;
   }
   return text ?? fallback;
 }
@@ -887,7 +858,7 @@ export type BadgeAward = { code: string; key: string; detail: Record<string, unk
 export type LockEntryInput = {
   completedAt: string | Date | null;
   updatedAt: string | Date;
-  picks: Array<{ rarity: MtgRarity; slot: number; note: string | null; colors: string | null }>;
+  picks: Array<{ rarity: MtgRarity; slot: number; colors: string | null }>;
 };
 
 /**
@@ -907,8 +878,6 @@ export function computeEntryBadges(entry: LockEntryInput, lockAt: string | Date)
   if (complete && completedMs !== null && completedMs <= lock - 7 * 86400000) out.push({ code: "locked_and_loaded", key: "", detail: {} });
   const updatedMs = new Date(entry.updatedAt).getTime();
   if (updatedMs >= lock - 3600000 && updatedMs < lock) out.push({ code: "buzzer_beater", key: "", detail: {} });
-  const notes = picks.filter((p) => (p.note ?? "").trim().length > 0).length;
-  if (notes >= 5) out.push({ code: "receipts_on_file", key: "", detail: { notes } });
 
   const perColor: Record<string, number> = { W: 0, U: 0, B: 0, R: 0, G: 0 };
   let multicolored = 0;

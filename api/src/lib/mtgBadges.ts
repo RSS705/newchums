@@ -39,7 +39,7 @@ export type SeasonCard = {
   alsa: number | null;
 };
 
-export type SeasonPick = { rarity: MtgRarity; slot: number; cardId: string; note: string | null };
+export type SeasonPick = { rarity: MtgRarity; slot: number; cardId: string };
 
 /** An entry with points on the day being judged. */
 export type SeasonEntry = {
@@ -72,7 +72,6 @@ export type SeasonBadge = { userId: string; communityId: string | null; code: st
 type RankedCard = SeasonCard & { rank: number };
 
 const round4 = (n: number) => Math.round(n * 10000) / 10000;
-const hasNote = (p: SeasonPick) => (p.note ?? "").trim().length > 0;
 const pickKey = (p: { rarity: MtgRarity; cardId: string }) => `${p.rarity}|${p.cardId}`;
 
 function judged(card: SeasonCard | undefined): card is RankedCard {
@@ -143,8 +142,6 @@ function playerBadges(entry: SeasonEntry, cards: Map<string, SeasonCard>, board:
   if (sleepers.length > 0) add("sleeper_agent", { cards: sleepers });
   const last = cardsWhere((_, c) => judged(c) && c.rank === c.rankedCount);
   if (last.length > 0) add("rock_bottom", { cards: last });
-  const eaten = cardsWhere((p, c) => hasNote(p) && inBottomQuarter(c));
-  if (eaten.length > 0) add("eats_words", { cards: eaten });
 
   if (board && board.players >= MTG_EVERYONE_MIN_ENTRIES) {
     if (board.rank <= 0.05 * board.players) add("oracle", { rank: board.rank, players: board.players });
@@ -191,16 +188,6 @@ function groupBadges(group: SeasonGroup, entries: Map<string, SeasonEntry>, card
     .filter((d, i) => counted[i] !== false && d.length >= MTG_HONOR_MIN_PLAYERS)
     .map((d) => new Map(d.map((r) => [r.userId, r.rank])));
 
-  // Told You So: a noted pick the Group Mind left out, in the top five.
-  if (mind.size > 0) {
-    for (const p of players) {
-      const called = p.entry.picks
-        .filter((pick) => hasNote(pick) && !mind.has(pickKey(pick)))
-        .map((pick) => cards.get(pick.cardId))
-        .filter((c): c is RankedCard => inTop(c, 5));
-      if (called.length > 0) add(p.userId, "told_you_so", { cards: called.map((c) => cardDetail(c)) });
-    }
-  }
 
   if (standingsMean) {
     // Champion, Runner-Up and Third Place by the leaderboard's own ranks.

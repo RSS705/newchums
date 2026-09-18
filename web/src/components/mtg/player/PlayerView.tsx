@@ -143,7 +143,7 @@ function PickNumbers({ pick, rarity }: { pick: MtgPlayerPick; rarity: MtgRarity 
   );
 }
 
-/** One slot of a rarity block: the pick with its numbers and Receipt, and the viewer's own pick at that slot when comparing. */
+/** One slot of a rarity block: the pick with its numbers, and the viewer's own pick at that slot when comparing. */
 const SlotRow = memo(function SlotRow({ slot, pick, rarity, cardHref, comparing, mine }: {
   slot: number;
   pick: MtgPlayerPick | undefined;
@@ -167,9 +167,6 @@ const SlotRow = memo(function SlotRow({ slot, pick, rarity, cardHref, comparing,
               {pick.card.name}
             </Link>
             <PickNumbers pick={pick} rarity={rarity} />
-            {pick.note && (
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, fontStyle: "italic", overflowWrap: "anywhere", lineHeight: 1.45 }}>&ldquo;{pick.note}&rdquo;</Typography>
-            )}
           </Box>
           {pick.points !== null ? (
             <Box sx={{ textAlign: "right" }}>
@@ -290,7 +287,7 @@ function PlayerSkeleton() {
 /**
  * A player's page in a challenge group (spec 10.6): their standing and points
  * over time, their badges, and each rarity's five picks with the card's win
- * rate, games, rank, Card Score, points, trend and Receipt. Each rarity folds
+ * rate, games, rank, Card Score, points and trend. Each rarity folds
  * out the actual top five right now, and can set the viewer's own picks
  * alongside. Another player's page opens at the lock; your own before it.
  */
