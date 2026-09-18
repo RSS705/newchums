@@ -34,6 +34,7 @@ import { AppCard, useToast } from "@/components/ui";
 import EventCard, { type PlanEvent } from "@/components/events/EventCard";
 import RecentlyHappenedSection from "@/components/events/RecentlyHappenedSection";
 import { apiFetch, communityAvatarUrl, communityBannerUrl, getAuthToken, getAvatarBaseUrl } from "@/lib/apiClient";
+import { rememberJoinIntent, takeJoinIntent } from "@/lib/joinIntent";
 import { effectiveCategorySet } from "@/lib/interestUtils";
 import {
   CommunityAnnouncementsTab,
@@ -784,6 +785,25 @@ export default function CommunityDetailClient({
     setJoining(false);
   };
 
+  // A visitor who pressed Join while signed out comes back signed in, and the
+  // button remembered that in this browser (lib/joinIntent). Finish the join
+  // for them, once, so nobody presses Join twice. Only where joining is
+  // instant: an open community, or an invite-only one reached through a valid
+  // invite link. A request to join keeps its own card, since it can carry a
+  // note. The intent is used up either way, so it can't fire on a later visit.
+  const handleJoinRef = useRef(handleJoin);
+  useEffect(() => { handleJoinRef.current = handleJoin; });
+  const canJoinInstantly = !!community && isAuthenticated === true && !isClosed && !viewerMembership && !viewerPendingRequest && !viewerRemoved
+    && (community.join_mode === "open" || (community.join_mode === "invite_only" && viewerInvited));
+  useEffect(() => {
+    if (!community || isAuthenticated !== true) return;
+    // From a timer, not the effect body: joining sets state.
+    const timer = setTimeout(() => {
+      if (takeJoinIntent(slug) && canJoinInstantly) void handleJoinRef.current();
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [community, isAuthenticated, canJoinInstantly, slug]);
+
   /** Toggle the per-community mute. Optimistic update so the menu
    *  closes feeling responsive; reverts on error. The global pref is not
    *  touched, that's a separate Settings-level decision and intentionally
@@ -1443,6 +1463,7 @@ export default function CommunityDetailClient({
               slug={slug}
               variant={community.join_mode === "invite_only" ? "join" : "request"}
               inviteCode={community.join_mode === "invite_only" ? inviteParam : null}
+              challenge={isChallenge}
             />
           )
         ) : viewerRemoved ? (
@@ -1591,6 +1612,8 @@ export default function CommunityDetailClient({
   // preview (or beside the member count, until members load) and the divider
   // and row go.
   const actionsBesideMembers = isChallenge && isMember;
+  // A challenge group is joined for the game, so its buttons say so.
+  const joinLabel = isChallenge ? "Join this challenge" : "Join this community";
   const secondaryActions = (
     <>
       {/* The same outlined buttons as a plan's Edit plan and Send invite. */}
@@ -1983,6 +2006,9 @@ export default function CommunityDetailClient({
               <Button
                 component={Link}
                 href={`/login?next=${encodeURIComponent(`/communities/${slug}`)}`}
+                // An open community joins by itself once they're signed in; a
+                // request to join waits for them, since it can carry a note.
+                onClick={community.join_mode === "approval_required" ? undefined : () => rememberJoinIntent(slug)}
                 variant="contained"
                 size="large"
                 sx={{
@@ -1997,7 +2023,7 @@ export default function CommunityDetailClient({
                   "&:hover": { boxShadow: "0 6px 18px rgba(230, 91, 19, 0.32)", opacity: 0.96 },
                 }}
               >
-                {community.join_mode === "approval_required" ? "Request to join" : "Join this community"}
+                {community.join_mode === "approval_required" ? "Request to join" : joinLabel}
               </Button>
             )}
             {!isMember && !viewerPendingRequest && !viewerRemoved && isAuthenticated !== false && (
@@ -2018,7 +2044,7 @@ export default function CommunityDetailClient({
                   "&:hover": { boxShadow: "0 6px 18px rgba(230, 91, 19, 0.32)", opacity: 0.96 },
                 }}
               >
-                {joining ? <CircularProgress size={18} color="inherit" /> : community.join_mode === "approval_required" ? "Request to join" : "Join this community"}
+                {joining ? <CircularProgress size={18} color="inherit" /> : community.join_mode === "approval_required" ? "Request to join" : joinLabel}
               </Button>
             )}
             {/* Joining a public challenge group says up front who sees your
@@ -3052,7 +3078,7 @@ export default function CommunityDetailClient({
           poster, or a direct share link. Suppressed for authed viewers
           (the action row above already handles their state). */}
       {isAuthenticated === false && (
-        <CommunitySignupFooter slug={slug} communityName={community.name} challenge={isChallenge} />
+        <CommunitySignupFooter slug={slug} communityName={community.name} challenge={isChallenge} instantJoin={community.join_mode === "open"} />
       )}
 
       {/* Remove member confirmation */}
@@ -3192,14 +3218,18 @@ function CommunitySignupFooter({
   slug,
   communityName,
   challenge = false,
+  instantJoin = false,
 }: {
   slug: string;
   communityName: string;
   /** Challenge communities: members play the game rather than RSVP to plans. */
   challenge?: boolean;
+  /** An open community: signing up from this "Join <name>" panel joins it once they're signed in. */
+  instantJoin?: boolean;
 }) {
   const next = `/communities/${slug}`;
   const loginHref = `/login?next=${encodeURIComponent(next)}`;
+  const remember = instantJoin ? () => rememberJoinIntent(slug) : undefined;
   return (
     <Box
       sx={{
@@ -3248,6 +3278,7 @@ function CommunitySignupFooter({
         <Button
           component={Link}
           href={`/signup?next=${encodeURIComponent(next)}`}
+          onClick={remember}
           variant="contained"
           sx={{
             textTransform: "none",
@@ -3263,6 +3294,7 @@ function CommunitySignupFooter({
         <Button
           component={Link}
           href={loginHref}
+          onClick={remember}
           variant="outlined"
           sx={{
             textTransform: "none",
@@ -3394,21 +3426,25 @@ function SignInToJoinCard({
   slug,
   variant,
   inviteCode = null,
+  challenge = false,
 }: {
   slug: string;
   variant: "request" | "join";
   /** Invite-only communities: keep the code on the return path so the
    *  viewer can join as soon as they are signed in. */
   inviteCode?: string | null;
+  /** Challenge communities say "challenge" where others say "community". */
+  challenge?: boolean;
 }) {
   const next = inviteCode ? `/communities/${slug}?invite=${encodeURIComponent(inviteCode)}` : `/communities/${slug}`;
   const href = `/login?next=${encodeURIComponent(next)}`;
   // Calm, account-agnostic copy. Cold / QR traffic may not have a NewChums
   // account yet, the subtitle frames sign-up as the natural next step without
   // selling the value of membership on top of it.
-  const title = variant === "request" ? "Request to join this community" : "Join this community";
+  const what = challenge ? "challenge" : "community";
+  const title = variant === "request" ? `Request to join this ${what}` : `Join this ${what}`;
   const subtitle = "Sign in or create a free NewChums account to continue.";
-  const buttonLabel = variant === "request" ? "Request to join" : "Join this community";
+  const buttonLabel = variant === "request" ? "Request to join" : `Join this ${what}`;
   return (
     <AppCard>
       <Stack spacing={2}>
@@ -3436,6 +3472,8 @@ function SignInToJoinCard({
           <Button
             component={Link}
             href={href}
+            // So the join finishes by itself once they're signed in.
+            onClick={variant === "join" ? () => rememberJoinIntent(slug) : undefined}
             variant="contained"
             sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}
           >
@@ -3516,7 +3554,7 @@ function InvitedJoinCard({
             disabled={joining}
             sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2.5, px: 3, boxShadow: "none", "&:hover": { boxShadow: "none", opacity: 0.92 } }}
           >
-            {joining ? <CircularProgress size={18} color="inherit" /> : "Join this community"}
+            {joining ? <CircularProgress size={18} color="inherit" /> : challenge ? "Join this challenge" : "Join this community"}
           </Button>
         </Box>
       </Stack>
