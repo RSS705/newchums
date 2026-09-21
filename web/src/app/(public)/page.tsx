@@ -7,6 +7,11 @@ import AppShell from "@/components/layout/AppShell";
 import DashboardHome from "@/components/dashboard/DashboardHome";
 import LandingPageContent from "./LandingPageContent";
 import LandingLayout from "@/components/landing/LandingLayout";
+import { shareMeta } from "@/lib/shareMeta";
+
+const HOME_TITLE = "NewChums | Make plans that actually happen";
+const HOME_DESCRIPTION =
+  "Post the plan, share one link, and see who is really coming. RSVPs and 24-hour attendance checks for game nights, hikes, study groups, and more. Free to use.";
 
 export const metadata: Metadata = {
   // Absolute override: the root layout's title.template would otherwise
@@ -14,22 +19,12 @@ export const metadata: Metadata = {
   // positioning in both the title and the OG/Twitter cards.
   // Title matches the on-page H1 so search snippets, social cards, and the
   // hero all make the same promise.
-  title: { absolute: "NewChums | Make plans that actually happen" },
-  description:
-    "Post the plan, share one link, and see who is really coming. RSVPs and 24-hour attendance checks for game nights, hikes, study groups, and more. Free to use.",
-  alternates: { canonical: "/" },
-  openGraph: {
-    title: "NewChums | Make plans that actually happen",
-    description:
-      "Post the plan, share one link, and see who is really coming. RSVPs and 24-hour attendance checks for game nights, hikes, study groups, and more. Free to use.",
-    url: "/",
-    type: "website",
-  },
-  twitter: {
-    title: "NewChums | Make plans that actually happen",
-    description:
-      "Post the plan, share one link, and see who is really coming. RSVPs and 24-hour attendance checks for game nights, hikes, study groups, and more. Free to use.",
-  },
+  title: { absolute: HOME_TITLE },
+  description: HOME_DESCRIPTION,
+  // Canonical, og:url, the preview title and the brand card. Goes through
+  // shareMeta because a bare `openGraph` here replaces the root layout's
+  // whole object and drops the picture (see lib/shareMeta.ts).
+  ...shareMeta({ path: "/", title: HOME_TITLE, description: HOME_DESCRIPTION }),
 };
 
 /** Organization + WebSite structured data for the logged-out homepage.

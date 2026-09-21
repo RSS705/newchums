@@ -7,16 +7,16 @@ import { redirect } from "next/navigation";
 import AppShell from "@/components/layout/AppShell";
 import LandingLayout from "@/components/landing/LandingLayout";
 import ContactView from "@/components/contact/ContactView";
+import { shareMeta } from "@/lib/shareMeta";
 
 export const metadata: Metadata = {
   title: "Contact",
   description: "Get in touch with the NewChums team. Questions, feedback, or partnership ideas welcome.",
-  alternates: { canonical: "/contact" },
-  openGraph: {
+  ...shareMeta({
+    path: "/contact",
     title: "Contact NewChums",
     description: "Get in touch with the NewChums team.",
-    url: "/contact",
-  },
+  }),
 };
 
 export default async function ContactPage() {

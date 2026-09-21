@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { DEFAULT_SHARE_IMAGE, SITE_NAME } from "@/lib/shareMeta";
 import { Gabarito, Plus_Jakarta_Sans } from "next/font/google";
 import Script from "next/script";
 import "./globals.css";
@@ -45,29 +46,26 @@ export const metadata: Metadata = {
     icon: "/icon-black.png",
     apple: "/icon-black.png",
   },
+  // Defaults for every page that does not set its own preview tags.
+  // `url: "./"` resolves against the page being rendered, so each page
+  // reports its own address. It used to be fixed to the homepage, which
+  // made /privacy, /terms, /communities and the rest tell LinkedIn they
+  // WERE the homepage. No title or description is fixed here either: Next
+  // fills og:title and og:description from the page's own title and
+  // description when they are absent.
+  // A page that sets its own `openGraph` REPLACES this whole object (Next
+  // does not merge them), so public pages go through lib/shareMeta.ts,
+  // which restates the site name, locale and brand card.
   openGraph: {
     type: "website",
-    siteName: "NewChums",
-    title: "NewChums",
-    description:
-      "Post the plan, share one link, and see who is really coming. One place for your plans, invites, and RSVPs.",
-    url: "https://newchums.com",
+    siteName: SITE_NAME,
+    url: "./",
     locale: "en_US",
-    images: [
-      {
-        url: "/og-image.png",
-        width: 1200,
-        height: 630,
-        alt: "NewChums, make plans that actually happen",
-      },
-    ],
+    images: [DEFAULT_SHARE_IMAGE],
   },
   twitter: {
     card: "summary_large_image",
-    title: "NewChums",
-    description:
-      "Post the plan, share one link, and see who is really coming. One place for your plans, invites, and RSVPs.",
-    images: ["/og-image.png"],
+    images: [DEFAULT_SHARE_IMAGE.url],
   },
 };
 

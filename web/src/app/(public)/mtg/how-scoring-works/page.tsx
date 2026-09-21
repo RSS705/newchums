@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import LandingLayout from "@/components/landing/LandingLayout";
 import type { MtgSetPayload } from "@/components/mtg/mtgTypes";
 import HowScoringWorksContent from "./HowScoringWorksContent";
+import { shareMeta } from "@/lib/shareMeta";
 
 const DESCRIPTION =
   "How the MTG Card Evaluation Challenge scores your picks: 17Lands GIH WR, Card Scores from 0 to 100, small samples, ties and the season calendar.";
@@ -10,8 +11,11 @@ const DESCRIPTION =
 export const metadata: Metadata = {
   title: "How scoring works | MTG Card Evaluation Challenge",
   description: DESCRIPTION,
-  alternates: { canonical: "/mtg/how-scoring-works" },
-  openGraph: { title: "How MTG Card Evaluation Challenge scoring works", description: DESCRIPTION, url: "/mtg/how-scoring-works" },
+  ...shareMeta({
+    path: "/mtg/how-scoring-works",
+    title: "How MTG Card Evaluation Challenge scoring works",
+    description: DESCRIPTION,
+  }),
 };
 
 /** Season dates change once a season, so an hour of caching is plenty. */
