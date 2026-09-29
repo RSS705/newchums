@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, Fragment } from "react";
 import Autocomplete from "@mui/material/Autocomplete";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -41,6 +41,15 @@ type ProfileData = {
 };
 
 const PAGE_SIZE = 20;
+
+/** A quiet heading over a part of the list. */
+function ListSectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <Typography component="h2" variant="subtitle2" color="text.secondary" sx={{ fontWeight: 700, px: 0.5, pt: 0.5, "&:not(:first-of-type)": { pt: 1.5 } }}>
+      {children}
+    </Typography>
+  );
+}
 
 export default function CommunitiesListClient() {
   const [profile, setProfile] = useState<ProfileData | null>(null);
@@ -159,6 +168,10 @@ export default function CommunitiesListClient() {
     filtersRef.current = { ...filtersRef.current, searchText, view, radiusKm, selectedHobby, personalizeEnabled };
     void fetchCommunities(communities.length, true);
   };
+
+  // In the All view the list has two parts when the viewer belongs to some of it.
+  const firstOtherIndex = view === "all" ? communities.findIndex((c) => !c.viewer_role) : -1;
+  const labelSections = view === "all" && communities.length > 0 && !!communities[0].viewer_role && firstOtherIndex > 0;
 
   const hasLocation = profile?.home_lat != null && profile?.home_lng != null;
   const hasHobbies = (profile?.interest_items?.length ?? 0) > 0;
@@ -587,14 +600,19 @@ export default function CommunitiesListClient() {
         </Box>
       ) : communities.length > 0 ? (
         <>
+          {/* The viewer's own communities lead the list (the API sorts them
+              first), under a label of their own when others follow. */}
           <Stack spacing={2}>
-            {communities.map((c) => (
-              <CommunityListCard
-                key={c.id}
-                community={c}
-                viewerHobbyCategories={viewerHobbyCategories}
-                showJoinedChip={view === "all"}
-              />
+            {communities.map((c, i) => (
+              <Fragment key={c.id}>
+                {labelSections && i === 0 && <ListSectionLabel>Your communities</ListSectionLabel>}
+                {labelSections && i === firstOtherIndex && <ListSectionLabel>More communities</ListSectionLabel>}
+                <CommunityListCard
+                  community={c}
+                  viewerHobbyCategories={viewerHobbyCategories}
+                  showJoinedChip={view === "all"}
+                />
+              </Fragment>
             ))}
           </Stack>
 

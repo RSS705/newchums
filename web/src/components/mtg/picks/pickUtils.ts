@@ -81,8 +81,8 @@ export function applyFilters(cards: MtgCardWithNew[], f: CardFilters, pickedIds:
 }
 
 export type PickSlot = { card: MtgCard };
-/** Each rarity's list in order, up to ten cards: the first five are the picks,
- *  and the rest a shortlist that never scores. */
+/** Each rarity's list in order, up to twenty cards: the first five are the
+ *  picks, and the rest a shortlist that never scores. */
 export type PickState = Record<MtgRarity, PickSlot[]>;
 
 export const emptyPickState = (): PickState => ({ common: [], uncommon: [], rare: [], mythic: [] });
@@ -98,7 +98,7 @@ export function totalPicked(p: PickState): number {
 }
 
 /** Full-replace body for PUT /mtg/sets/:code/entry. Slots follow list order,
- *  so a list never has gaps: 1 to 5 are the picks, 6 to 10 the shortlist. */
+ *  so a list never has gaps: 1 to 5 are the picks, 6 to 20 the shortlist. */
 export function toPutBody(p: PickState) {
   return {
     picks: Object.fromEntries(

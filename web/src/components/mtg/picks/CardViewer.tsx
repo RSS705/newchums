@@ -12,7 +12,7 @@ import ChevronLeftRoundedIcon from "@mui/icons-material/ChevronLeftRounded";
 import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import FlipCameraAndroidRoundedIcon from "@mui/icons-material/FlipCameraAndroidRounded";
-import { type MtgCard, type MtgCardWithNew, MTG_LIST_MAX, MTG_SLOTS_PER_RARITY } from "../mtgTypes";
+import { type MtgCard, type MtgCardWithNew, MTG_LIST_MAX, MTG_SLOTS_PER_RARITY, formatMultiplier, hasOrderBonus } from "../mtgTypes";
 import ManaCost from "./ManaCost";
 import { type PickSlot, formatPreviewDate } from "./pickUtils";
 
@@ -29,6 +29,10 @@ type Props = {
   onReplace: (card: MtgCard, slotIndex: number) => void;
   /** Read-only browsing (the Reveal): no add, remove or locked button. */
   hideAction?: boolean;
+  /** What the cards being walked are, when they aren't the whole rarity: "Your commons". */
+  listLabel?: string;
+  /** What each pick counts, #1 first (the season's slot multipliers). */
+  weights?: readonly number[];
 };
 
 /** A two-faced card's name and cost, one face after the other:
@@ -45,10 +49,11 @@ function cardFaces(name: string, manaCost: string | null): Array<{ name: string;
  * Tap a card to see it large (spec 10.3): flip for double-faced cards, the
  * rules text, who previewed it, previous and next with arrows, arrow keys or
  * a swipe, and one big action. Past the five picks a card joins the shortlist,
- * and when all ten places are taken the action asks which card to replace
- * instead of failing.
+ * and when the whole list is taken the action asks which card to replace
+ * instead of failing. Opened from the player's own list, Previous and Next
+ * walk that list, so their cards can be compared one after the other.
  */
-export default function CardViewer({ open, cards, index, onIndexChange, onClose, picks, locked, onAdd, onRemove, onReplace, hideAction = false }: Props) {
+export default function CardViewer({ open, cards, index, onIndexChange, onClose, picks, locked, onAdd, onRemove, onReplace, hideAction = false, listLabel, weights }: Props) {
   const card = cards[index];
   const hasPrev = index > 0;
   const hasNext = index < cards.length - 1;
@@ -76,6 +81,8 @@ export default function CardViewer({ open, cards, index, onIndexChange, onClose,
           key={card.id}
           card={card}
           position={`${index + 1} of ${cards.length}`}
+          listLabel={listLabel}
+          weights={hasOrderBonus(weights) ? weights : undefined}
           hasPrev={hasPrev}
           hasNext={hasNext}
           onPrev={prev}
@@ -110,10 +117,14 @@ type BodyProps = {
   onRemove: (cardId: string) => void;
   onReplace: (card: MtgCard, slotIndex: number) => void;
   hideAction: boolean;
+  /** Set when the cards being walked are the player's own list. */
+  listLabel?: string;
+  /** Set only in a season where the order changes what a pick counts. */
+  weights?: readonly number[];
 };
 
 /** Keyed by card id, so flipping and the replace sheet reset on each card. */
-function ViewerBody({ card, position, hasPrev, hasNext, onPrev, onNext, onClose, picks, locked, onAdd, onRemove, onReplace, hideAction, navButton }: BodyProps) {
+function ViewerBody({ card, position, hasPrev, hasNext, onPrev, onNext, onClose, picks, locked, onAdd, onRemove, onReplace, hideAction, navButton, listLabel, weights }: BodyProps) {
   const [flipped, setFlipped] = useState(false);
   const [replacing, setReplacing] = useState(false);
   const touchStart = useRef<{ x: number; y: number } | null>(null);
@@ -129,6 +140,10 @@ function ViewerBody({ card, position, hasPrev, hasNext, onPrev, onNext, onClose,
   const image = flipped && back ? back : front;
   const pickedIndex = picks.findIndex((p) => p.card.id === card.id);
   const full = picks.length >= MTG_LIST_MAX;
+  // In the player's own list the place is the card's place in the list as it
+  // is now, so it agrees with the button below after a card is taken off.
+  const place = !listLabel ? position
+    : pickedIndex >= 0 ? `${listLabel}, ${pickedIndex + 1} of ${picks.length}` : "No longer on your list";
   const faces = cardFaces(card.name, card.manaCost);
   const previewDate = formatPreviewDate(card.previewedAt);
 
@@ -136,7 +151,7 @@ function ViewerBody({ card, position, hasPrev, hasNext, onPrev, onNext, onClose,
     <Box sx={{ position: "relative", display: "flex", flexDirection: "column", minHeight: 0, height: { xs: "100%", sm: "auto" } }}>
       <Stack direction="row" alignItems="center" spacing={1} sx={{ px: { xs: 1, sm: 2 }, py: 1, borderBottom: "1px solid", borderColor: "divider" }}>
         <IconButton onClick={onClose} aria-label="Close" sx={{ width: 44, height: 44 }}><CloseRoundedIcon /></IconButton>
-        <Typography variant="body2" color="text.secondary" sx={{ flex: 1, textAlign: "center", fontWeight: 600 }}>{position}</Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ flex: 1, textAlign: "center", fontWeight: 600, lineHeight: 1.3 }}>{place}</Typography>
         <IconButton ref={prevRef} onClick={() => onPrev("prev")} disabled={!hasPrev} aria-label="Previous card" sx={{ width: 44, height: 44 }}><ChevronLeftRoundedIcon /></IconButton>
         <IconButton ref={nextRef} onClick={() => onNext("next")} disabled={!hasNext} aria-label="Next card" sx={{ width: 44, height: 44 }}><ChevronRightRoundedIcon /></IconButton>
       </Stack>
@@ -246,6 +261,9 @@ function ViewerBody({ card, position, hasPrev, hasNext, onPrev, onNext, onClose,
         ) : picks.length < MTG_SLOTS_PER_RARITY ? (
           <Button fullWidth variant="contained" onClick={() => onAdd(card)} sx={{ textTransform: "none", fontWeight: 700, borderRadius: 2.5, py: 1.25, boxShadow: "none" }}>
             Add as #{picks.length + 1}
+            {weights?.[picks.length] !== undefined && (
+              <Typography component="span" sx={{ ml: 1, fontWeight: 600, opacity: 0.85, fontSize: "0.8125rem" }}>counts {formatMultiplier(weights[picks.length])}</Typography>
+            )}
           </Button>
         ) : (
           // Past the five picks a card goes on the shortlist, to compare and drag up.

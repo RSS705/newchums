@@ -21,7 +21,7 @@ import { scrollPageToTop } from "@/lib/scrollOffsets";
 import { BackButton, Notice } from "../pageBits";
 import {
   MTG_ATTRIBUTION, MTG_LIST_MAX, MTG_RARITIES, MTG_SLOTS_PER_RARITY, MTG_TOTAL_PICKS, RARITY_LABEL, RARITY_PLURAL,
-  type MtgCard, type MtgCardWithNew, type MtgEntryPayload, type MtgRarity, countdown, formatWhenZoned,
+  type MtgCard, type MtgCardWithNew, type MtgEntryPayload, type MtgRarity, countdown, formatMultiplier, formatWhenZoned, hasOrderBonus,
 } from "../mtgTypes";
 import CardGrid from "./CardGrid";
 import CardViewer from "./CardViewer";
@@ -42,7 +42,7 @@ type Load =
   | { kind: "ready" };
 
 type SetInfo = MtgEntryPayload["set"];
-type Viewer = { rarity: MtgRarity; list: MtgCardWithNew[]; index: number };
+type Viewer = { rarity: MtgRarity; list: MtgCardWithNew[]; index: number; ownList: boolean };
 type Dropped = { name: string; rarity: MtgRarity };
 type PutResponse = { ok?: boolean; error?: string; message?: string; dropped?: Dropped[]; unchanged?: boolean; entry?: { revision?: number } };
 
@@ -465,13 +465,15 @@ export default function PickWizard() {
   const openFromGrid = useCallback((index: number) => {
     const list = visibleRef.current;
     const card = list[index];
-    if (card) setViewer({ rarity: card.rarity, list, index });
+    if (card) setViewer({ rarity: card.rarity, list, index, ownList: false });
   }, []);
+  // A card opened from the player's own list walks that list, as it stood
+  // when the card was opened, so Previous and Next compare their own cards.
   const openCard = useCallback((card: MtgCard) => {
-    const pool = cards[card.rarity];
-    const list: MtgCardWithNew[] = pool && pool.some((c) => c.id === card.id) ? pool : [card];
-    setViewer({ rarity: card.rarity, list, index: Math.max(0, list.findIndex((c) => c.id === card.id)) });
-  }, [cards]);
+    const own: MtgCardWithNew[] = picksRef.current[card.rarity].map((s) => s.card);
+    const list = own.some((c) => c.id === card.id) ? own : [card];
+    setViewer({ rarity: card.rarity, list, index: Math.max(0, list.findIndex((c) => c.id === card.id)), ownList: true });
+  }, []);
 
   if (load.kind === "loading") return <PicksSkeleton />;
   if (load.kind !== "ready" || !setInfo) {
@@ -491,11 +493,12 @@ export default function PickWizard() {
   }
 
   const total = totalPicked(picks);
+  const weights = hasOrderBonus(setInfo.slotWeights) ? setInfo.slotWeights : undefined;
   const inPreviews = setInfo.phase === "previews" || setInfo.phase === "upcoming";
   const communityHref = `/communities/${slug}`;
 
   return (
-    <Stack spacing={{ xs: 2, sm: 2.5 }} sx={{ pb: { xs: rarity && !readOnly ? 11 : 2, md: 2 } }}>
+    <Stack data-pick-wizard spacing={{ xs: 2, sm: 2.5 }} sx={{ pb: { xs: rarity && !readOnly ? 11 : 2, md: 2 } }}>
       <Box role="status" aria-live="polite" sx={VISUALLY_HIDDEN}>{LIVE_TEXT[saveState]}</Box>
 
       <Box>
@@ -580,6 +583,7 @@ export default function PickWizard() {
           <AppCard>
             <Typography variant="body1" sx={{ fontWeight: 700, lineHeight: 1.45 }}>
               Pick the 5 {RARITY_PLURAL[rarity]} you think will post the highest GIH WR on 17Lands, best first.
+              {weights && ` Your #1 counts ${formatMultiplier(weights[0])}, down to ${formatMultiplier(weights[weights.length - 1])} for your #${weights.length}.`}
             </Typography>
             <Stack direction="row" spacing={1} alignItems="center" useFlexGap flexWrap="wrap" sx={{ mt: 0.75, mb: 2 }}>
               {inPreviews && (
@@ -623,6 +627,7 @@ export default function PickWizard() {
             onReorder={(from, to) => reorder(rarity, from, to)}
             onRemove={(i) => { const s = picks[rarity][i]; if (s) removePick(rarity, s.card.id); }}
             onOpenCard={openCard}
+            weights={weights}
           />
         </Box>
       ) : (
@@ -633,6 +638,7 @@ export default function PickWizard() {
           onRemove={(r, i) => { const s = picks[r][i]; if (s) removePick(r, s.card.id); }}
           onEdit={(r) => goToStep(MTG_RARITIES.indexOf(r))}
           onOpenCard={openCard}
+          weights={weights}
         />
       )}
 
@@ -665,6 +671,8 @@ export default function PickWizard() {
           onAdd={addPick}
           onRemove={(cardId) => removePick(viewer.rarity, cardId)}
           onReplace={replacePick}
+          listLabel={viewer.ownList ? `Your ${RARITY_PLURAL[viewer.rarity]}` : undefined}
+          weights={weights}
         />
       )}
     </Stack>

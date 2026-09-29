@@ -1,5 +1,5 @@
 import { MTG_RARITIES, MTG_SLOTS_PER_RARITY, type MtgRarity } from "./mtg";
-import { rankStandings, scoreEntry } from "./mtgScoring";
+import { MTG_SLOT_WEIGHTS, rankStandings, scoreEntry } from "./mtgScoring";
 
 // ── Season badges (spec 7.2, 7.3 and 7.5) ────────────────────────────────────
 //
@@ -19,7 +19,7 @@ export const MTG_HONOR_MIN_PLAYERS = 3;
 export const MTG_BIG_GROUP_PLAYERS = 4;
 /** Oracle and Sharp Eye need this many entries on the Everyone board. */
 export const MTG_EVERYONE_MIN_ENTRIES = 20;
-/** Random picks average 50 × (1.5 + 1.25 + 1 + 0.75 + 0.5) × 4 rarities. */
+/** Random picks average 50 a pick over 20 picks; every season's slot multipliers add up to 5 a rarity. */
 export const MTG_RANDOM_PICKS_POINTS = 1000;
 
 const FULL_ENTRY = MTG_RARITIES.length * MTG_SLOTS_PER_RARITY;
@@ -169,7 +169,7 @@ const SUBTOTAL_HONOR: Record<MtgRarity, string> = { common: "common_sense", unco
 /** Group honors (7.2 and 7.5) and the achievements that need a group: Beat
  *  the Crowd, Wire to Wire, Told You So and Lone Wolf. `judgedSet` holds the
  *  rarities ranked on the day being judged, and `counted` which days count. */
-function groupBadges(group: SeasonGroup, entries: Map<string, SeasonEntry>, cards: Map<string, SeasonCard>, judgedSet: Set<MtgRarity>, counted: boolean[]): SeasonBadge[] {
+function groupBadges(group: SeasonGroup, entries: Map<string, SeasonEntry>, cards: Map<string, SeasonCard>, judgedSet: Set<MtgRarity>, counted: boolean[], weights: readonly number[]): SeasonBadge[] {
   const out: SeasonBadge[] = [];
   const add = (userId: string, code: string, detail: Record<string, unknown> = {}) => out.push({ userId, communityId: group.communityId, code, key: "", detail });
   const latest = group.days[group.days.length - 1] ?? [];
@@ -206,14 +206,14 @@ function groupBadges(group: SeasonGroup, entries: Map<string, SeasonEntry>, card
     for (const p of top.rows) add(p.userId, SUBTOTAL_HONOR[rarity], { rarity, points: top.best });
   }
 
-  // Pick of the Season: the most points any one pick earned, which is its Card
-  // Score now that every slot counts the same. A Card Score tops out at 100, so
-  // every pick of a card that finishes #1 earns 100; the higher adjusted win
-  // rate settles those ties, and only the same card shares.
+  // Pick of the Season: the most points any one pick earned, its Card Score
+  // times its slot's multiplier. A Card Score tops out at 100, so picks of cards
+  // that finish #1 can earn the same; the higher adjusted win rate settles
+  // those ties, and only the same card shares.
   const bestPicks = players.flatMap((p) => {
     const scored = p.entry.picks.flatMap((pick) => {
       const c = cards.get(pick.cardId);
-      return judged(c) && pick.slot >= 1 && pick.slot <= MTG_SLOTS_PER_RARITY ? [{ c, slot: pick.slot, points: round4(c.cardScore), adj: c.adjWr ?? -1 }] : [];
+      return judged(c) && pick.slot >= 1 && pick.slot <= MTG_SLOTS_PER_RARITY ? [{ c, slot: pick.slot, points: round4(c.cardScore * (weights[pick.slot - 1] ?? 1)), adj: c.adjWr ?? -1 }] : [];
     });
     if (scored.length === 0) return [];
     const most = Math.max(...scored.map((x) => x.points));
@@ -295,7 +295,7 @@ function groupBadges(group: SeasonGroup, entries: Map<string, SeasonEntry>, card
 
   // Beat the Crowd: more points than the Group Mind's picks, scored the same way.
   if (mind.size > 0) {
-    const mindTotal = scoreEntry(group.mind, new Map([...cards].map(([id, c]) => [id, { score: c.cardScore }]))).total;
+    const mindTotal = scoreEntry(group.mind, new Map([...cards].map(([id, c]) => [id, { score: c.cardScore }])), weights).total;
     for (const p of players) {
       if (round4(p.entry.total) > mindTotal) add(p.userId, "beat_the_crowd", { points: round4(p.entry.total), mind: mindTotal });
     }
@@ -331,8 +331,10 @@ function groupBadges(group: SeasonGroup, entries: Map<string, SeasonEntry>, card
  * `judgedDays` lines up with every group's `days` and says whether that day
  * ranked any rarity past MTG_BADGE_MIN_RANKED; a day that didn't never counts
  * toward King of the Hill, Wire to Wire, Rollercoaster or Comeback Kid.
+ * `weights` are the season's slot multipliers, the ones its entries were
+ * scored with; without them every slot counts the same.
  */
-export function computeSeasonBadges(input: { cards: SeasonCard[]; entries: SeasonEntry[]; groups: SeasonGroup[]; judgedDays?: boolean[] }): SeasonBadge[] {
+export function computeSeasonBadges(input: { cards: SeasonCard[]; entries: SeasonEntry[]; groups: SeasonGroup[]; judgedDays?: boolean[]; weights?: readonly number[] }): SeasonBadge[] {
   const cards = new Map(input.cards.map((c) => [c.cardId, c]));
   const entries = new Map(input.entries.map((e) => [e.userId, e]));
   const board = rankStandings(input.entries.filter((e) => !e.hidden).map((e) => ({
@@ -346,6 +348,6 @@ export function computeSeasonBadges(input: { cards: SeasonCard[]; entries: Seaso
     const rank = boardRank.get(e.userId);
     out.push(...playerBadges(e, cards, rank === undefined ? null : { rank, players: board.length }, medians, judgedSet));
   }
-  for (const g of input.groups) out.push(...groupBadges(g, entries, cards, judgedSet, input.judgedDays ?? []));
+  for (const g of input.groups) out.push(...groupBadges(g, entries, cards, judgedSet, input.judgedDays ?? [], input.weights ?? MTG_SLOT_WEIGHTS[1]));
   return out;
 }

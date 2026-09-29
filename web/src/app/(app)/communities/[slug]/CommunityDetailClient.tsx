@@ -844,6 +844,9 @@ export default function CommunityDetailClient({
       if (data.ok) {
         setLeaveConfirmOpen(false);
         toast.success("You've left the community");
+        // The invite link is for members: forget it at once, not when the reload lands.
+        setViewerMembership(null);
+        setCommunity((c) => (c ? { ...c, invite_code: null } : c));
         fetchCommunity();
       } else {
         toast.error(data.message || "Cannot leave");
@@ -881,7 +884,7 @@ export default function CommunityDetailClient({
     // the full detail page (public) or a restricted preview (private), so
     // the raw URL is all we need. Invite-only communities are the exception:
     // members copy the invite link, whose code lets the recipient join.
-    const inviteOnlyLink = community?.join_mode === "invite_only" && community.invite_code;
+    const inviteOnlyLink = community?.join_mode === "invite_only" && !!viewerMembership && community.invite_code;
     const url = inviteOnlyLink
       ? `${window.location.origin}/communities/${slug}?invite=${community.invite_code}`
       : `${window.location.origin}/communities/${slug}`;
@@ -1614,20 +1617,28 @@ export default function CommunityDetailClient({
   const actionsBesideMembers = isChallenge && isMember;
   // A challenge group is joined for the game, so its buttons say so.
   const joinLabel = isChallenge ? "Join this challenge" : "Join this community";
+  // The invite link belongs to the people who have joined. An invite-only
+  // community has nothing else worth copying (its plain address only says
+  // "ask a member for the invite link"), so anyone who isn't a member, a super
+  // admin included, gets no button at all.
+  const inviteLinkReady = community.join_mode === "invite_only" && isMember && !!community.invite_code;
+  const showShare = community.join_mode !== "invite_only" || inviteLinkReady;
   const secondaryActions = (
     <>
       {/* The same outlined buttons as a plan's Edit plan and Send invite. */}
-      <Tooltip title={community.join_mode === "invite_only" && community.invite_code ? "Copy the invite link. Anyone with it can join." : "Copy a link to this community"}>
-        <Button
-          variant="outlined"
-          size="small"
-          startIcon={<ContentCopyRoundedIcon sx={{ fontSize: 16 }} />}
-          onClick={handleShare}
-          sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2 }}
-        >
-          {community.join_mode === "invite_only" && community.invite_code ? "Invite link" : "Share"}
-        </Button>
-      </Tooltip>
+      {showShare && (
+        <Tooltip title={inviteLinkReady ? "Copy the invite link. Anyone with it can join." : "Copy a link to this community"}>
+          <Button
+            variant="outlined"
+            size="small"
+            startIcon={<ContentCopyRoundedIcon sx={{ fontSize: 16 }} />}
+            onClick={handleShare}
+            sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2 }}
+          >
+            {inviteLinkReady ? "Invite link" : "Share"}
+          </Button>
+        </Tooltip>
+      )}
       {isOwner && (
         <Button
           variant="outlined"

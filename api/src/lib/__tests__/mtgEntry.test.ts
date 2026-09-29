@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mtgPicksOpen, validateEntryPicks, type MtgRarity } from "../mtg";
+import { mtgPicksOpen, validateEntryPicks, type MtgRarity, MTG_LIST_MAX } from "../mtg";
 
 const pool = new Map<string, MtgRarity>([
   ["c1", "common"], ["c2", "common"], ["c3", "common"], ["c4", "common"], ["c5", "common"], ["c6", "common"],
@@ -25,12 +25,13 @@ describe("validateEntryPicks", () => {
     expect(validateEntryPicks({ common: six }, pool).ok).toBe(false);
   });
 
-  it("takes a list of up to ten with the shortlist, slots 1 to 10", () => {
-    const big = new Map<string, MtgRarity>(Array.from({ length: 11 }, (_, i) => [`k${i + 1}`, "common" as MtgRarity]));
+  it("takes a list of up to twenty with the shortlist, slots 1 to 20", () => {
+    expect(MTG_LIST_MAX).toBe(20);
+    const big = new Map<string, MtgRarity>(Array.from({ length: MTG_LIST_MAX + 1 }, (_, i) => [`k${i + 1}`, "common" as MtgRarity]));
     const list = (n: number) => Array.from({ length: n }, (_, i) => ({ cardId: `k${i + 1}`, slot: i + 1 }));
-    const ten = validateEntryPicks({ common: list(10) }, big, 10);
-    expect(ten.ok && ten.picks.map((p) => p.slot)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
-    expect(validateEntryPicks({ common: list(11) }, big, 10)).toEqual({ ok: false, message: "At most 10 common cards on your list" });
+    const full = validateEntryPicks({ common: list(MTG_LIST_MAX) }, big, MTG_LIST_MAX);
+    expect(full.ok && full.picks.map((p) => p.slot)).toEqual(Array.from({ length: MTG_LIST_MAX }, (_, i) => i + 1));
+    expect(validateEntryPicks({ common: list(MTG_LIST_MAX + 1) }, big, MTG_LIST_MAX)).toEqual({ ok: false, message: "At most 20 common cards on your list" });
     // Without the shortlist, slot 6 is still out of range.
     expect(validateEntryPicks({ common: [{ cardId: "k1", slot: 6 }] }, big).ok).toBe(false);
   });

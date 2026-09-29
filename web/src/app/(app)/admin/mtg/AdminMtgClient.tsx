@@ -11,7 +11,7 @@ import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import { AppCard, useToast } from "@/components/ui";
 import { apiFetch } from "@/lib/apiClient";
-import type { MtgSetPayload } from "@/components/mtg/mtgTypes";
+import { MTG_ORDER_WEIGHTS, type MtgSetPayload, formatWhenEastern, hasOrderBonus, latestLockAt, listMultipliers } from "@/components/mtg/mtgTypes";
 import AdminMtgStats from "./AdminMtgStats";
 
 type AdminSet = {
@@ -167,7 +167,7 @@ export default function AdminMtgClient() {
     if (!/^[a-z0-9]{2,6}$/.test(code)) { toast.error("Use the Scryfall set code, like fra"); return; }
     if (drafts[code]) { toast.error("That set already exists"); return; }
     setDrafts((prev) => ({ ...prev, [code]: { name: "", feed_url: `https://www.17lands.com/api/card_data?expansion=${code.toUpperCase()}&event_type=PremierDraft&time_period=ALL_TIME`, status: "active" } }));
-    setSets((prev) => [{ code, name: "", previews_start_at: null, gallery_complete_at: null, prerelease_start_at: null, prerelease_end_at: null, picks_open_at: null, lock_at: "", arena_release_at: null, tabletop_release_at: null, final_at: "", feed_url: "", status: "active", phase: "upcoming", finalized_at: null, reopened_at: null, payload: { code, name: "", phase: "upcoming", dates: { previewsStartAt: null, galleryCompleteAt: null, prereleaseStartAt: null, prereleaseEndAt: null, picksOpenAt: null, lockAt: "", arenaReleaseAt: null, tabletopReleaseAt: null, finalAt: "" }, timeline: [], pool: { common: 0, uncommon: 0, rare: 0, mythic: 0 }, poolTotal: 0, galleryComplete: false, lastCardSyncAt: null, scoringVersion: 1, picksOpen: false, revealOpen: false, lockedAt: null, standings: null, finalizedAt: null }, locked_at: null, syncs: [] }, ...prev]);
+    setSets((prev) => [{ code, name: "", previews_start_at: null, gallery_complete_at: null, prerelease_start_at: null, prerelease_end_at: null, picks_open_at: null, lock_at: "", arena_release_at: null, tabletop_release_at: null, final_at: "", feed_url: "", status: "active", phase: "upcoming", finalized_at: null, reopened_at: null, payload: { code, name: "", phase: "upcoming", dates: { previewsStartAt: null, galleryCompleteAt: null, prereleaseStartAt: null, prereleaseEndAt: null, picksOpenAt: null, lockAt: "", arenaReleaseAt: null, tabletopReleaseAt: null, finalAt: "" }, timeline: [], pool: { common: 0, uncommon: 0, rare: 0, mythic: 0 }, poolTotal: 0, galleryComplete: false, lastCardSyncAt: null, scoringVersion: 2, slotWeights: [...MTG_ORDER_WEIGHTS], latestLockAt: null, picksOpen: false, revealOpen: false, lockedAt: null, standings: null, finalizedAt: null }, locked_at: null, syncs: [] }, ...prev]);
     setNewCode("");
   };
 
@@ -194,6 +194,15 @@ export default function AdminMtgClient() {
 
       {sets.map((s) => {
         const d = drafts[s.code] ?? {};
+        // The latest picks may lock, from the prerelease date as typed: the end of the Tuesday before.
+        const prereleaseIso = fromLocalInput(d.prerelease_start_at ?? "");
+        const latestLock = prereleaseIso ? latestLockAt(prereleaseIso) : null;
+        const lockPassed = !!s.lock_at && Date.now() >= Date.parse(s.lock_at);
+        const lockHelp = lockPassed
+          ? "Picks have locked, so this can't change."
+          : latestLock
+            ? `By the end of the Tuesday before prereleases: ${formatWhenEastern(latestLock.toISOString())} at the latest.`
+            : "Enter the prerelease start, and picks must lock by the end of the Tuesday before it.";
         return (
           <AppCard key={s.code}>
             <Stack direction="row" spacing={1} alignItems="center" useFlexGap flexWrap="wrap" sx={{ mb: 2 }}>
@@ -205,6 +214,11 @@ export default function AdminMtgClient() {
               {s.locked_at && <Chip label={`Locked ${new Date(s.locked_at).toLocaleString()}`} size="small" variant="outlined" sx={{ fontWeight: 600 }} />}
               {s.finalized_at && <Chip label={`Finalized ${new Date(s.finalized_at).toLocaleString()}`} size="small" variant="outlined" sx={{ fontWeight: 600 }} />}
               {s.reopened_at && <Chip label={`Reopened ${new Date(s.reopened_at).toLocaleString()}: waiting for Finalize now`} size="small" color="warning" variant="outlined" sx={{ fontWeight: 600 }} />}
+              <Typography variant="caption" color="text.secondary" sx={{ flexBasis: "100%" }}>
+                {hasOrderBonus(s.payload.slotWeights)
+                  ? `Pick order counts: ${listMultipliers(s.payload.slotWeights)}, from #1 to #5.`
+                  : "Every pick counts the same this season. Seasons added from now on count the order of the picks."}
+              </Typography>
             </Stack>
             <Grid container spacing={1.5}>
               <Grid size={{ xs: 12, sm: 6 }}>
@@ -231,7 +245,20 @@ export default function AdminMtgClient() {
                     value={d[f.key] ?? ""}
                     onChange={(e) => setField(s.code, f.key, e.target.value)}
                     slotProps={{ inputLabel: { shrink: true } }}
+                    disabled={f.key === "lock_at" && lockPassed}
+                    helperText={f.key === "lock_at" ? lockHelp : undefined}
                   />
+                  {f.key === "lock_at" && latestLock && !lockPassed && (
+                    <Button
+                      variant="outlined"
+                      color="inherit"
+                      size="small"
+                      onClick={() => setField(s.code, "lock_at", toLocalInput(latestLock.toISOString()))}
+                      sx={{ mt: 0.75, textTransform: "none", fontWeight: 600, borderRadius: 2 }}
+                    >
+                      Use the Tuesday before prereleases
+                    </Button>
+                  )}
                 </Grid>
               ))}
               <Grid size={{ xs: 12 }}>

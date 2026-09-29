@@ -71,6 +71,8 @@ export default function EditCommunityClient() {
   // Invite-only communities: the link secret, present in the owner's
   // detail payload. Null until the mode has been saved once.
   const [inviteCode, setInviteCode] = useState<string | null>(null);
+  /** An invite link exists, but this viewer hasn't joined, so it isn't shown to them. */
+  const [inviteHidden, setInviteHidden] = useState(false);
   const [resettingInvite, setResettingInvite] = useState(false);
   // Page origin for displaying the invite link; "" during server render so
   // hydration matches, then the real origin on the client.
@@ -142,6 +144,8 @@ export default function EditCommunityClient() {
         setDescription(c.description || "");
         setAccess(c.join_mode === "invite_only" ? "invite_only" : c.visibility === "private" ? "approval_required" : "open");
         setInviteCode(typeof c.invite_code === "string" && c.invite_code ? c.invite_code : null);
+        // The link itself is only sent to members; an admin outside the community is told one exists.
+        setInviteHidden(c.has_invite_code === true && !(typeof c.invite_code === "string" && c.invite_code));
         setIsOnline(c.is_online === true);
         setWebsite(c.website || "");
         setDiscordUrl(c.discord_url || "");
@@ -293,6 +297,10 @@ export default function EditCommunityClient() {
       const data = await res.json();
       if (data.ok && typeof data.invite_code === "string") {
         setInviteCode(data.invite_code);
+        toast.success("Invite link reset. The old link no longer works.");
+      } else if (data.ok) {
+        // Reset by someone who hasn't joined: the old link is dead, and the new one goes to members only.
+        setInviteHidden(true);
         toast.success("Invite link reset. The old link no longer works.");
       } else {
         toast.error(data.message || "Could not reset the link");
@@ -841,6 +849,22 @@ export default function EditCommunityClient() {
                   <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1, lineHeight: 1.5 }}>
                     Resetting makes the old link stop working. Members can also copy the link from the community page.
                   </Typography>
+                </>
+              ) : inviteHidden ? (
+                <>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: "block", lineHeight: 1.5, mb: 1.25 }}>
+                    Only people who have joined can see or copy the invite link. You can still reset it, which makes the old link stop working.
+                  </Typography>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    color="inherit"
+                    onClick={resetInviteLink}
+                    disabled={resettingInvite}
+                    sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2 }}
+                  >
+                    {resettingInvite ? "Resetting\u2026" : "Reset link"}
+                  </Button>
                 </>
               ) : (
                 <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.5 }}>

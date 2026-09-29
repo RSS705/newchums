@@ -34,6 +34,8 @@ export type MtgSetRow = {
   finalized_at?: string | Date | null;
   /** When an admin reopened a finalized season; the finalize job waits for Finalize now. */
   reopened_at?: string | Date | null;
+  /** The lock badge rules the season's awards were made under (see MTG_LOCK_BADGES_VERSION). */
+  lock_badges_version?: number | null;
 };
 
 export type MtgPhase = "upcoming" | "previews" | "open" | "locked" | "live" | "final";
@@ -84,13 +86,17 @@ export function mtgTimeline(set: MtgSetRow, now: Date = new Date()): TimelineEnt
       detail: "New cards are revealed every day, and you can make your picks from the first one until picks lock. Revealed cards appear in the pick screens automatically.",
     });
   }
-  // Picks lock before prereleases start, so the lock comes first even when the
-  // two share a moment (the sort below keeps insertion order for ties).
+  // Picks lock before anyone plays with the cards, so the lock comes first even
+  // when the two share a moment (the sort below keeps insertion order for ties).
   entries.push({ key: "lock", label: "Picks lock", at: set.lock_at, detail: "After this moment nothing can change, and everyone's picks are revealed to the group." });
   if (set.prerelease_start_at) {
+    // Since Version 24 picks lock on the Tuesday before; Reality Fracture's locked as prereleases began.
+    const lockedEarlier = easternDateKey(set.lock_at) < easternDateKey(set.prerelease_start_at);
     entries.push({
       key: "prerelease", label: "Prerelease weekend", at: set.prerelease_start_at, endAt: set.prerelease_end_at ?? undefined,
-      detail: "Tabletop events at stores, from Friday evening. Picks are locked by then.",
+      detail: lockedEarlier
+        ? "Tabletop events at stores, from Friday evening. Picks lock earlier that week, before anyone plays with the cards."
+        : "Tabletop events at stores, from Friday evening. Picks are locked by then.",
     });
   }
   if (set.arena_release_at) {
@@ -357,8 +363,8 @@ export async function syncScryfallSet(
 
 /** Picks per rarity; four rarities make a twenty-card entry. */
 export const MTG_SLOTS_PER_RARITY = 5;
-/** Cards a player may keep in order at a rarity: the five picks, then a shortlist of up to five more that never score (slots 6 to 10). */
-export const MTG_LIST_MAX = 10;
+/** Cards a player may keep in order at a rarity: the five picks, then a shortlist of up to fifteen more that never score (slots 6 to 20). */
+export const MTG_LIST_MAX = 20;
 
 /**
  * Whether entries can change right now. Picks open when previews start,
@@ -387,7 +393,7 @@ export type EntryValidation = { ok: true; picks: ValidatedPick[] } | { ok: false
 
 /**
  * Validate a full-replace entry against the set's pool (spec 12.6): at most
- * `maxSlots` cards per rarity (five picks, or ten with the shortlist), slots
+ * `maxSlots` cards per rarity (five picks, or twenty with the shortlist), slots
  * from 1 to `maxSlots` and unique within a rarity, every card in the pool at
  * the rarity it is listed under, and no card twice. `pool` maps card id to
  * rarity for cards that are in the pool and not voided. Picks carried a note
@@ -466,6 +472,22 @@ export function mtgLockWarningAt(lockAt: string | Date): Date {
   const p = easternParts(new Date(lockAt));
   const previous = new Date(Date.UTC(p.year, p.month - 1, p.day) - 86400000);
   return easternToUtc(previous.getUTCFullYear(), previous.getUTCMonth() + 1, previous.getUTCDate(), 10, 0);
+}
+
+/**
+ * The latest a season's picks may lock: 11:59 PM ET on the last Tuesday before
+ * the day prereleases start. Early access events can run from the Wednesday of
+ * prerelease week, and what happens in them says too much about the cards, so
+ * picks are in before anyone plays. A prerelease on Friday, September 25 gives
+ * Tuesday, September 22 at 11:59 PM ET.
+ */
+export function mtgLatestLockAt(prereleaseStartAt: string | Date): Date {
+  const p = easternParts(new Date(prereleaseStartAt));
+  const day = new Date(Date.UTC(p.year, p.month - 1, p.day));
+  // Days back to the Tuesday before: a Tuesday prerelease goes back a whole week.
+  const back = ((day.getUTCDay() + 4) % 7) + 1;
+  const tuesday = new Date(day.getTime() - back * 86400000);
+  return easternToUtc(tuesday.getUTCFullYear(), tuesday.getUTCMonth() + 1, tuesday.getUTCDate(), 23, 59);
 }
 
 /** The Eastern calendar day of an instant as YYYY-MM-DD, for comparing days
@@ -569,7 +591,11 @@ export type MtgBadgeTier = "common" | "uncommon" | "rare" | "mythic" | "shame";
  *  description is the fallback reason; `badgeDescription` writes the real one
  *  from what the award remembers. Numbers 22, 36 and 45 (Told You So, Food for
  *  Thought and Eats Words) were retired in Version 22 with the notes on picks
- *  they depended on. */
+ *  they depended on. Numbers 15, 33, 34 and 37 (Early Bird, On the Record,
+ *  Locked and Loaded and Rainbow) were retired in Version 24: nearly everyone
+ *  earned them, so they said nothing about a player. Gold Rush and Artificer
+ *  became group honors then, and 47 to 53 joined them: what a player's picks
+ *  say about them, next to the rest of their group. */
 export const MTG_BADGES: Record<string, { number: number; name: string; tier: MtgBadgeTier; description: string }> = {
   champion: { number: 1, name: "Champion", tier: "mythic", description: "Finished first in the group." },
   // Tiers recalibrated in Version 18: every group hands out these honors, so as
@@ -587,7 +613,6 @@ export const MTG_BADGES: Record<string, { number: number; name: string; tier: Mt
   hive_mind: { number: 12, name: "Hive Mind", tier: "common", description: "Made the picks that match the Group Mind most." },
   photo_finish: { number: 13, name: "Photo Finish", tier: "uncommon", description: "Finished closer on points to the player one place away than anyone else in the group." },
   rollercoaster: { number: 14, name: "Rollercoaster", tier: "common", description: "Moved the most places in the group across the daily standings, up and down." },
-  early_bird: { number: 15, name: "Early Bird", tier: "common", description: "First in the group to complete all 20 picks." },
   clean_sweep: { number: 16, name: "Clean Sweep", tier: "mythic", description: "The five picks at a rarity finished as its top five." },
   beat_the_crowd: { number: 17, name: "Beat the Crowd", tier: "mythic", description: "Finished above the group's Group Mind." },
   wire_to_wire: { number: 18, name: "Wire to Wire", tier: "mythic", description: "First in the group on every day of standings." },
@@ -604,19 +629,41 @@ export const MTG_BADGES: Record<string, { number: number; name: string; tier: Mt
   bullseye: { number: 30, name: "Bullseye", tier: "common", description: "A pick finished at exactly the rank it was given." },
   well_rounded: { number: 31, name: "Well-Rounded", tier: "common", description: "At every rarity, a pick finished in the top 10." },
   bomb_detector: { number: 32, name: "Bomb Detector", tier: "common", description: "Picked the #1 rare or the #1 mythic." },
-  on_the_record: { number: 33, name: "On the Record", tier: "common", description: "Made all 20 picks before the lock." },
-  locked_and_loaded: { number: 34, name: "Locked and Loaded", tier: "common", description: "Had a complete entry at least seven days before the lock." },
   buzzer_beater: { number: 35, name: "Buzzer Beater", tier: "common", description: "Made a last change in the final hour before the lock." },
-  rainbow: { number: 37, name: "Rainbow", tier: "common", description: "Picked at least one card of each of the five colors." },
   loyalist: { number: 38, name: "Loyalist", tier: "common", description: "At least 10 of 20 picks share a color." },
-  gold_rush: { number: 39, name: "Gold Rush", tier: "uncommon", description: "Picked at least five multicolored cards." },
-  artificer: { number: 40, name: "Artificer", tier: "uncommon", description: "Picked at least three colorless cards." },
+  gold_rush: { number: 39, name: "Gold Rush", tier: "common", description: "Picked the most multicolored cards in the group." },
+  artificer: { number: 40, name: "Artificer", tier: "common", description: "Picked the most artifacts in the group." },
   wooden_spoon: { number: 41, name: "Wooden Spoon", tier: "shame", description: "Finished last in the group." },
   whiff_of_the_season: { number: 42, name: "Whiff of the Season", tier: "shame", description: "A #1 pick had the lowest Card Score of every #1 pick in the group." },
   bust: { number: 43, name: "Bust", tier: "shame", description: "A #1 pick finished in the bottom quarter of its rarity." },
   rock_bottom: { number: 44, name: "Rock Bottom", tier: "shame", description: "A pick finished dead last at its rarity." },
   monkey_business: { number: 46, name: "Monkey Business", tier: "shame", description: "Finished below the 1,000 points random picks would score." },
+  one_of_a_kind: { number: 47, name: "One of a Kind", tier: "uncommon", description: "Picked the most cards that nobody else in the group picked." },
+  big_spender: { number: 48, name: "Big Spender", tier: "common", description: "Made the picks with the highest average mana value in the group." },
+  bargain_hunter: { number: 49, name: "Bargain Hunter", tier: "common", description: "Made the picks with the lowest average mana value in the group." },
+  creature_feature: { number: 50, name: "Creature Feature", tier: "common", description: "Picked the most creatures in the group." },
+  instant_gratification: { number: 51, name: "Instant Gratification", tier: "common", description: "Picked the most instants in the group." },
+  sorcery_believer: { number: 52, name: "Sorcery Believer", tier: "common", description: "Picked the most sorceries in the group." },
+  enchanted: { number: 53, name: "Enchanted", tier: "common", description: "Picked the most enchantments in the group." },
 };
+
+/** The badges awarded at the lock, from the picks alone. Ending or reopening a
+ *  season never touches them, and the Reveal shows only these. */
+export const MTG_LOCK_BADGE_CODES = [
+  "buzzer_beater", "loyalist",
+  "one_of_a_kind", "big_spender", "bargain_hunter", "creature_feature", "instant_gratification", "sorcery_believer", "enchanted", "artificer", "gold_rush",
+] as const;
+
+/** Lock badges that are no longer given. Their old awards are removed when a
+ *  season's lock badges are brought up to `MTG_LOCK_BADGES_VERSION`; Gold Rush
+ *  and Artificer are here for the awards made under their old rules, which
+ *  belonged to a player, not to a group. */
+export const MTG_RETIRED_LOCK_BADGE_CODES = ["early_bird", "on_the_record", "locked_and_loaded", "rainbow"] as const;
+export const MTG_REDEFINED_LOCK_BADGE_CODES = ["gold_rush", "artificer"] as const;
+
+/** The lock badge rules a season's awards were made under (`mtg_sets.lock_badges_version`).
+ *  1: the first set of entry badges and Early Bird. 2: Version 24's group honors. */
+export const MTG_LOCK_BADGES_VERSION = 2;
 
 const TIER_RANK: Record<MtgBadgeTier, number> = { mythic: 4, rare: 3, uncommon: 2, common: 1, shame: 0 };
 
@@ -628,6 +675,16 @@ export function compareBadges(a: string, b: string): number {
 }
 
 const COLOR_NAMES: Record<string, string> = { W: "White", U: "Blue", B: "Black", R: "Red", G: "Green" };
+
+/** What each counting lock badge counts, one and many. */
+const LOCK_COUNT_WORDS: Record<string, [string, string]> = {
+  creature_feature: ["creature", "creatures"],
+  instant_gratification: ["instant", "instants"],
+  sorcery_believer: ["sorcery", "sorceries"],
+  enchanted: ["enchantment", "enchantments"],
+  artificer: ["artifact", "artifacts"],
+  gold_rush: ["multicolored card", "multicolored cards"],
+};
 
 /** The badge's display name, which for Loyalist names the color. */
 export function badgeLabel(code: string, detail: Record<string, unknown> | null | undefined): string {
@@ -704,6 +761,28 @@ export function badgeDescription(code: string, detail: Record<string, unknown> |
     case "loyalist":
       if (typeof d.colorName === "string") text = `At least 10 of 20 picks are ${d.colorName.toLowerCase()}.`;
       break;
+    case "one_of_a_kind": {
+      const count = num("count");
+      if (count !== null) text = `${count} of 20 picks are cards nobody else in the group picked, the most in the group.`;
+      break;
+    }
+    case "big_spender":
+    case "bargain_hunter": {
+      const average = num("average");
+      if (average !== null) text = `The picks cost ${average.toFixed(1)} mana on average, the ${code === "big_spender" ? "highest" : "lowest"} in the group.`;
+      break;
+    }
+    case "creature_feature":
+    case "instant_gratification":
+    case "sorcery_believer":
+    case "enchanted":
+    case "artificer":
+    case "gold_rush": {
+      const count = num("count");
+      const [one, many] = LOCK_COUNT_WORDS[code] ?? ["card", "cards"];
+      if (count !== null) text = `Picked ${count} ${count === 1 ? one : many}, the most in the group.`;
+      break;
+    }
     case "champion":
     case "runner_up":
     case "third_place":
@@ -862,9 +941,11 @@ export type LockEntryInput = {
 };
 
 /**
- * Entry badges awarded at the lock (spec 7.4). A multicolored card counts
- * toward each of its colors; Loyalist goes to the most-picked color, with
- * ties settled in WUBRG order.
+ * Entry badges awarded at the lock (spec 7.4), the ones a player earns on
+ * their own: Buzzer Beater, and Loyalist for the most-picked color when at
+ * least half of a complete entry shares it (a multicolored card counts toward
+ * each of its colors; ties are settled in WUBRG order). The rest of the lock
+ * badges compare a player with their group: see `computeGroupLockBadges`.
  */
 export function computeEntryBadges(entry: LockEntryInput, lockAt: string | Date): BadgeAward[] {
   const lock = new Date(lockAt).getTime();
@@ -873,30 +954,91 @@ export function computeEntryBadges(entry: LockEntryInput, lockAt: string | Date)
   const out: BadgeAward[] = [];
   if (picks.length === 0) return out;
   const complete = picks.length >= full;
-  if (complete) out.push({ code: "on_the_record", key: "", detail: {} });
-  const completedMs = entry.completedAt ? new Date(entry.completedAt).getTime() : null;
-  if (complete && completedMs !== null && completedMs <= lock - 7 * 86400000) out.push({ code: "locked_and_loaded", key: "", detail: {} });
   const updatedMs = new Date(entry.updatedAt).getTime();
   if (updatedMs >= lock - 3600000 && updatedMs < lock) out.push({ code: "buzzer_beater", key: "", detail: {} });
 
   const perColor: Record<string, number> = { W: 0, U: 0, B: 0, R: 0, G: 0 };
-  let multicolored = 0;
-  let colorless = 0;
-  for (const p of picks) {
-    const letters = colorLetters(p.colors);
-    if (letters.length === 0) colorless += 1;
-    if (letters.length > 1) multicolored += 1;
-    for (const l of letters) perColor[l] += 1;
-  }
-  // Rainbow and Loyalist are about "your 20 picks" (spec 7.4), so they need a complete entry.
-  if (complete && Object.values(perColor).every((n) => n > 0)) out.push({ code: "rainbow", key: "", detail: {} });
+  for (const p of picks) for (const l of colorLetters(p.colors)) perColor[l] += 1;
   let best = "W";
   for (const l of "WUBRG") if (perColor[l] > perColor[best]) best = l;
+  // Loyalist is about "your 20 picks" (spec 7.4), so it needs a complete entry.
   if (complete && perColor[best] >= 10) {
     out.push({ code: "loyalist", key: best.toLowerCase(), detail: { color: best, colorName: COLOR_NAMES[best], count: perColor[best] } });
   }
-  if (multicolored >= 5) out.push({ code: "gold_rush", key: "", detail: { count: multicolored } });
-  if (colorless >= 3) out.push({ code: "artificer", key: "", detail: { count: colorless } });
+  return out;
+}
+
+const CARD_TYPES = ["creature", "instant", "sorcery", "artifact", "enchantment", "land", "planeswalker", "battle"] as const;
+export type MtgCardType = (typeof CARD_TYPES)[number];
+
+/** The card types on a card's front face: "Artifact Creature" and then its
+ *  subtypes gives artifact and creature. A two-faced card counts as its front. */
+export function cardTypes(typeLine: string | null | undefined): MtgCardType[] {
+  const words = (typeLine ?? "").split(" // ")[0].toLowerCase().split(/[^a-z]+/);
+  return CARD_TYPES.filter((t) => words.includes(t));
+}
+
+export type GroupLockPick = { rarity: MtgRarity; cardId: string; colors: string | null; manaValue: number | null; typeLine: string | null };
+export type GroupLockPlayer = { userId: string; picks: GroupLockPick[] };
+export type GroupLockBadge = { userId: string; code: string; detail: Record<string, unknown> };
+
+/** Group lock badges need this many players with all 20 picks (the group-honor rule in spec 7.1). */
+export const MTG_LOCK_HONOR_MIN_PLAYERS = 3;
+
+const LOCK_COUNT_RULES: Array<{ code: string; min: number; count: (p: GroupLockPick) => boolean }> = [
+  { code: "creature_feature", min: 1, count: (p) => cardTypes(p.typeLine).includes("creature") },
+  { code: "instant_gratification", min: 2, count: (p) => cardTypes(p.typeLine).includes("instant") },
+  { code: "sorcery_believer", min: 2, count: (p) => cardTypes(p.typeLine).includes("sorcery") },
+  { code: "enchanted", min: 2, count: (p) => cardTypes(p.typeLine).includes("enchantment") },
+  { code: "artificer", min: 2, count: (p) => cardTypes(p.typeLine).includes("artifact") },
+  { code: "gold_rush", min: 3, count: (p) => colorLetters(p.colors).length > 1 },
+];
+
+/**
+ * Group honors awarded at the lock (spec 7.4, Version 24): what a player's
+ * picks say about them, next to the rest of their group. Each goes to whoever
+ * leads the group on one measure:
+ *  - One of a Kind: the most picks nobody else in the group picked.
+ *  - Big Spender and Bargain Hunter: the highest and the lowest average mana
+ *    value (lands left out, since a land costs nothing to cast).
+ *  - Creature Feature, Instant Gratification, Sorcery Believer, Enchanted and
+ *    Artificer: the most cards of a type. Gold Rush: the most multicolored.
+ * Only players with all 20 picks compete, and a group needs three of them.
+ * Ties share a badge, but a lead shared by more than a third of those players
+ * is nobody's: the point is what sets a player apart. The counting badges also
+ * need a minimum (two of a type, three multicolored), so one stray sorcery in
+ * a group without any doesn't make a believer.
+ */
+export function computeGroupLockBadges(players: GroupLockPlayer[]): GroupLockBadge[] {
+  const full = MTG_RARITIES.length * MTG_SLOTS_PER_RARITY;
+  const complete = players.filter((p) => p.picks.length >= full);
+  if (complete.length < MTG_LOCK_HONOR_MIN_PLAYERS) return [];
+  const mostShared = Math.max(1, Math.floor(complete.length / 3));
+  const out: GroupLockBadge[] = [];
+
+  const lead = (code: string, value: (p: GroupLockPlayer) => number | null, pick: "max" | "min", min: number, detail: (v: number) => Record<string, unknown>) => {
+    const rows = complete.flatMap((p) => { const v = value(p); return v === null ? [] : [{ p, v }]; });
+    if (rows.length < MTG_LOCK_HONOR_MIN_PLAYERS) return;
+    const best = pick === "max" ? Math.max(...rows.map((r) => r.v)) : Math.min(...rows.map((r) => r.v));
+    const leaders = rows.filter((r) => r.v === best);
+    if (pick === "max" && best < min) return;
+    if (leaders.length === rows.length || leaders.length > mostShared) return;
+    for (const r of leaders) out.push({ userId: r.p.userId, code, detail: detail(best) });
+  };
+
+  // Everyone in the group with picks counts as "somebody else", finished or not.
+  const pickers = new Map<string, number>();
+  for (const p of players) for (const key of new Set(p.picks.map((x) => `${x.rarity}|${x.cardId}`))) pickers.set(key, (pickers.get(key) ?? 0) + 1);
+  lead("one_of_a_kind", (p) => p.picks.filter((x) => pickers.get(`${x.rarity}|${x.cardId}`) === 1).length, "max", 1, (count) => ({ count }));
+
+  const averageCost = (p: GroupLockPlayer) => {
+    const costs = p.picks.filter((x) => !cardTypes(x.typeLine).includes("land") && x.manaValue !== null).map((x) => Number(x.manaValue));
+    return costs.length === 0 ? null : Math.round((costs.reduce((a, b) => a + b, 0) / costs.length) * 100) / 100;
+  };
+  lead("big_spender", averageCost, "max", 0, (average) => ({ average }));
+  lead("bargain_hunter", averageCost, "min", 0, (average) => ({ average }));
+
+  for (const rule of LOCK_COUNT_RULES) lead(rule.code, (p) => p.picks.filter(rule.count).length, "max", rule.min, (count) => ({ count }));
   return out;
 }
 
@@ -934,20 +1076,6 @@ export function computeGroupMind(picks: MindPickInput[], order: Map<string, numb
     ranked.slice(0, MTG_SLOTS_PER_RARITY).forEach((t, i) => rows.push({ rarity, slot: i + 1, cardId: t.cardId, votes: t.votes, pickers: t.users.size }));
   }
   return rows;
-}
-
-/**
- * Early Bird (spec 7.2, #15): the first member to complete all 20 picks, in
- * a group with at least three players with entries (the group-honor rule in
- * 7.1). Everyone tied for first gets it.
- */
-export function earlyBirdWinners(members: Array<{ userId: string; pickCount: number; completedAt: string | Date | null }>): string[] {
-  const full = MTG_RARITIES.length * MTG_SLOTS_PER_RARITY;
-  if (members.filter((m) => m.pickCount > 0).length < 3) return [];
-  const complete = members.filter((m) => m.pickCount >= full && m.completedAt);
-  if (complete.length === 0) return [];
-  const first = Math.min(...complete.map((m) => new Date(m.completedAt as string | Date).getTime()));
-  return complete.filter((m) => new Date(m.completedAt as string | Date).getTime() === first).map((m) => m.userId);
 }
 
 /** 9:00 AM Eastern on the Eastern calendar day after an instant. */

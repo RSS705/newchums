@@ -2,6 +2,23 @@ import { MTG_RARITIES, MTG_SLOTS_PER_RARITY, easternDateKey, easternHour, type M
 
 // ── Constants from the spec ──────────────────────────────────────────────────
 
+/**
+ * Slot multipliers by scoring version (`mtg_sets.scoring_version`), #1 to #5
+ * (spec 6.3). Version 1 counts every pick the same: it is Reality Fracture's,
+ * whose picks were made and locked under that rule. Version 2, every season
+ * created since, gives the order a small weight. Each version's multipliers
+ * add up to 5, so random picks average 1,000 points under both.
+ */
+export const MTG_SLOT_WEIGHTS: Record<number, readonly number[]> = {
+  1: [1, 1, 1, 1, 1],
+  2: [1.2, 1.1, 1, 0.9, 0.8],
+};
+
+/** A season's slot multipliers. A version this code doesn't know counts every pick the same. */
+export function mtgSlotWeights(version: number | string | null | undefined): readonly number[] {
+  return MTG_SLOT_WEIGHTS[Number(version)] ?? MTG_SLOT_WEIGHTS[1];
+}
+
 /** "Average" games blended into every win rate (spec 6.4). */
 export const MTG_PRIOR_GAMES = 200;
 /** Under this many games in hand a card carries a "low data" tag. */
@@ -262,18 +279,23 @@ export type EntryScore = { total: number; common: number; uncommon: number; rare
 const round4 = (n: number) => Math.round(n * 10000) / 10000;
 
 /**
- * One entry's points (spec 6.3): the Card Scores of its picks, added up. Every
- * slot counts the same (Version 21 dropped the slot multipliers); the order
- * still matters, because the #1 picks' points are the first tie-break and
- * some badges look at it. Empty slots score 0; a card outside the scoring pool
- * (voided later, say) scores a neutral 50. Rounded to four decimals so equal
- * picks tie exactly.
+ * One entry's points (spec 6.3): Card Score times the slot's multiplier, added
+ * up over its picks. `weights` are the season's (`mtgSlotWeights`); without
+ * them every slot counts the same, as in Reality Fracture. Whatever the
+ * weights, the #1 picks' points are the first tie-break and some badges look
+ * at the order. Empty slots score 0; a card outside the scoring pool (voided
+ * later, say) scores a neutral 50. Rounded to four decimals so equal picks tie
+ * exactly.
  */
-export function scoreEntry(picks: Array<{ rarity: MtgRarity; slot: number; cardId: string }>, scores: Map<string, { score: number }>): EntryScore {
+export function scoreEntry(
+  picks: Array<{ rarity: MtgRarity; slot: number; cardId: string }>,
+  scores: Map<string, { score: number }>,
+  weights: readonly number[] = MTG_SLOT_WEIGHTS[1],
+): EntryScore {
   const out: EntryScore = { total: 0, common: 0, uncommon: 0, rare: 0, mythic: 0, slot1: 0 };
   for (const p of picks) {
     if (!Number.isInteger(p.slot) || p.slot < 1 || p.slot > MTG_SLOTS_PER_RARITY || !(p.rarity in out)) continue;
-    const points = scores.get(p.cardId)?.score ?? 50;
+    const points = (scores.get(p.cardId)?.score ?? 50) * (weights[p.slot - 1] ?? 1);
     out[p.rarity] += points;
     out.total += points;
     if (p.slot === 1) out.slot1 += points;

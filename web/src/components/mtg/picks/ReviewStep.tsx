@@ -19,13 +19,15 @@ type Props = {
   onRemove: (rarity: MtgRarity, index: number) => void;
   onEdit: (rarity: MtgRarity) => void;
   onOpenCard: (card: MtgCard) => void;
+  /** What each pick counts, #1 first (the season's slot multipliers). */
+  weights?: readonly number[];
 };
 
 /** All twenty picks in order, reorderable: dragged with a mouse, moved with
  *  up and down buttons on phones and touch screens. A rarity's shortlist isn't
  *  scored, so it's only named here, with a way back to that rarity to sort it
  *  out. */
-export default function ReviewStep({ picks, locked, onReorder, onRemove, onEdit, onOpenCard }: Props) {
+export default function ReviewStep({ picks, locked, onReorder, onRemove, onEdit, onOpenCard, weights }: Props) {
   const total = totalPicked(picks);
   const arrows = useArrowReorder();
   return (
@@ -70,10 +72,11 @@ export default function ReviewStep({ picks, locked, onReorder, onRemove, onEdit,
                 onReorder={(from, to) => onReorder(rarity, from, to)}
                 onRemove={(i) => onRemove(rarity, i)}
                 onOpenCard={onOpenCard}
+                weights={weights}
               />
               {shortlist.length > 0 && (
                 <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1.25, lineHeight: 1.45 }}>
-                  Also on your shortlist, not scored: {shortlist.map((s) => s.card.name).join(", ")}.
+                  Also on your shortlist, not scored: {shortlist.slice(0, 5).map((s) => s.card.name).join(", ")}{shortlist.length > 5 ? ` and ${shortlist.length - 5} more` : ""}.
                 </Typography>
               )}
             </AppCard>

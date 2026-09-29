@@ -130,25 +130,37 @@ export default function CommunityListCard({
     </Avatar>
   );
 
+  // The name comes first and keeps the row's whole width: it wraps onto more
+  // lines before it is cut short (three on a phone, where a long name needs
+  // them, two on wider screens), and the tags follow it, moving to a line of
+  // their own when they don't fit beside it. On a phone the tags used to share
+  // one line with the name and squeeze it down to a few letters.
   const nameRow = (
-    <Stack direction="row" alignItems="center" spacing={0.75} sx={{ mb: 0.5 }}>
+    <Stack direction="row" alignItems="center" flexWrap="wrap" useFlexGap sx={{ columnGap: 0.75, rowGap: 0.5, mb: 0.5 }}>
       <Typography
         fontWeight={700}
+        title={c.name}
         sx={{
           fontSize: isGrid ? { xs: "1.1875rem", sm: "1.25rem" } : "1.0625rem",
           lineHeight: 1.2,
           letterSpacing: "-0.02em",
           color: "text.primary",
+          minWidth: 0,
+          maxWidth: "100%",
+          display: "-webkit-box",
+          WebkitLineClamp: { xs: 3, sm: 2 },
+          WebkitBoxOrient: "vertical",
+          overflow: "hidden",
+          overflowWrap: "anywhere",
         }}
-        noWrap
       >
         {c.name}
+        {c.visibility === "private" && (
+          <LockRoundedIcon titleAccess="Private" sx={{ fontSize: 15, color: "text.disabled", ml: 0.5, verticalAlign: "-2px" }} />
+        )}
       </Typography>
-      {c.visibility === "private" && (
-        <LockRoundedIcon sx={{ fontSize: 15, color: "text.disabled" }} />
-      )}
       {c.specialization === "mtg_prediction_challenge" && (
-        <Chip label="MTG Card Evaluation Challenge" size="small" sx={{ height: 20, fontSize: "0.6875rem", fontWeight: 700, borderRadius: 1, bgcolor: "primary.light", color: "primary.dark", "& .MuiChip-label": { px: 0.75 } }} />
+        <Chip label="MTG Card Evaluation Challenge" size="small" sx={{ height: 20, maxWidth: "100%", fontSize: "0.6875rem", fontWeight: 700, borderRadius: 1, bgcolor: "primary.light", color: "primary.dark", "& .MuiChip-label": { px: 0.75 } }} />
       )}
       {c.viewer_role === "owner" && (
         <Chip label="Owner" size="small" sx={{ height: 20, fontSize: "0.6875rem", fontWeight: 600, borderRadius: 1, bgcolor: "primary.light", color: "primary.dark" }} />

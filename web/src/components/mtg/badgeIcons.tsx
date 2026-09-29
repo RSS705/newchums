@@ -5,16 +5,21 @@ import AirRoundedIcon from "@mui/icons-material/AirRounded";
 import AlarmRoundedIcon from "@mui/icons-material/AlarmRounded";
 import AltRouteRoundedIcon from "@mui/icons-material/AltRouteRounded";
 import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
+import AutoFixHighRoundedIcon from "@mui/icons-material/AutoFixHighRounded";
+import AutoStoriesRoundedIcon from "@mui/icons-material/AutoStoriesRounded";
 import BedtimeRoundedIcon from "@mui/icons-material/BedtimeRounded";
 import BuildRoundedIcon from "@mui/icons-material/BuildRounded";
 import CampaignRoundedIcon from "@mui/icons-material/CampaignRounded";
 import CasinoRoundedIcon from "@mui/icons-material/CasinoRounded";
 import CenterFocusStrongRoundedIcon from "@mui/icons-material/CenterFocusStrongRounded";
 import CleaningServicesRoundedIcon from "@mui/icons-material/CleaningServicesRounded";
+import CrueltyFreeRoundedIcon from "@mui/icons-material/CrueltyFreeRounded";
+import DiamondRoundedIcon from "@mui/icons-material/DiamondRounded";
 import DonutLargeRoundedIcon from "@mui/icons-material/DonutLargeRounded";
 import EmojiEventsRoundedIcon from "@mui/icons-material/EmojiEventsRounded";
-import FactCheckRoundedIcon from "@mui/icons-material/FactCheckRounded";
 import FavoriteRoundedIcon from "@mui/icons-material/FavoriteRounded";
+import FingerprintRoundedIcon from "@mui/icons-material/FingerprintRounded";
+import FlashOnRoundedIcon from "@mui/icons-material/FlashOnRounded";
 import FormatListNumberedRoundedIcon from "@mui/icons-material/FormatListNumberedRounded";
 import GpsFixedRoundedIcon from "@mui/icons-material/GpsFixedRounded";
 import GroupsRoundedIcon from "@mui/icons-material/GroupsRounded";
@@ -22,12 +27,11 @@ import HiveRoundedIcon from "@mui/icons-material/HiveRounded";
 import InsightsRoundedIcon from "@mui/icons-material/InsightsRounded";
 import LightbulbRoundedIcon from "@mui/icons-material/LightbulbRounded";
 import LocalFireDepartmentRoundedIcon from "@mui/icons-material/LocalFireDepartmentRounded";
-import LockRoundedIcon from "@mui/icons-material/LockRounded";
+import LocalOfferRoundedIcon from "@mui/icons-material/LocalOfferRounded";
 import LooksOneRoundedIcon from "@mui/icons-material/LooksOneRounded";
 import MenuBookRoundedIcon from "@mui/icons-material/MenuBookRounded";
 import MilitaryTechRoundedIcon from "@mui/icons-material/MilitaryTechRounded";
 import PaidRoundedIcon from "@mui/icons-material/PaidRounded";
-import PaletteRoundedIcon from "@mui/icons-material/PaletteRounded";
 import PetsRoundedIcon from "@mui/icons-material/PetsRounded";
 import PhotoCameraRoundedIcon from "@mui/icons-material/PhotoCameraRounded";
 import RestaurantRoundedIcon from "@mui/icons-material/RestaurantRounded";
@@ -41,7 +45,6 @@ import TrendingDownRoundedIcon from "@mui/icons-material/TrendingDownRounded";
 import TrendingUpRoundedIcon from "@mui/icons-material/TrendingUpRounded";
 import VerticalAlignBottomRoundedIcon from "@mui/icons-material/VerticalAlignBottomRounded";
 import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
-import WbTwilightRoundedIcon from "@mui/icons-material/WbTwilightRounded";
 import WorkspacePremiumRoundedIcon from "@mui/icons-material/WorkspacePremiumRounded";
 import Box from "@mui/material/Box";
 import type { SvgIconProps } from "@mui/material/SvgIcon";
@@ -63,7 +66,6 @@ const BADGE_ICONS: Record<string, SvgIconComponent> = {
   hive_mind: HiveRoundedIcon,
   photo_finish: PhotoCameraRoundedIcon,
   rollercoaster: SsidChartRoundedIcon,
-  early_bird: WbTwilightRoundedIcon,
   clean_sweep: CleaningServicesRoundedIcon,
   beat_the_crowd: GroupsRoundedIcon,
   wire_to_wire: SportsScoreRoundedIcon,
@@ -80,13 +82,17 @@ const BADGE_ICONS: Record<string, SvgIconComponent> = {
   bullseye: AdjustRoundedIcon,
   well_rounded: DonutLargeRoundedIcon,
   bomb_detector: SensorsRoundedIcon,
-  on_the_record: FactCheckRoundedIcon,
-  locked_and_loaded: LockRoundedIcon,
   buzzer_beater: AlarmRoundedIcon,
-  rainbow: PaletteRoundedIcon,
   loyalist: FavoriteRoundedIcon,
   gold_rush: PaidRoundedIcon,
   artificer: BuildRoundedIcon,
+  one_of_a_kind: FingerprintRoundedIcon,
+  big_spender: DiamondRoundedIcon,
+  bargain_hunter: LocalOfferRoundedIcon,
+  creature_feature: CrueltyFreeRoundedIcon,
+  instant_gratification: FlashOnRoundedIcon,
+  sorcery_believer: AutoStoriesRoundedIcon,
+  enchanted: AutoFixHighRoundedIcon,
   wooden_spoon: RestaurantRoundedIcon,
   whiff_of_the_season: AirRoundedIcon,
   bust: TrendingDownRoundedIcon,

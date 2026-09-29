@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   checkSnapshot, computeCardScores, isDateKey, matchFeed, mtgIngestDateAllowed, mtgIngestSlot, mtgIngestWindow, mtgStandingsDay,
-  normalizeCardName, parseCardDataFeed, rankGroupDay, rankStandings, scoreEntry, type FeedRecord, type PoolCard,
+  MTG_SLOT_WEIGHTS, mtgSlotWeights, normalizeCardName, parseCardDataFeed, rankGroupDay, rankStandings, scoreEntry, type FeedRecord, type PoolCard,
 } from "../mtgScoring";
 
 /** A record shaped like 17Lands' card data feed (field names and types as served in September 2026). */
@@ -172,6 +172,23 @@ describe("computeCardScores and scoreEntry", () => {
     expect(scores.get("r3")).toMatchObject({ score: 50, rank: null });
     expect(scores.get("m1")).toMatchObject({ score: 50, rank: null });
     expect(scores.get("m2")?.score).toBe(50);
+  });
+
+  it("weighs the order by the season's multipliers, which leave random picks at 1,000", () => {
+    const scores = new Map([["a", { score: 100 }], ["b", { score: 80 }], ["c", { score: 60 }], ["d", { score: 40 }], ["e", { score: 20 }]]);
+    const picks = (order: string[]) => order.map((cardId, i) => ({ rarity: "rare" as const, slot: i + 1, cardId }));
+    const v2 = mtgSlotWeights(2);
+    expect(v2).toEqual([1.2, 1.1, 1, 0.9, 0.8]);
+    // 100 x 1.2 + 80 x 1.1 + 60 + 40 x 0.9 + 20 x 0.8.
+    expect(scoreEntry(picks(["a", "b", "c", "d", "e"]), scores, v2)).toEqual({ total: 320, common: 0, uncommon: 0, rare: 320, mythic: 0, slot1: 120 });
+    // The same cards in the worst order lose 40 points, where version 1 scores both 300.
+    expect(scoreEntry(picks(["e", "d", "c", "b", "a"]), scores, v2).total).toBe(280);
+    expect(scoreEntry(picks(["e", "d", "c", "b", "a"]), scores, mtgSlotWeights(1)).total).toBe(300);
+    expect(scoreEntry(picks(["e", "d", "c", "b", "a"]), scores).total).toBe(300);
+    for (const weights of Object.values(MTG_SLOT_WEIGHTS)) expect(Math.round(weights.reduce((a, b) => a + b, 0) * 1000) / 1000).toBe(5);
+    // A version this code doesn't know counts every pick the same.
+    expect(mtgSlotWeights(9)).toEqual([1, 1, 1, 1, 1]);
+    expect(mtgSlotWeights(null)).toEqual([1, 1, 1, 1, 1]);
   });
 
   it("scores empty slots 0 and cards outside the pool a neutral 50", () => {

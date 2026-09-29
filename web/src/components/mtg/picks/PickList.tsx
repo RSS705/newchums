@@ -10,10 +10,10 @@ import ArrowDownwardRoundedIcon from "@mui/icons-material/ArrowDownwardRounded";
 import ArrowUpwardRoundedIcon from "@mui/icons-material/ArrowUpwardRounded";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import DragIndicatorRoundedIcon from "@mui/icons-material/DragIndicatorRounded";
-import { DndContext, KeyboardSensor, MouseSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
+import { DndContext, KeyboardSensor, MouseSensor, closestCenter, useSensor, useSensors, type DragEndEvent, type Modifier } from "@dnd-kit/core";
 import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { type MtgCard, type MtgRarity, MTG_SLOTS_PER_RARITY } from "../mtgTypes";
+import { type MtgCard, type MtgRarity, MTG_SLOTS_PER_RARITY, formatMultiplier, hasOrderBonus } from "../mtgTypes";
 import type { PickSlot } from "./pickUtils";
 
 type Props = {
@@ -26,7 +26,12 @@ type Props = {
   onOpenCard?: (card: MtgCard) => void;
   /** Desktop rail: one line per pick with compact controls. */
   dense?: boolean;
+  /** What each pick counts, #1 first. Shown under the pick's number in a season where the order changes it. */
+  weights?: readonly number[];
 };
+
+/** A list is one column, so a dragged card moves up and down only. */
+const verticalOnly: Modifier = ({ transform }) => ({ ...transform, x: 0 });
 
 /**
  * Whether lists reorder with up and down buttons instead of dragging: on
@@ -47,8 +52,11 @@ export function useArrowReorder(): boolean {
  * the picks and stay numbered #1 to #5, with empty slots showing until they're
  * filled; anything below them is the shortlist, set apart by a divider, and a
  * card moved above the divider becomes a pick. Tapping a card opens it large.
+ * In a season where the order of the picks changes what they're worth, each
+ * pick shows what it counts.
  */
-export default function PickList({ rarity, slots, locked, onReorder, onRemove, onOpenCard, dense }: Props) {
+export default function PickList({ rarity, slots, locked, onReorder, onRemove, onOpenCard, dense, weights }: Props) {
+  const bonus = hasOrderBonus(weights) ? weights : undefined;
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -73,6 +81,7 @@ export default function PickList({ rarity, slots, locked, onReorder, onRemove, o
       locked={locked}
       dense={!!dense}
       arrows={arrows}
+      weight={bonus?.[i]}
       onReorder={onReorder}
       onRemove={onRemove}
       onOpenCard={onOpenCard}
@@ -81,7 +90,7 @@ export default function PickList({ rarity, slots, locked, onReorder, onRemove, o
 
   return (
     <Stack spacing={dense ? 0.75 : 1}>
-      <DndContext id={`mtg-picks-${rarity}`} sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+      <DndContext id={`mtg-picks-${rarity}`} sensors={sensors} collisionDetection={closestCenter} modifiers={[verticalOnly]} onDragEnd={onDragEnd}>
         <SortableContext items={slots.map((s) => s.card.id)} strategy={verticalListSortingStrategy}>
           {slots.slice(0, MTG_SLOTS_PER_RARITY).map(row)}
           {slots.length > MTG_SLOTS_PER_RARITY && (
@@ -104,7 +113,8 @@ export default function PickList({ rarity, slots, locked, onReorder, onRemove, o
             sx={{ px: 1, py: dense ? 0.75 : 1, minHeight: dense ? 40 : 48, borderRadius: 2, border: "1px dashed", borderColor: "divider", color: "text.disabled" }}
           >
             <Typography sx={{ fontWeight: 800, minWidth: 28, textAlign: "center" }}>#{n}</Typography>
-            <Typography variant="body2">Empty</Typography>
+            <Typography variant="body2" sx={{ flex: 1 }}>Empty</Typography>
+            {bonus?.[n - 1] !== undefined && <Typography variant="caption" sx={{ fontWeight: 700, pr: 0.5 }}>counts {formatMultiplier(bonus[n - 1])}</Typography>}
           </Stack>
         );
       })}
@@ -119,12 +129,14 @@ type RowProps = {
   locked: boolean;
   dense: boolean;
   arrows: boolean;
+  /** What this pick counts, when the season's order changes it; undefined on the shortlist. */
+  weight?: number;
   onReorder: (from: number, to: number) => void;
   onRemove: (index: number) => void;
   onOpenCard?: (card: MtgCard) => void;
 };
 
-function SortableRow({ slot, index, count, locked, dense, arrows, onReorder, onRemove, onOpenCard }: RowProps) {
+function SortableRow({ slot, index, count, locked, dense, arrows, weight, onReorder, onRemove, onOpenCard }: RowProps) {
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id: slot.card.id, disabled: locked || arrows });
   const { card } = slot;
   const shortlisted = index >= MTG_SLOTS_PER_RARITY;
@@ -162,9 +174,16 @@ function SortableRow({ slot, index, count, locked, dense, arrows, onReorder, onR
             <DragIndicatorRoundedIcon fontSize="small" />
           </IconButton>
         )}
-        <Typography sx={{ fontWeight: 800, color: shortlisted ? "text.disabled" : "primary.main", lineHeight: 1, minWidth: dense ? 24 : 30, fontSize: dense ? "0.9375rem" : undefined, textAlign: "center", pl: locked || arrows ? 0.5 : 0, flexShrink: 0 }}>
-          #{index + 1}
-        </Typography>
+        <Box sx={{ minWidth: dense ? 26 : 32, textAlign: "center", pl: locked || arrows ? 0.5 : 0, flexShrink: 0 }}>
+          <Typography sx={{ fontWeight: 800, color: shortlisted ? "text.disabled" : "primary.main", lineHeight: 1, fontSize: dense ? "0.9375rem" : undefined }}>
+            #{index + 1}
+          </Typography>
+          {weight !== undefined && (
+            <Typography variant="caption" aria-label={`counts ${formatMultiplier(weight)}`} sx={{ display: "block", mt: "3px", fontSize: "0.6875rem", fontWeight: 700, lineHeight: 1, color: "text.secondary", whiteSpace: "nowrap" }}>
+              {formatMultiplier(weight)}
+            </Typography>
+          )}
+        </Box>
         <Box
           component={onOpenCard ? "button" : "div"}
           type={onOpenCard ? "button" : undefined}

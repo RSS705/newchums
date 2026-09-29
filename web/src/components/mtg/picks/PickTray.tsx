@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import ButtonBase from "@mui/material/ButtonBase";
@@ -30,6 +30,8 @@ type Props = {
   onReorder: (from: number, to: number) => void;
   onRemove: (index: number) => void;
   onOpenCard: (card: MtgCard) => void;
+  /** What each pick counts, #1 first (the season's slot multipliers). */
+  weights?: readonly number[];
 };
 
 const STATUS: Record<SaveState, { icon: React.ReactNode; text: string; color: string }> = {
@@ -40,6 +42,10 @@ const STATUS: Record<SaveState, { icon: React.ReactNode; text: string; color: st
   locked: { icon: <LockRoundedIcon sx={{ fontSize: 15 }} />, text: "Locked", color: "text.secondary" },
   signedOut: { icon: <CloudOffRoundedIcon sx={{ fontSize: 15 }} />, text: "Signed out", color: "error.main" },
 };
+
+/** Room left under the desktop rail, and the least height it is given, in a window too short for more. */
+const RAIL_GAP = 24;
+const RAIL_MIN = 220;
 
 /** "Saved" shows for four seconds, then fades; the space it took stays, so nothing beside it moves. */
 const fadeAway = keyframes`
@@ -71,15 +77,53 @@ export function SaveStatus({ state, compact = false }: { state: SaveState; compa
 }
 
 /**
- * The list for the rarity being picked: five picks, then up to five more on a
- * shortlist to compare, put into order. A sticky rail beside the grid on
- * desktop; on phones a slim bar pinned to the bottom of the screen whose
- * Reorder button (or the row of picks itself) opens the full list in a sheet,
- * where each card moves with up and down buttons, so the grid keeps the whole
- * width. The bar is hidden once picks are read-only.
+ * The list for the rarity being picked: five picks, then up to fifteen more on
+ * a shortlist to compare, put into order. A sticky rail beside the grid on
+ * desktop, never taller than the window: a long list scrolls inside it, so
+ * its last card is always in reach. On phones a slim bar pinned to the bottom
+ * of the screen whose Reorder button (or the row of picks itself) opens the
+ * full list in a sheet, where each card moves with up and down buttons, so the
+ * grid keeps the whole width. The sheet stays open under a card opened from
+ * it, so closing the card comes back to the list. The bar is hidden once picks
+ * are read-only.
  */
-export default function PickTray({ rarity, slots, locked, saveState, lockCountdown, onReorder, onRemove, onOpenCard }: Props) {
+export default function PickTray({ rarity, slots, locked, saveState, lockCountdown, onReorder, onRemove, onOpenCard, weights }: Props) {
   const [sheetOpen, setSheetOpen] = useState(false);
+
+  // The rail gets the room between its top and the bottom of the window, so
+  // it ends on screen wherever the page is scrolled to: lower down at the top
+  // of the page, then pinned under the header. The height goes straight onto
+  // the element as a CSS variable, since the page scrolling shouldn't redraw
+  // the list.
+  const railRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const root = document.getElementById("app-scroll-root");
+    let frame = 0;
+    const measure = () => {
+      frame = 0;
+      const rail = railRef.current;
+      if (!rail || rail.offsetParent === null) return;
+      const room = window.innerHeight - Math.max(0, rail.getBoundingClientRect().top) - RAIL_GAP;
+      rail.style.setProperty("--rail-max", `${Math.max(RAIL_MIN, Math.round(room))}px`);
+    };
+    const onChange = () => { if (!frame) frame = requestAnimationFrame(measure); };
+    measure();
+    root?.addEventListener("scroll", onChange, { passive: true });
+    window.addEventListener("scroll", onChange, { passive: true });
+    window.addEventListener("resize", onChange);
+    // Notices above the rail come and go, which moves it without any scrolling.
+    const page = railRef.current?.closest("[data-pick-wizard]") ?? null;
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(onChange);
+    if (observer && page) observer.observe(page);
+    return () => {
+      if (frame) cancelAnimationFrame(frame);
+      root?.removeEventListener("scroll", onChange);
+      window.removeEventListener("scroll", onChange);
+      window.removeEventListener("resize", onChange);
+      observer?.disconnect();
+    };
+  }, []);
+
   const arrows = useArrowReorder();
   const label = RARITY_LABEL[rarity].toLowerCase();
   const picked = scoredCount(slots);
@@ -112,10 +156,22 @@ export default function PickTray({ rarity, slots, locked, saveState, lockCountdo
 
   return (
     <>
-      <Box sx={{ display: { xs: "none", md: "block" }, position: "sticky", top: 96 }}>
-        <AppCard>
+      {/* In a short window (a laptop zoomed in, a phone on its side) the rail sits closer to the header, to keep its room. */}
+      <Box ref={railRef} sx={{ display: { xs: "none", md: "block" }, position: "sticky", top: 96, "@media (max-height: 640px)": { top: 16 } }}>
+        {/* The card is as tall as the window allows below it, and the list scrolls within it. */}
+        <AppCard
+          sx={{
+            display: "flex",
+            flexDirection: "column",
+            maxHeight: "var(--rail-max, calc(100dvh - var(--header-h, 80px) - 120px))",
+            "& > .MuiCardContent-root": { display: "flex", flexDirection: "column", flex: 1, minHeight: 0 },
+          }}
+        >
           {header}
-          <PickList rarity={rarity} slots={slots} locked={locked} onReorder={onReorder} onRemove={onRemove} onOpenCard={onOpenCard} dense />
+          {/* The list itself clips a dragged card, so dragging past its end can't stretch what scrolls. */}
+          <Box data-testid="pick-rail-list" sx={{ flex: "1 1 auto", minHeight: 0, overflowY: "auto", overflowX: "hidden", mr: -1, pr: 1, "& > .MuiStack-root": { overflow: "clip" } }}>
+            <PickList rarity={rarity} slots={slots} locked={locked} onReorder={onReorder} onRemove={onRemove} onOpenCard={onOpenCard} dense weights={weights} />
+          </Box>
           {hint}
           {countdown}
         </AppCard>
@@ -189,20 +245,25 @@ export default function PickTray({ rarity, slots, locked, saveState, lockCountdo
         anchor="bottom"
         open={sheetOpen && !locked}
         onClose={() => setSheetOpen(false)}
-        slotProps={{ paper: { sx: { borderTopLeftRadius: 16, borderTopRightRadius: 16, maxHeight: "85dvh", px: 2, pt: 2, pb: "calc(16px + env(safe-area-inset-bottom))" } } }}
+        slotProps={{ paper: { sx: { borderTopLeftRadius: 16, borderTopRightRadius: 16, maxHeight: "85dvh", display: "flex", flexDirection: "column", overflow: "hidden", px: 2, pt: 2, pb: "calc(16px + env(safe-area-inset-bottom))" } } }}
       >
         {header}
-        <PickList
-          rarity={rarity}
-          slots={slots}
-          locked={locked}
-          onReorder={onReorder}
-          onRemove={onRemove}
-          onOpenCard={(card) => { setSheetOpen(false); onOpenCard(card); }}
-        />
-        {hint}
-        {countdown}
-        <Button variant="outlined" onClick={() => setSheetOpen(false)} fullWidth sx={{ mt: 1.5, textTransform: "none", fontWeight: 700, borderRadius: 2.5, minHeight: 44 }}>Done</Button>
+        {/* The list scrolls between the title and Done, which stay put. A card
+            opens over the sheet, and closing it comes back here. */}
+        <Box data-testid="pick-sheet-list" sx={{ flex: "1 1 auto", minHeight: 0, overflowY: "auto", overscrollBehavior: "contain", mx: -2, px: 2, pb: 0.5 }}>
+          <PickList
+            rarity={rarity}
+            slots={slots}
+            locked={locked}
+            onReorder={onReorder}
+            onRemove={onRemove}
+            onOpenCard={onOpenCard}
+            weights={weights}
+          />
+          {hint}
+          {countdown}
+        </Box>
+        <Button variant="outlined" onClick={() => setSheetOpen(false)} fullWidth sx={{ mt: 1.5, flexShrink: 0, textTransform: "none", fontWeight: 700, borderRadius: 2.5, minHeight: 44 }}>Done</Button>
       </Drawer>
     </>
   );

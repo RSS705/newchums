@@ -28,6 +28,10 @@ export type MtgSetPayload = {
   galleryComplete: boolean;
   lastCardSyncAt: string | null;
   scoringVersion: number;
+  /** What each of a rarity's five picks counts, #1 first; all 1 in a season where every pick counts the same. */
+  slotWeights: number[];
+  /** The latest picks may lock (the end of the Tuesday before prereleases); null without a prerelease date. */
+  latestLockAt: string | null;
   /** True from the first preview day until the lock (server rule). */
   picksOpen: boolean;
   /** True once the lock time has passed. */
@@ -115,9 +119,52 @@ export function countdown(iso: string, nowMs: number): string | null {
 
 export const MTG_SLOTS_PER_RARITY = 5;
 /** Cards a player may keep in order at a rarity: the five picks, then a
- *  shortlist of up to five more that never score. */
-export const MTG_LIST_MAX = 10;
+ *  shortlist of up to fifteen more that never score. */
+export const MTG_LIST_MAX = 20;
 export const MTG_TOTAL_PICKS = 20;
+
+/**
+ * The latest a season's picks may lock: 11:59 PM Eastern on the last Tuesday
+ * before the day prereleases start, since early access events can run from
+ * the Wednesday of that week. The API enforces it (`mtgLatestLockAt`); this
+ * copy lets the season form offer the time before saving.
+ */
+export function latestLockAt(prereleaseStartIso: string): Date | null {
+  const start = new Date(prereleaseStartIso);
+  if (Number.isNaN(start.getTime())) return null;
+  const eastern = (at: Date) => {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/New_York", hourCycle: "h23",
+      year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit",
+    }).formatToParts(at);
+    const get = (type: string) => Number(parts.find((x) => x.type === type)?.value ?? 0);
+    return { year: get("year"), month: get("month"), day: get("day"), hour: get("hour"), minute: get("minute"), second: get("second") };
+  };
+  const p = eastern(start);
+  const day = new Date(Date.UTC(p.year, p.month - 1, p.day));
+  const tuesday = new Date(day.getTime() - (((day.getUTCDay() + 4) % 7) + 1) * 86400000);
+  const wall = Date.UTC(tuesday.getUTCFullYear(), tuesday.getUTCMonth(), tuesday.getUTCDate(), 23, 59);
+  // Two passes settle the offset on a daylight-saving changeover day.
+  let guess = wall;
+  for (let i = 0; i < 2; i++) {
+    const q = eastern(new Date(guess));
+    guess = wall - (Date.UTC(q.year, q.month - 1, q.day, q.hour, q.minute, q.second) - Math.floor(guess / 1000) * 1000);
+  }
+  return new Date(guess);
+}
+
+/** What a rarity's five picks count, #1 first, in seasons that count the order (the API's scoring version 2). */
+export const MTG_ORDER_WEIGHTS: readonly number[] = [1.2, 1.1, 1, 0.9, 0.8];
+
+/** Whether a season's pick order changes what a pick is worth. */
+export const hasOrderBonus = (weights: readonly number[] | null | undefined) => !!weights && weights.some((w) => w !== 1);
+/** A slot's multiplier as players read it: "×1.2", "×1". */
+export const formatMultiplier = (weight: number) => `\u00d7${Number(weight.toFixed(2))}`;
+/** "×1.2, ×1.1, ×1, ×0.9 and ×0.8" */
+export function listMultipliers(weights: readonly number[]): string {
+  const parts = weights.map(formatMultiplier);
+  return parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}` : parts.join("");
+}
 export const RARITY_SINGULAR: Record<MtgRarity, string> = { common: "common", uncommon: "uncommon", rare: "rare", mythic: "mythic" };
 export const RARITY_PLURAL: Record<MtgRarity, string> = { common: "commons", uncommon: "uncommons", rare: "rares", mythic: "mythics" };
 
@@ -138,6 +185,8 @@ export type MtgEntryPayload = {
     locked: boolean;
     picksOpen: boolean;
     pool: Record<MtgRarity, number>;
+    /** What each of a rarity's five picks counts, #1 first. */
+    slotWeights?: number[];
   };
   entry: null | {
     updatedAt: string;
@@ -171,7 +220,7 @@ export type MtgBadge = {
   tier: MtgBadgeTier;
   /** Why it was earned, or for an on-track badge why it would be. */
   description: string;
-  /** True for badges that belong to the group, such as Early Bird. */
+  /** True for badges that belong to the group, such as One of a Kind. */
   groupHonor: boolean;
   /** True for a badge the latest standings put the player on track for,
    *  which is awarded only if it still holds on the final day. */
@@ -283,7 +332,9 @@ export type MtgPlayerPick = {
   stats: MtgCardNumbers | null;
   /** Null before the first standings; a neutral 50 for a card without numbers. */
   cardScore: number | null;
-  /** The pick's points, which are its Card Score since every slot counts the same. */
+  /** What the pick's slot counts: 1 in a season where every pick counts the same. */
+  multiplier?: number;
+  /** The pick's points: its Card Score times its slot's multiplier. */
   points: number | null;
   /** Card Score change since the day before. */
   trend: number | null;

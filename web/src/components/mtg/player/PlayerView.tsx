@@ -28,7 +28,7 @@ import BadgeChip from "../reveal/BadgeChip";
 import {
   MTG_ATTRIBUTION, MTG_RARITIES, MTG_SLOTS_PER_RARITY, MTG_TOTAL_PICKS, RARITY_LABEL, RARITY_PLURAL,
   formatCount, formatDayKey, formatWhenZoned, formatWinRate, ordinal, seasonFromSearch, seasonQuery, smallCardImage,
-  type MtgBadge, type MtgCard, type MtgPlayerPayload, type MtgPlayerPick, type MtgRarity, type MtgTopCard,
+  type MtgBadge, type MtgCard, type MtgPlayerPayload, type MtgPlayerPick, type MtgRarity, type MtgTopCard, formatMultiplier,
 } from "../mtgTypes";
 
 type Load =
@@ -135,7 +135,7 @@ function PickNumbers({ pick, rarity }: { pick: MtgPlayerPick; rarity: MtgRarity 
           ? <><Box component="span" sx={{ whiteSpace: "nowrap" }}>{formatCount(s.gihGames)} games</Box> · no win rate yet</>
           : <><Box component="span" sx={{ whiteSpace: "nowrap" }}>{formatWinRate(s.gihWr)} GIH WR</Box> · <Box component="span" sx={{ whiteSpace: "nowrap" }}>{formatCount(s.gihGames)} games</Box></>}
       </Typography>
-      {/* The Card Score is the pick's points, shown with its change at the row's right. */}
+      {/* The pick's points (its Card Score times what its slot counts) are at the row's right, with their change. */}
       <Typography variant="caption" color="text.secondary" sx={{ display: "block", lineHeight: 1.4 }}>
         <Box component="span" sx={{ whiteSpace: "nowrap" }}>{ranked ? `${ordinal(s.rank as number)} of ${s.rankedCount} ${RARITY_PLURAL[rarity]}` : "Not ranked yet"}</Box>
       </Typography>
@@ -144,13 +144,15 @@ function PickNumbers({ pick, rarity }: { pick: MtgPlayerPick; rarity: MtgRarity 
 }
 
 /** One slot of a rarity block: the pick with its numbers, and the viewer's own pick at that slot when comparing. */
-const SlotRow = memo(function SlotRow({ slot, pick, rarity, cardHref, comparing, mine }: {
+const SlotRow = memo(function SlotRow({ slot, pick, rarity, cardHref, comparing, mine, weighted }: {
   slot: number;
   pick: MtgPlayerPick | undefined;
   rarity: MtgRarity;
   cardHref: (id: string) => string;
   comparing: boolean;
   mine: MtgPlayerPick | undefined;
+  /** The season counts the order of the picks, so each pick says what it counts. */
+  weighted: boolean;
 }) {
   return (
     <Box component="li" sx={{ listStyle: "none", position: "relative", py: 1.25, borderTop: "1px solid", borderColor: "divider", "&:first-of-type": { borderTop: 0, pt: 0.25 }, "@media (hover: hover)": { "&:hover .pick-chevron": { color: "primary.main" } } }}>
@@ -161,7 +163,9 @@ const SlotRow = memo(function SlotRow({ slot, pick, rarity, cardHref, comparing,
         <Box sx={{ display: "grid", gridTemplateColumns: "44px minmax(0, 1fr) auto 18px", columnGap: { xs: 1, sm: 1.25 }, alignItems: "start" }}>
           <CardThumb card={pick.card} width={44} />
           <Box sx={{ minWidth: 0 }}>
-            <Typography variant="caption" color="text.secondary" sx={{ display: "block", fontWeight: 700, lineHeight: 1.3 }}>#{slot}</Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ display: "block", fontWeight: 700, lineHeight: 1.3 }}>
+              #{slot}{weighted && pick.multiplier !== undefined ? ` \u00b7 counts ${formatMultiplier(pick.multiplier)}` : ""}
+            </Typography>
             <Link component={NextLink} href={cardHref(pick.card.id)} underline="hover" color="text.primary" title={pick.card.name}
               sx={{ ...clampTwo, ...stretchedLink, fontWeight: 700, fontSize: "0.9375rem", lineHeight: 1.3 }}>
               {pick.card.name}
@@ -172,7 +176,8 @@ const SlotRow = memo(function SlotRow({ slot, pick, rarity, cardHref, comparing,
             <Box sx={{ textAlign: "right" }}>
               <Typography sx={{ fontWeight: 800, fontSize: "1rem", lineHeight: 1.25, fontVariantNumeric: "tabular-nums" }}>{tenths(pick.points)}</Typography>
               <Typography variant="caption" color="text.secondary" sx={{ display: "block", whiteSpace: "nowrap" }}>
-                points<Trend value={pick.stats && pick.stats.rank !== null && pick.stats.rankedCount !== null ? pick.trend : null} />
+                {/* The change in the pick's points: its Card Score's change, times what the slot counts. */}
+                points<Trend value={pick.stats && pick.stats.rank !== null && pick.stats.rankedCount !== null && pick.trend !== null ? pick.trend * (pick.multiplier ?? 1) : null} />
               </Typography>
             </Box>
           ) : <span />}
@@ -465,6 +470,8 @@ export default function PlayerView() {
           )}
           {MTG_RARITIES.map((rarity) => {
             const picks = data.picks[rarity];
+            // A season counts the order when any pick counts something other than 1.
+            const weighted = MTG_RARITIES.some((r) => data.picks[r].some((p) => p.multiplier !== undefined && p.multiplier !== 1));
             const mine = data.compare?.[rarity] ?? [];
             const on = comparing.includes(rarity);
             const subtotal = standing?.subtotals[rarity] ?? null;
@@ -498,6 +505,7 @@ export default function PlayerView() {
                       cardHref={cardHref}
                       comparing={on}
                       mine={mine.find((p) => p.slot === slot)}
+                      weighted={weighted}
                     />
                   ))}
                 </Box>

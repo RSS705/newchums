@@ -202,6 +202,34 @@ describe("group honors", () => {
     expect(mine(badges, "c", "pick_of_the_season")).toHaveLength(0);
   });
 
+  it("judges a season the same with no weights given as with every pick counting 1", () => {
+    const mindPicks = MTG_RARITIES.flatMap((rarity) => BORING.map((rank, i) => ({ rarity, slot: i + 1, cardId: `${rarity[0]}${rank}` })));
+    const four = [entry("a", { common: [1, 2, 3, 4, 5], rare: [2, 1, 3, 4, 5] }), entry("b", { rare: [1, 2, 3, 4, 5] }), entry("c", { common: [16, 17, 18, 19, 20] }), entry("d", { rare: [16, 17, 18, 19, 20] })];
+    const input = { cards, entries: four, groups: [group(four, { mind: mindPicks })] };
+    expect(computeSeasonBadges({ ...input, weights: [1, 1, 1, 1, 1] })).toEqual(computeSeasonBadges(input));
+  });
+
+  it("Beat the Crowd scores the Group Mind with the season's multipliers", () => {
+    const weights = [1.2, 1.1, 1, 0.9, 0.8];
+    // The Group Mind holds the top five commons in the worst order; a holds them in the best.
+    const best = [1, 2, 3, 4, 5];
+    const mindPicks = MTG_RARITIES.flatMap((rarity) => (rarity === "common" ? [5, 4, 3, 2, 1] : BORING).map((rank, i) => ({ rarity, slot: i + 1, cardId: `${rarity[0]}${rank}` })));
+    const score = (e: SeasonEntry) => { const s = scoreEntry(e.picks, new Map(cards.map((c) => [c.cardId, { score: c.cardScore }])), weights); return { ...e, total: s.total, slot1: s.slot1, subtotals: { common: s.common, uncommon: s.uncommon, rare: s.rare, mythic: s.mythic } }; };
+    const four = [entry("a", { common: best }), entry("b", { common: [16, 17, 18, 19, 20] }), entry("c", { rare: [16, 17, 18, 19, 20] }), entry("d", { mythic: [16, 17, 18, 19, 20] })].map(score);
+    const badges = computeSeasonBadges({ cards, entries: four, groups: [group(four, { mind: mindPicks })], weights });
+    // The same twenty cards as the Group Mind, in a better order: ahead only because the order counts.
+    expect(badges.filter((x) => x.code === "beat_the_crowd").map((x) => x.userId)).toEqual(["a"]);
+    expect(computeSeasonBadges({ cards, entries: four.map((e) => ({ ...e, total: scoreEntry(e.picks, new Map(cards.map((c) => [c.cardId, { score: c.cardScore }]))).total })), groups: [group(four, { mind: mindPicks })] }).filter((x) => x.code === "beat_the_crowd")).toEqual([]);
+  });
+
+  it("Pick of the Season counts the slot's multiplier in a season that has them", () => {
+    const three = [entry("a", { rare: [2, 1, 3, 4, 5] }), entry("b", { rare: [1, 2, 3, 4, 5] }), entry("c", { rare: [3, 4, 5, 6, 7] })];
+    const badges = computeSeasonBadges({ cards, entries: three, groups: [group(three)], weights: [1.2, 1.1, 1, 0.9, 0.8] });
+    // The #1 rare earns 120 as b's #1 and 110 as a's #2, so only b's pick is the best.
+    expect(mine(badges, "b", "pick_of_the_season")[0].detail.cards).toEqual([{ name: "rare card 1", rarity: "rare", rank: 1, ranked: 20, slot: 1, points: 120 }]);
+    expect(mine(badges, "a", "pick_of_the_season")).toHaveLength(0);
+  });
+
   it("Comeback Kid, King of the Hill, Wire to Wire and Rollercoaster read the days", () => {
     const [a, b, c, d] = ["a", "b", "c", "d"].map((id) => entry(id));
     const days = [
@@ -319,10 +347,10 @@ describe("group honors", () => {
 });
 
 describe("badge catalogue and reasons", () => {
-  it("has all 43 badges, numbered once each, with the three retired numbers left out", () => {
+  it("has all 46 badges, numbered once each, with the seven retired numbers left out", () => {
     const numbers = Object.values(MTG_BADGES).map((b) => b.number).sort((a, b) => a - b);
-    // 22, 36 and 45 needed a note on a pick and went with it.
-    expect(numbers).toEqual(Array.from({ length: 46 }, (_, i) => i + 1).filter((n) => ![22, 36, 45].includes(n)));
+    // 22, 36 and 45 needed a note on a pick and went with it; nearly everyone earned 15, 33, 34 and 37.
+    expect(numbers).toEqual(Array.from({ length: 53 }, (_, i) => i + 1).filter((n) => ![15, 22, 33, 34, 36, 37, 45].includes(n)));
     expect(["called_it", "champion", "wooden_spoon", "hive_mind"].sort(compareBadges)).toEqual(["champion", "called_it", "hive_mind", "wooden_spoon"]);
   });
 
