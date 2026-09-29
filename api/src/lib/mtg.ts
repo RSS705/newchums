@@ -595,7 +595,8 @@ export type MtgBadgeTier = "common" | "uncommon" | "rare" | "mythic" | "shame";
  *  Locked and Loaded and Rainbow) were retired in Version 24: nearly everyone
  *  earned them, so they said nothing about a player. Gold Rush and Artificer
  *  became group honors then, and 47 to 53 joined them: what a player's picks
- *  say about them, next to the rest of their group. */
+ *  say about them, next to the rest of their group. Version 25 added 54 to 72,
+ *  more of the same kind. */
 export const MTG_BADGES: Record<string, { number: number; name: string; tier: MtgBadgeTier; description: string }> = {
   champion: { number: 1, name: "Champion", tier: "mythic", description: "Finished first in the group." },
   // Tiers recalibrated in Version 18: every group hands out these honors, so as
@@ -645,6 +646,25 @@ export const MTG_BADGES: Record<string, { number: number; name: string; tier: Mt
   instant_gratification: { number: 51, name: "Instant Gratification", tier: "common", description: "Picked the most instants in the group." },
   sorcery_believer: { number: 52, name: "Sorcery Believer", tier: "common", description: "Picked the most sorceries in the group." },
   enchanted: { number: 53, name: "Enchanted", tier: "common", description: "Picked the most enchantments in the group." },
+  white_knight: { number: 54, name: "White Knight", tier: "common", description: "Picked the most white cards in the group." },
+  true_blue: { number: 55, name: "True Blue", tier: "common", description: "Picked the most blue cards in the group." },
+  back_in_black: { number: 56, name: "Back in Black", tier: "common", description: "Picked the most black cards in the group." },
+  seeing_red: { number: 57, name: "Seeing Red", tier: "common", description: "Picked the most red cards in the group." },
+  green_thumb: { number: 58, name: "Green Thumb", tier: "common", description: "Picked the most green cards in the group." },
+  grey_area: { number: 59, name: "Grey Area", tier: "common", description: "Picked the most colorless cards in the group." },
+  landlord: { number: 60, name: "Landlord", tier: "common", description: "Picked the most lands in the group." },
+  living_legend: { number: 61, name: "Living Legend", tier: "common", description: "Picked the most legendary cards in the group." },
+  superfriends: { number: 62, name: "Superfriends", tier: "common", description: "Picked the most planeswalkers in the group." },
+  two_for_one: { number: 63, name: "Two for One", tier: "common", description: "Picked the most cards that are two cards in one in the group." },
+  kindred_spirit: { number: 64, name: "Kindred Spirit", tier: "common", description: "Picked the most cards of one creature type in the group." },
+  frequent_flyer: { number: 65, name: "Frequent Flyer", tier: "common", description: "Picked the most cards with flying in the group." },
+  token_effort: { number: 66, name: "Token Effort", tier: "common", description: "Picked the most cards that make tokens in the group." },
+  quick_draw: { number: 67, name: "Quick Draw", tier: "common", description: "Picked the most cards that draw cards in the group." },
+  counter_culture: { number: 68, name: "Counter Culture", tier: "common", description: "Picked the most cards that use +1/+1 counters in the group." },
+  removal_service: { number: 69, name: "Removal Service", tier: "common", description: "Picked the most removal in the group." },
+  bold_move: { number: 70, name: "Bold Move", tier: "uncommon", description: "Put the most cards at #1 that nobody else in the group picked at all." },
+  two_of_a_kind: { number: 71, name: "Two of a Kind", tier: "common", description: "One of the two players in the group whose picks match most." },
+  polar_opposites: { number: 72, name: "Polar Opposites", tier: "common", description: "One of the two players in the group whose picks match least." },
 };
 
 /** The badges awarded at the lock, from the picks alone. Ending or reopening a
@@ -652,7 +672,14 @@ export const MTG_BADGES: Record<string, { number: number; name: string; tier: Mt
 export const MTG_LOCK_BADGE_CODES = [
   "buzzer_beater", "loyalist",
   "one_of_a_kind", "big_spender", "bargain_hunter", "creature_feature", "instant_gratification", "sorcery_believer", "enchanted", "artificer", "gold_rush",
+  "white_knight", "true_blue", "back_in_black", "seeing_red", "green_thumb", "grey_area", "landlord", "living_legend", "superfriends", "two_for_one",
+  "kindred_spirit", "frequent_flyer", "token_effort", "quick_draw", "counter_culture", "removal_service", "bold_move", "two_of_a_kind", "polar_opposites",
 ] as const;
+
+/** The lock badges that belong to the player, whatever their groups; the rest belong to a group. */
+export const MTG_PLAYER_LOCK_BADGE_CODES = ["buzzer_beater", "loyalist"] as const;
+/** The lock badges that are group honors, which a season brought up to date has judged afresh. */
+export const MTG_GROUP_LOCK_BADGE_CODES = MTG_LOCK_BADGE_CODES.filter((code) => !(MTG_PLAYER_LOCK_BADGE_CODES as readonly string[]).includes(code));
 
 /** Lock badges that are no longer given. Their old awards are removed when a
  *  season's lock badges are brought up to `MTG_LOCK_BADGES_VERSION`; Gold Rush
@@ -662,8 +689,9 @@ export const MTG_RETIRED_LOCK_BADGE_CODES = ["early_bird", "on_the_record", "loc
 export const MTG_REDEFINED_LOCK_BADGE_CODES = ["gold_rush", "artificer"] as const;
 
 /** The lock badge rules a season's awards were made under (`mtg_sets.lock_badges_version`).
- *  1: the first set of entry badges and Early Bird. 2: Version 24's group honors. */
-export const MTG_LOCK_BADGES_VERSION = 2;
+ *  1: the first set of entry badges and Early Bird. 2: Version 24's group honors.
+ *  3: Version 25's, nineteen more of them. */
+export const MTG_LOCK_BADGES_VERSION = 3;
 
 const TIER_RANK: Record<MtgBadgeTier, number> = { mythic: 4, rare: 3, uncommon: 2, common: 1, shame: 0 };
 
@@ -684,6 +712,21 @@ const LOCK_COUNT_WORDS: Record<string, [string, string]> = {
   enchanted: ["enchantment", "enchantments"],
   artificer: ["artifact", "artifacts"],
   gold_rush: ["multicolored card", "multicolored cards"],
+  white_knight: ["white card", "white cards"],
+  true_blue: ["blue card", "blue cards"],
+  back_in_black: ["black card", "black cards"],
+  seeing_red: ["red card", "red cards"],
+  green_thumb: ["green card", "green cards"],
+  grey_area: ["colorless card", "colorless cards"],
+  landlord: ["land", "lands"],
+  living_legend: ["legendary card", "legendary cards"],
+  superfriends: ["planeswalker", "planeswalkers"],
+  two_for_one: ["card that is two cards in one", "cards that are two cards in one"],
+  frequent_flyer: ["card with flying", "cards with flying"],
+  token_effort: ["card that makes tokens", "cards that make tokens"],
+  quick_draw: ["card that draws cards", "cards that draw cards"],
+  counter_culture: ["card that uses +1/+1 counters", "cards that use +1/+1 counters"],
+  removal_service: ["removal card", "removal cards"],
 };
 
 /** The badge's display name, which for Loyalist names the color. */
@@ -772,15 +815,31 @@ export function badgeDescription(code: string, detail: Record<string, unknown> |
       if (average !== null) text = `The picks cost ${average.toFixed(1)} mana on average, the ${code === "big_spender" ? "highest" : "lowest"} in the group.`;
       break;
     }
-    case "creature_feature":
-    case "instant_gratification":
-    case "sorcery_believer":
-    case "enchanted":
-    case "artificer":
-    case "gold_rush": {
+    case "kindred_spirit": {
       const count = num("count");
-      const [one, many] = LOCK_COUNT_WORDS[code] ?? ["card", "cards"];
-      if (count !== null) text = `Picked ${count} ${count === 1 ? one : many}, the most in the group.`;
+      if (count !== null && typeof d.type === "string" && d.type) text = `Picked ${count} cards of the creature type ${d.type}, the most of one type in the group.`;
+      break;
+    }
+    case "bold_move": {
+      const count = num("count");
+      if (count !== null) text = `${count} of the four #1 picks are cards nobody else in the group picked at all, the most in the group.`;
+      break;
+    }
+    case "two_of_a_kind": {
+      const shared = num("shared");
+      if (shared !== null) text = `Shares ${shared} of 20 picks with another player, the closest pair in the group.`;
+      break;
+    }
+    case "polar_opposites": {
+      const shared = num("shared");
+      if (shared !== null) text = `${shared === 0 ? "Shares no picks" : `Shares only ${shared} of 20 picks`} with another player, the pair furthest apart in the group.`;
+      break;
+    }
+    default: {
+      // The counting lock badges: "Picked 4 sorceries, the most in the group."
+      const words = LOCK_COUNT_WORDS[code];
+      const count = num("count");
+      if (words && count !== null) text = `Picked ${count} ${count === 1 ? words[0] : words[1]}, the most in the group.`;
       break;
     }
     case "champion":
@@ -978,36 +1037,124 @@ export function cardTypes(typeLine: string | null | undefined): MtgCardType[] {
   return CARD_TYPES.filter((t) => words.includes(t));
 }
 
-export type GroupLockPick = { rarity: MtgRarity; cardId: string; colors: string | null; manaValue: number | null; typeLine: string | null };
+/** Scryfall separates a card's types from its subtypes with a long dash. */
+const TYPE_DASH = String.fromCharCode(0x2014);
+
+/** The front face of a two-part value ("A // B", or rules text joined the same way). */
+const frontFace = (text: string | null | undefined) => (text ?? "").split(/\s*\/\/\s*/)[0];
+
+/** A creature's types on its front face: "Legendary Creature, Human Wizard" gives Human and Wizard. None for other cards. */
+export function creatureTypes(typeLine: string | null | undefined): string[] {
+  const [types, subtypes] = frontFace(typeLine).split(TYPE_DASH);
+  if (!subtypes || !/\bcreature\b/i.test(types)) return [];
+  return subtypes.trim().split(/\s+/).filter(Boolean);
+}
+
+/** Whether the front face is legendary. */
+export const isLegendary = (typeLine: string | null | undefined) => /\blegendary\b/i.test(frontFace(typeLine).split(TYPE_DASH)[0]);
+
+/** Rules text without its reminder text, which explains a keyword in words another card would match on. */
+export const rulesText = (oracleText: string | null | undefined) => (oracleText ?? "").replace(/\([^)]*\)/g, " ");
+
+/**
+ * Whether a card has a keyword of its own, such as flying: a line of its rules
+ * text that is nothing but keywords ("Flying, vigilance", "Ward {2}") and
+ * lists it. "Enchanted creature has flying" and "destroy target creature with
+ * flying" are sentences, not keyword lines, so they don't count.
+ */
+export function hasKeyword(oracleText: string | null | undefined, keyword: string): boolean {
+  return rulesText(oracleText).split("\n").some((line) => {
+    const items = line.trim().toLowerCase().split(/\s*[,;]\s*/).filter(Boolean);
+    return items.length > 0 && items.every((item) => /^[a-z' ]+( \{[^}]+\}| \d+)*$/.test(item) && item.split(" ").length <= 4) && items.includes(keyword);
+  });
+}
+
+const makesTokens = (text: string) => /\bcreates?\b[^.]*\btokens?\b/i.test(text);
+const drawsCards = (text: string) => /\bdraws? (a|an|one|two|three|four|five|x|that many|\d+) (additional )?cards?\b/i.test(text);
+const usesCounters = (text: string) => /\+1\/\+1 counters?\b/i.test(text);
+
+/**
+ * Whether a card is removal, as players use the word: it destroys or exiles
+ * something of an opponent's, deals damage to a creature or to any target,
+ * shrinks a creature, or fights one. A rule of thumb from the rules text, so
+ * it counts a card the way most players would, not every corner case: exiling
+ * your own creature to bring it back isn't removal, and a counterspell isn't.
+ */
+export function isRemoval(oracleText: string | null | undefined): boolean {
+  const text = rulesText(oracleText);
+  // Up to three words may come between: "target nonland permanent", "target attacking or blocking creature".
+  const thing = "(?:[a-z-]+ ){0,3}(?:creature|permanent|artifact|enchantment|planeswalker)s?";
+  return new RegExp(`\\b(?:destroy|exile)s? (?:up to (?:one|two|three|x) )?(?:another |other )?target ${thing}(?! you control| you own| card)`, "i").test(text)
+    || new RegExp(`\\b(?:destroy|exile)s? (?:all|each) ${thing}`, "i").test(text)
+    || /\bdeals? (?:\d+|x|that much) damage to (?:any target|(?:up to (?:one|two|three) )?(?:another )?target (?:[a-z-]+ ){0,3}(?:creature|planeswalker)|each (?:[a-z-]+ ){0,3}creature)/i.test(text)
+    || /\bdeals? damage equal to [^.]*? to (?:any target|target (?:[a-z-]+ ){0,3}(?:creature|planeswalker))/i.test(text)
+    || /\btarget (?:[a-z-]+ ){0,3}creature(?: an opponent controls)? gets [-\u2212](?:\d+|x)\/[-\u2212](?:\d+|x)/i.test(text)
+    || /\bfights? (?:up to one )?(?:another )?target (?:[a-z-]+ ){0,3}creature/i.test(text);
+}
+
+export type GroupLockPick = {
+  rarity: MtgRarity; cardId: string; colors: string | null; manaValue: number | null; typeLine: string | null;
+  /** The pick's place in the player's order, 1 to 5. */
+  slot?: number;
+  name?: string | null;
+  oracleText?: string | null;
+};
 export type GroupLockPlayer = { userId: string; picks: GroupLockPick[] };
 export type GroupLockBadge = { userId: string; code: string; detail: Record<string, unknown> };
 
 /** Group lock badges need this many players with all 20 picks (the group-honor rule in spec 7.1). */
 export const MTG_LOCK_HONOR_MIN_PLAYERS = 3;
 
+const ofColor = (letter: string) => (p: GroupLockPick) => colorLetters(p.colors).includes(letter);
+const ofType = (type: MtgCardType) => (p: GroupLockPick) => cardTypes(p.typeLine).includes(type);
+
+/** The counting badges: the most cards of a kind, with the fewest that make it a habit. */
 const LOCK_COUNT_RULES: Array<{ code: string; min: number; count: (p: GroupLockPick) => boolean }> = [
-  { code: "creature_feature", min: 1, count: (p) => cardTypes(p.typeLine).includes("creature") },
-  { code: "instant_gratification", min: 2, count: (p) => cardTypes(p.typeLine).includes("instant") },
-  { code: "sorcery_believer", min: 2, count: (p) => cardTypes(p.typeLine).includes("sorcery") },
-  { code: "enchanted", min: 2, count: (p) => cardTypes(p.typeLine).includes("enchantment") },
-  { code: "artificer", min: 2, count: (p) => cardTypes(p.typeLine).includes("artifact") },
+  { code: "creature_feature", min: 1, count: ofType("creature") },
+  { code: "instant_gratification", min: 2, count: ofType("instant") },
+  { code: "sorcery_believer", min: 2, count: ofType("sorcery") },
+  { code: "enchanted", min: 2, count: ofType("enchantment") },
+  { code: "artificer", min: 2, count: ofType("artifact") },
   { code: "gold_rush", min: 3, count: (p) => colorLetters(p.colors).length > 1 },
+  // A multicolored card counts toward each of its colors, as it does for Loyalist.
+  { code: "white_knight", min: 5, count: ofColor("W") },
+  { code: "true_blue", min: 5, count: ofColor("U") },
+  { code: "back_in_black", min: 5, count: ofColor("B") },
+  { code: "seeing_red", min: 5, count: ofColor("R") },
+  { code: "green_thumb", min: 5, count: ofColor("G") },
+  { code: "grey_area", min: 2, count: (p) => colorLetters(p.colors).length === 0 && !cardTypes(p.typeLine).includes("land") },
+  { code: "landlord", min: 2, count: ofType("land") },
+  { code: "living_legend", min: 2, count: (p) => isLegendary(p.typeLine) },
+  { code: "superfriends", min: 2, count: ofType("planeswalker") },
+  { code: "two_for_one", min: 2, count: (p) => (p.name ?? "").includes(" // ") },
+  { code: "frequent_flyer", min: 3, count: (p) => hasKeyword(frontFace(p.oracleText), "flying") },
+  { code: "token_effort", min: 2, count: (p) => makesTokens(rulesText(p.oracleText)) },
+  { code: "quick_draw", min: 2, count: (p) => drawsCards(rulesText(p.oracleText)) },
+  { code: "counter_culture", min: 2, count: (p) => usesCounters(rulesText(p.oracleText)) },
+  { code: "removal_service", min: 3, count: (p) => isRemoval(p.oracleText) },
 ];
 
+/** The closest pair needs this many picks in common to be worth a badge. */
+const TWO_OF_A_KIND_MIN = 4;
+
 /**
- * Group honors awarded at the lock (spec 7.4, Version 24): what a player's
- * picks say about them, next to the rest of their group. Each goes to whoever
- * leads the group on one measure:
- *  - One of a Kind: the most picks nobody else in the group picked.
+ * Group honors awarded at the lock (spec 7.4, Versions 24 and 25): what a
+ * player's picks say about them, next to the rest of their group. Each goes to
+ * whoever leads the group on one measure:
+ *  - One of a Kind: the most picks nobody else in the group picked. Bold Move:
+ *    the most #1 picks nobody else picked at any place.
  *  - Big Spender and Bargain Hunter: the highest and the lowest average mana
  *    value (lands left out, since a land costs nothing to cast).
- *  - Creature Feature, Instant Gratification, Sorcery Believer, Enchanted and
- *    Artificer: the most cards of a type. Gold Rush: the most multicolored.
+ *  - The counting badges (`LOCK_COUNT_RULES`): the most cards of a type, of a
+ *    color, with a keyword or that do a thing.
+ *  - Kindred Spirit: the most cards of one creature type, which it names.
+ *  - Two of a Kind and Polar Opposites: the two players whose picks match
+ *    most, and the two whose picks match least.
  * Only players with all 20 picks compete, and a group needs three of them.
  * Ties share a badge, but a lead shared by more than a third of those players
  * is nobody's: the point is what sets a player apart. The counting badges also
- * need a minimum (two of a type, three multicolored), so one stray sorcery in
- * a group without any doesn't make a believer.
+ * need a minimum, so one stray sorcery in a group without any doesn't make a
+ * believer.
  */
 export function computeGroupLockBadges(players: GroupLockPlayer[]): GroupLockBadge[] {
   const full = MTG_RARITIES.length * MTG_SLOTS_PER_RARITY;
@@ -1016,20 +1163,23 @@ export function computeGroupLockBadges(players: GroupLockPlayer[]): GroupLockBad
   const mostShared = Math.max(1, Math.floor(complete.length / 3));
   const out: GroupLockBadge[] = [];
 
-  const lead = (code: string, value: (p: GroupLockPlayer) => number | null, pick: "max" | "min", min: number, detail: (v: number) => Record<string, unknown>) => {
+  const lead = (code: string, value: (p: GroupLockPlayer) => number | null, pick: "max" | "min", min: number, detail: (v: number, p: GroupLockPlayer) => Record<string, unknown>) => {
     const rows = complete.flatMap((p) => { const v = value(p); return v === null ? [] : [{ p, v }]; });
     if (rows.length < MTG_LOCK_HONOR_MIN_PLAYERS) return;
     const best = pick === "max" ? Math.max(...rows.map((r) => r.v)) : Math.min(...rows.map((r) => r.v));
     const leaders = rows.filter((r) => r.v === best);
     if (pick === "max" && best < min) return;
     if (leaders.length === rows.length || leaders.length > mostShared) return;
-    for (const r of leaders) out.push({ userId: r.p.userId, code, detail: detail(best) });
+    for (const r of leaders) out.push({ userId: r.p.userId, code, detail: detail(best, r.p) });
   };
 
   // Everyone in the group with picks counts as "somebody else", finished or not.
+  const key = (x: GroupLockPick) => `${x.rarity}|${x.cardId}`;
   const pickers = new Map<string, number>();
-  for (const p of players) for (const key of new Set(p.picks.map((x) => `${x.rarity}|${x.cardId}`))) pickers.set(key, (pickers.get(key) ?? 0) + 1);
-  lead("one_of_a_kind", (p) => p.picks.filter((x) => pickers.get(`${x.rarity}|${x.cardId}`) === 1).length, "max", 1, (count) => ({ count }));
+  for (const p of players) for (const k of new Set(p.picks.map(key))) pickers.set(k, (pickers.get(k) ?? 0) + 1);
+  const alone = (x: GroupLockPick) => pickers.get(key(x)) === 1;
+  lead("one_of_a_kind", (p) => p.picks.filter(alone).length, "max", 1, (count) => ({ count }));
+  lead("bold_move", (p) => p.picks.filter((x) => x.slot === 1 && alone(x)).length, "max", 2, (count) => ({ count }));
 
   const averageCost = (p: GroupLockPlayer) => {
     const costs = p.picks.filter((x) => !cardTypes(x.typeLine).includes("land") && x.manaValue !== null).map((x) => Number(x.manaValue));
@@ -1039,6 +1189,30 @@ export function computeGroupLockBadges(players: GroupLockPlayer[]): GroupLockBad
   lead("bargain_hunter", averageCost, "min", 0, (average) => ({ average }));
 
   for (const rule of LOCK_COUNT_RULES) lead(rule.code, (p) => p.picks.filter(rule.count).length, "max", rule.min, (count) => ({ count }));
+
+  // Kindred Spirit: a player's best creature type, the first by name when two tie.
+  const favourite = (p: GroupLockPlayer) => {
+    const counts = new Map<string, number>();
+    for (const x of p.picks) for (const t of new Set(creatureTypes(x.typeLine))) counts.set(t, (counts.get(t) ?? 0) + 1);
+    return [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0] ?? null;
+  };
+  lead("kindred_spirit", (p) => favourite(p)?.[1] ?? 0, "max", 3, (count, p) => ({ count, type: favourite(p)?.[0] ?? "" }));
+
+  // The pairs: how many picks each two players have in common.
+  const sets = complete.map((p) => ({ p, keys: new Set(p.picks.map(key)) }));
+  const pairs = sets.flatMap((a, i) => sets.slice(i + 1).map((b) => ({ a: a.p, b: b.p, shared: [...a.keys].filter((k) => b.keys.has(k)).length })));
+  const pairBadge = (code: string, pick: "max" | "min", min: number) => {
+    const values = pairs.map((x) => x.shared);
+    const best = pick === "max" ? Math.max(...values) : Math.min(...values);
+    const leading = pairs.filter((x) => x.shared === best);
+    const holders = new Set(leading.flatMap((x) => [x.a.userId, x.b.userId]));
+    // A pair is two players, so two may always hold it; past that, the same third as every other badge.
+    if (leading.length === pairs.length || holders.size > Math.max(2, mostShared)) return;
+    if (pick === "max" && best < min) return;
+    for (const userId of holders) out.push({ userId, code, detail: { shared: best } });
+  };
+  pairBadge("two_of_a_kind", "max", TWO_OF_A_KIND_MIN);
+  pairBadge("polar_opposites", "min", 0);
   return out;
 }
 

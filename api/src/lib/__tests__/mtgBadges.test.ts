@@ -347,10 +347,10 @@ describe("group honors", () => {
 });
 
 describe("badge catalogue and reasons", () => {
-  it("has all 46 badges, numbered once each, with the seven retired numbers left out", () => {
+  it("has all 65 badges, numbered once each, with the seven retired numbers left out", () => {
     const numbers = Object.values(MTG_BADGES).map((b) => b.number).sort((a, b) => a - b);
     // 22, 36 and 45 needed a note on a pick and went with it; nearly everyone earned 15, 33, 34 and 37.
-    expect(numbers).toEqual(Array.from({ length: 53 }, (_, i) => i + 1).filter((n) => ![15, 22, 33, 34, 36, 37, 45].includes(n)));
+    expect(numbers).toEqual(Array.from({ length: 72 }, (_, i) => i + 1).filter((n) => ![15, 22, 33, 34, 36, 37, 45].includes(n)));
     expect(["called_it", "champion", "wooden_spoon", "hive_mind"].sort(compareBadges)).toEqual(["champion", "called_it", "hive_mind", "wooden_spoon"]);
   });
 

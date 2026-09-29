@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
-  MTG_BADGES, MTG_LOCK_BADGE_CODES, MTG_REDEFINED_LOCK_BADGE_CODES, MTG_RETIRED_LOCK_BADGE_CODES, badgeDescription, badgeLabel, cardTypes, compareBadges,
-  computeEntryBadges, computeGroupLockBadges, computeGroupMind, formatEasternDate, formatEasternLong, mtgLatestLockAt, mtgMorningAfter, mtgRevealedEmailAt,
-  revealFunFact, type GroupLockPick, type GroupLockPlayer, type MtgRarity,
+  MTG_BADGES, MTG_GROUP_LOCK_BADGE_CODES, MTG_LOCK_BADGE_CODES, MTG_REDEFINED_LOCK_BADGE_CODES, MTG_RETIRED_LOCK_BADGE_CODES, badgeDescription, badgeLabel,
+  cardTypes, compareBadges, computeEntryBadges, computeGroupLockBadges, computeGroupMind, creatureTypes, formatEasternDate, formatEasternLong, hasKeyword,
+  isLegendary, isRemoval, mtgLatestLockAt, mtgMorningAfter, mtgRevealedEmailAt, revealFunFact, rulesText, type GroupLockPick, type GroupLockPlayer, type MtgRarity,
 } from "../mtg";
 
 const LOCK = "2026-09-29T03:59:00Z";
@@ -100,13 +100,23 @@ describe("cardTypes", () => {
 describe("computeGroupLockBadges", () => {
   const RARITY_OF = (i: number) => RARITIES[Math.floor(i / 5)];
   /** Twenty picks. Cards are shared with the rest of the group unless `own` says a pick is the player's alone. */
-  function player(userId: string, opts: { own?: number; type?: (i: number) => string; cost?: (i: number) => number; colors?: (i: number) => string; count?: number } = {}): GroupLockPlayer {
+  type Shape = {
+    /** How many picks are the player's alone, from the first pick on; or which ones. */
+    own?: number | ((i: number) => boolean);
+    type?: (i: number) => string; cost?: (i: number) => number; colors?: (i: number) => string;
+    name?: (i: number) => string; text?: (i: number) => string; count?: number;
+  };
+  function player(userId: string, opts: Shape = {}): GroupLockPlayer {
+    const own = typeof opts.own === "function" ? opts.own : (i: number) => i < ((opts.own as number | undefined) ?? 0);
     const picks: GroupLockPick[] = Array.from({ length: opts.count ?? 20 }, (_, i) => ({
       rarity: RARITY_OF(i),
-      cardId: i < (opts.own ?? 0) ? `${userId}-${i}` : `shared-${i}`,
+      slot: (i % 5) + 1,
+      cardId: own(i) ? `${userId}-${i}` : `shared-${i}`,
       colors: opts.colors?.(i) ?? "W",
       manaValue: opts.cost?.(i) ?? 3,
       typeLine: opts.type?.(i) ?? "Creature",
+      name: opts.name?.(i) ?? `Card ${i}`,
+      oracleText: opts.text?.(i) ?? "",
     }));
     return { userId, picks };
   }
@@ -222,6 +232,215 @@ describe("computeGroupLockBadges", () => {
   it("every badge it gives is a lock badge with a catalogue entry", () => {
     for (const code of MTG_LOCK_BADGE_CODES) expect(MTG_BADGES[code]).toBeDefined();
     for (const code of MTG_REDEFINED_LOCK_BADGE_CODES) expect(MTG_LOCK_BADGE_CODES).toContain(code);
+    expect(MTG_GROUP_LOCK_BADGE_CODES).toHaveLength(MTG_LOCK_BADGE_CODES.length - 2);
+    expect(MTG_GROUP_LOCK_BADGE_CODES).not.toContain("loyalist");
+    expect(MTG_GROUP_LOCK_BADGE_CODES).not.toContain("buzzer_beater");
+    // A group that gives every badge it can gives only group honors, each with a reason of its own.
+    const dash = String.fromCharCode(0x2014);
+    const loud = player("a", {
+      own: 8, cost: () => 6, colors: (i) => (i < 12 ? "WUBRG" : ""), name: (i) => (i < 4 ? `Front ${i} // Back ${i}` : `Card ${i}`),
+      type: (i) => (i < 6 ? `Legendary Creature ${dash} Elf Wizard` : i < 9 ? "Legendary Planeswalker" : i < 12 ? "Instant" : i < 15 ? "Sorcery" : i < 17 ? "Artifact" : i < 19 ? "Enchantment" : "Land"),
+      text: (i) => (i < 6 ? "Flying\nWhen this creature enters, create a 1/1 token, draw a card and put a +1/+1 counter on it." : "Destroy target creature."),
+    });
+    const group = [loud, player("b"), player("c"), player("d")];
+    const badges = computeGroupLockBadges(group);
+    for (const b of badges) {
+      expect(MTG_GROUP_LOCK_BADGE_CODES).toContain(b.code);
+      expect(badgeDescription(b.code, b.detail)).not.toBe(MTG_BADGES[b.code].description);
+    }
+    expect(new Set(badges.filter((b) => b.userId === "a").map((b) => b.code)).size).toBeGreaterThan(15);
+  });
+});
+
+describe("reading a card for the lock badges", () => {
+  const dash = String.fromCharCode(0x2014);
+  it("finds a creature's types on its front face, and whether it is legendary", () => {
+    expect(creatureTypes(`Legendary Creature ${dash} Human Wizard`)).toEqual(["Human", "Wizard"]);
+    expect(creatureTypes(`Artifact Creature ${dash} Boar Construct // Sorcery`)).toEqual(["Boar", "Construct"]);
+    expect(creatureTypes(`Artifact ${dash} Equipment`)).toEqual([]);
+    expect(creatureTypes("Instant")).toEqual([]);
+    expect(creatureTypes(null)).toEqual([]);
+    expect(isLegendary(`Legendary Planeswalker ${dash} Jace`)).toBe(true);
+    expect(isLegendary(`Creature ${dash} Elf // Legendary Sorcery`)).toBe(false);
+  });
+
+  it("drops reminder text, which explains one card in words that describe another", () => {
+    expect(rulesText("Empower Jace 1. (If you don't control one, first create a blue Jace planeswalker token with \"Draw a card.\")").trim()).toBe("Empower Jace 1.");
+  });
+
+  it("counts a keyword only on a line of keywords", () => {
+    expect(hasKeyword("Flying", "flying")).toBe(true);
+    expect(hasKeyword("Flash\nFlying, vigilance, lifelink\nWhen this creature enters, draw a card.", "flying")).toBe(true);
+    expect(hasKeyword("First strike, flying, ward {2}", "flying")).toBe(true);
+    expect(hasKeyword("Flying (This creature can't be blocked except by creatures with flying or reach.)", "flying")).toBe(true);
+    expect(hasKeyword("Enchanted creature has flying.", "flying")).toBe(false);
+    expect(hasKeyword("Konstrari Charm deals 6 damage to target creature with flying.", "flying")).toBe(false);
+    expect(hasKeyword("Create a 5/5 red Dragon creature token with flying.", "flying")).toBe(false);
+    expect(hasKeyword("Reach, vigilance, trample", "flying")).toBe(false);
+    expect(hasKeyword(null, "flying")).toBe(false);
+  });
+
+  it("knows removal when it reads it", () => {
+    for (const text of [
+      "Destroy target creature. If it wasn't attacking, its controller draws a card.",
+      "Exile target creature or planeswalker.",
+      "When this enchantment enters, exile target nonland permanent an opponent controls until this enchantment leaves the battlefield.",
+      "No Admittance deals 3 damage to any target.",
+      "Awaken the Inferno deals 6 damage to target creature or planeswalker an opponent controls.",
+      "Target creature you control deals damage equal to its power to target creature or planeswalker an opponent controls.",
+      "Target creature gets -3/-3 until end of turn.",
+      "Put a +1/+1 counter on target creature you control. Then it fights target creature an opponent controls.",
+      "Exile all creatures.",
+      "Fulminous Forte deals 1 damage to each creature and planeswalker your opponents control.",
+      "When this Equipment enters, for each opponent, destroy up to one target creature or planeswalker that player controls.",
+    ]) expect([text, isRemoval(text)]).toEqual([text, true]);
+    for (const text of [
+      "Exile target creature you control, then return it to the battlefield under its owner's control.",
+      "Exile target card from a graveyard. Create a 1/1 white Spirit creature token.",
+      "Counter target noncreature spell unless its controller pays {2}.",
+      "Stinging Vitriol deals 2 damage to target opponent.",
+      "Target creature gets +3/+1 until end of turn.",
+      "Flashback {5}{G} (You may cast this card from your graveyard for its flashback cost. Then exile it.)",
+      "Whenever a creature you control attacks, that creature deals 1 damage to each opponent.",
+      "Deathtouch (Any amount of damage this deals to a creature is enough to destroy it.)",
+      "",
+    ]) expect([text, isRemoval(text)]).toEqual([text, false]);
+    expect(isRemoval(null)).toBe(false);
+  });
+});
+
+describe("computeGroupLockBadges, the badges added in Version 25", () => {
+  const RARITY_OF = (i: number) => RARITIES[Math.floor(i / 5)];
+  const dash = String.fromCharCode(0x2014);
+  type Shape = { own?: (i: number) => boolean; type?: (i: number) => string; colors?: (i: number) => string; name?: (i: number) => string; text?: (i: number) => string; count?: number };
+  function player(userId: string, opts: Shape = {}): GroupLockPlayer {
+    return {
+      userId,
+      picks: Array.from({ length: opts.count ?? 20 }, (_, i) => ({
+        rarity: RARITY_OF(i), slot: (i % 5) + 1, cardId: opts.own?.(i) ? `${userId}-${i}` : `shared-${i}`,
+        colors: opts.colors?.(i) ?? "W", manaValue: 3, typeLine: opts.type?.(i) ?? "Creature", name: opts.name?.(i) ?? `Card ${i}`, oracleText: opts.text?.(i) ?? "",
+      })),
+    };
+  }
+  const won = (badges: ReturnType<typeof computeGroupLockBadges>, code: string) => badges.filter((b) => b.code === code).map((b) => b.userId).sort();
+  const detail = (badges: ReturnType<typeof computeGroupLockBadges>, code: string) => badges.find((b) => b.code === code)?.detail;
+
+  it("the five colors each have a leader, and a card of two colors counts for both", () => {
+    const group = [
+      player("a", { colors: (i) => (i < 9 ? "U" : "W") }),
+      player("b", { colors: (i) => (i < 6 ? "BR" : "W") }),
+      player("c", { colors: (i) => (i < 4 ? "G" : "W") }),
+      player("d", { colors: () => "W" }),
+    ];
+    const badges = computeGroupLockBadges(group);
+    expect(won(badges, "true_blue")).toEqual(["a"]);
+    expect(won(badges, "back_in_black")).toEqual(["b"]);
+    expect(won(badges, "seeing_red")).toEqual(["b"]);
+    // Four green cards lead the group, but five make a habit.
+    expect(won(badges, "green_thumb")).toEqual([]);
+    expect(won(badges, "white_knight")).toEqual(["d"]);
+    expect(detail(badges, "white_knight")).toEqual({ count: 20 });
+    expect(badgeDescription("true_blue", { count: 9 })).toBe("Picked 9 blue cards, the most in the group.");
+  });
+
+  it("colorless cards, lands, legends, planeswalkers and two-part cards", () => {
+    const group = [
+      player("a", { colors: (i) => (i < 5 ? "" : "W"), type: (i) => (i < 3 ? "Land" : i < 5 ? "Artifact" : "Creature") }),
+      player("b", { type: (i) => (i < 4 ? `Legendary Creature ${dash} Human` : i < 6 ? `Legendary Planeswalker ${dash} Jace` : "Creature") }),
+      player("c", { name: (i) => (i < 3 ? `Front ${i} // Back ${i}` : `Card ${i}`) }),
+      player("d"),
+    ];
+    const badges = computeGroupLockBadges(group);
+    expect(won(badges, "landlord")).toEqual(["a"]);
+    // The three lands are colorless too, but Grey Area counts the cards that aren't lands.
+    expect(detail(badges, "grey_area")).toEqual({ count: 2 });
+    expect(won(badges, "living_legend")).toEqual(["b"]);
+    expect(detail(badges, "living_legend")).toEqual({ count: 6 });
+    expect(won(badges, "superfriends")).toEqual(["b"]);
+    expect(won(badges, "two_for_one")).toEqual(["c"]);
+    expect(badgeDescription("two_for_one", { count: 3 })).toBe("Picked 3 cards that are two cards in one, the most in the group.");
+    expect(badgeDescription("landlord", { count: 1 })).toBe("Picked 1 land, the most in the group.");
+  });
+
+  it("what the cards do: flying, tokens, drawing, counters and removal", () => {
+    const group = [
+      player("a", { text: (i) => (i < 4 ? "Flying, vigilance" : i < 7 ? "When this creature enters, create a 2/2 colorless Wizard creature token." : "") }),
+      player("b", { text: (i) => (i < 5 ? "Destroy target creature." : i < 8 ? "Draw two cards." : "") }),
+      player("c", { text: (i) => (i < 2 ? "Put a +1/+1 counter on target creature." : i < 4 ? "Exile target creature or planeswalker." : "") }),
+      player("d", { text: (i) => (i < 1 ? "Enchanted creature has flying." : "") }),
+    ];
+    const badges = computeGroupLockBadges(group);
+    expect(won(badges, "frequent_flyer")).toEqual(["a"]);
+    expect(won(badges, "token_effort")).toEqual(["a"]);
+    expect(won(badges, "removal_service")).toEqual(["b"]);
+    expect(won(badges, "quick_draw")).toEqual(["b"]);
+    expect(won(badges, "counter_culture")).toEqual(["c"]);
+    expect(badgeDescription("removal_service", { count: 5 })).toBe("Picked 5 removal cards, the most in the group.");
+  });
+
+  it("Kindred Spirit names the creature type, the first by name when two tie", () => {
+    const group = [
+      player("a", { type: (i) => (i < 4 ? `Creature ${dash} Human Wizard` : i < 6 ? `Creature ${dash} Wizard` : "Instant") }),
+      player("b", { type: (i) => (i < 3 ? `Creature ${dash} Elf Druid` : "Instant") }),
+      player("c", { type: () => "Instant" }),
+    ];
+    const badges = computeGroupLockBadges(group);
+    expect(won(badges, "kindred_spirit")).toEqual(["a"]);
+    expect(detail(badges, "kindred_spirit")).toEqual({ count: 6, type: "Wizard" });
+    expect(badgeDescription("kindred_spirit", { count: 6, type: "Wizard" })).toBe("Picked 6 cards of the creature type Wizard, the most of one type in the group.");
+    const tie = computeGroupLockBadges([player("a", { type: (i) => (i < 3 ? `Creature ${dash} Wizard Elf` : "Instant") }), player("b", { type: () => "Instant" }), player("c", { type: () => "Instant" })]);
+    expect(detail(tie, "kindred_spirit")).toEqual({ count: 3, type: "Elf" });
+    // Two of a type isn't a theme.
+    expect(won(computeGroupLockBadges([player("a", { type: (i) => (i < 2 ? `Creature ${dash} Elf` : "Instant") }), player("b", { type: () => "Instant" }), player("c", { type: () => "Instant" })]), "kindred_spirit")).toEqual([]);
+  });
+
+  it("Bold Move is about the four #1 picks, and nobody else may have the card anywhere", () => {
+    // Picks 0, 5, 10 and 15 are the #1 picks.
+    const group = [
+      player("a", { own: (i) => i % 5 === 0 }),
+      player("b", { own: (i) => i === 0 || i === 1 || i === 2 }),
+      player("c"), player("d"),
+    ];
+    const badges = computeGroupLockBadges(group);
+    expect(won(badges, "bold_move")).toEqual(["a"]);
+    expect(detail(badges, "bold_move")).toEqual({ count: 4 });
+    expect(badgeDescription("bold_move", { count: 4 })).toBe("4 of the four #1 picks are cards nobody else in the group picked at all, the most in the group.");
+    // One bold #1 leads this group, and isn't enough.
+    expect(won(computeGroupLockBadges([player("a", { own: (i) => i === 0 }), player("b"), player("c")]), "bold_move")).toEqual([]);
+  });
+
+  it("Two of a Kind goes to the closest pair, and Polar Opposites to the pair furthest apart", () => {
+    const group = [
+      player("a", { own: (i) => i < 2 }),
+      player("b", { own: (i) => i < 4 }),
+      player("c", { own: (i) => i < 12 }),
+      player("d", { own: (i) => i >= 6 }),
+    ];
+    // a and b share 16; c shares 8 with a and b; d shares 4 with a, 2 with b and none with c.
+    const badges = computeGroupLockBadges(group);
+    expect(won(badges, "two_of_a_kind")).toEqual(["a", "b"]);
+    expect(detail(badges, "two_of_a_kind")).toEqual({ shared: 16 });
+    expect(won(badges, "polar_opposites")).toEqual(["c", "d"]);
+    expect(detail(badges, "polar_opposites")).toEqual({ shared: 0 });
+    expect(badgeDescription("two_of_a_kind", { shared: 16 })).toBe("Shares 16 of 20 picks with another player, the closest pair in the group.");
+    expect(badgeDescription("polar_opposites", { shared: 0 })).toBe("Shares no picks with another player, the pair furthest apart in the group.");
+    expect(badgeDescription("polar_opposites", { shared: 2 })).toBe("Shares only 2 of 20 picks with another player, the pair furthest apart in the group.");
+  });
+
+  it("pairs that tie for closest give the badge to nobody once too many players would hold it", () => {
+    // a-b and c-d both share 18: four holders in a group of five.
+    const group = [
+      player("a", { own: (i) => i < 2 }), player("b", { own: (i) => i < 2 }),
+      player("c", { own: (i) => i >= 18 }), player("d", { own: (i) => i >= 18 }),
+      player("e", { own: () => true }),
+    ];
+    const badges = computeGroupLockBadges(group);
+    expect(won(badges, "two_of_a_kind")).toEqual([]);
+    // Everyone shares nothing with e, so that isn't a pair either.
+    expect(won(badges, "polar_opposites")).toEqual([]);
+    // And a closest pair that shares three picks isn't close.
+    const far = [player("a", { own: (i) => i >= 3 }), player("b", { own: (i) => i >= 3 }), player("c", { own: () => true })];
+    expect(won(computeGroupLockBadges(far), "two_of_a_kind")).toEqual([]);
   });
 });
 

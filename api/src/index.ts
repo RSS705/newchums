@@ -69,7 +69,7 @@ import {
   hardDeleteUser,
 } from "./lib/adminHardDelete";
 import { KUDOS_TAGS, KUDOS_MAX_PER_PLAN, KUDOS_WINDOW_MS, isKudosTag, kudosTagInfo } from "./lib/kudos";
-import { MTG_USER_AGENT, MTG_SPECIALIZATION, MTG_RARITIES, MTG_SLOTS_PER_RARITY, MTG_LIST_MAX, MTG_LOCK_BADGE_CODES, MTG_LOCK_BADGES_VERSION, MTG_REDEFINED_LOCK_BADGE_CODES, MTG_RETIRED_LOCK_BADGE_CODES, type GroupLockPlayer, type MtgRarity, type MtgSetRow, type ValidatedPick, MTG_BADGES, MTG_FINALIZE_GRACE_MS, badgeDescription, badgeLabel, buildIcsEvent, compareBadges, computeEntryBadges, computeGroupLockBadges, computeGroupMind, easternDateKey, easternHour, easternToUtc, formatEasternDate, formatEasternLong, formatEasternShort, mtgLatestLockAt, mtgLockWarningAt, mtgMorningAfter, mtgPhase, mtgFinalizeDue, mtgPicksOpen, mtgPicksOpenAt, mtgResultsEmailAt, mtgRevealedEmailAt, mtgTimeline, ordinal, revealFunFact, syncScryfallSet, validateEntryPicks } from "./lib/mtg";
+import { MTG_USER_AGENT, MTG_SPECIALIZATION, MTG_RARITIES, MTG_SLOTS_PER_RARITY, MTG_LIST_MAX, MTG_GROUP_LOCK_BADGE_CODES, MTG_LOCK_BADGE_CODES, MTG_LOCK_BADGES_VERSION, MTG_REDEFINED_LOCK_BADGE_CODES, MTG_RETIRED_LOCK_BADGE_CODES, type GroupLockPlayer, type MtgRarity, type MtgSetRow, type ValidatedPick, MTG_BADGES, MTG_FINALIZE_GRACE_MS, badgeDescription, badgeLabel, buildIcsEvent, compareBadges, computeEntryBadges, computeGroupLockBadges, computeGroupMind, easternDateKey, easternHour, easternToUtc, formatEasternDate, formatEasternLong, formatEasternShort, mtgLatestLockAt, mtgLockWarningAt, mtgMorningAfter, mtgPhase, mtgFinalizeDue, mtgPicksOpen, mtgPicksOpenAt, mtgResultsEmailAt, mtgRevealedEmailAt, mtgTimeline, ordinal, revealFunFact, syncScryfallSet, validateEntryPicks } from "./lib/mtg";
 import {
   checkSnapshot, computeCardScores, isDateKey, matchFeed, mtgIngestSlot, mtgIngestDateAllowed,
   mtgIngestWindow, mtgStandingsDay, parseCardDataFeed, rankGroupDay,
@@ -1977,7 +1977,7 @@ async function ensureMtgGroupLock(sql: ReturnType<typeof getSql>, set: MtgSetRow
     WHERE cm.community_id = ${communityId} AND cm.status = 'active' AND cm.created_at <= ${lockIso}
   `) as { user_id: string; completed_at: string | Date | null; pick_count: number }[];
   const picks = (await sql`
-    SELECT e.user_id, p.rarity, p.slot, p.card_id, c.collector_sort, c.colors, c.mana_value, c.type_line
+    SELECT e.user_id, p.rarity, p.slot, p.card_id, c.collector_sort, c.colors, c.mana_value, c.type_line, c.name, c.oracle_text
     FROM newchums.community_members cm
     JOIN newchums.mtg_entries e ON e.user_id = cm.user_id AND e.set_id = ${set.id}
     JOIN newchums.mtg_picks p ON p.entry_id = e.id
@@ -2033,34 +2033,39 @@ async function ensureMtgGroupLock(sql: ReturnType<typeof getSql>, set: MtgSetRow
   `;
 }
 
-type MtgLockPickRow = { user_id: string; rarity: MtgRarity; slot: number; card_id: string; collector_sort: number; colors: string | null; mana_value: string | number | null; type_line: string | null };
+type MtgLockPickRow = { user_id: string; rarity: MtgRarity; slot: number; card_id: string; collector_sort: number; colors: string | null; mana_value: string | number | null; type_line: string | null; name: string | null; oracle_text: string | null };
 
 /** A group's players and their picks, as the lock badges read them. */
 function mtgLockPlayers(picks: MtgLockPickRow[]): GroupLockPlayer[] {
   const byUser = new Map<string, GroupLockPlayer>();
   for (const p of picks) {
     const player = byUser.get(p.user_id) ?? { userId: p.user_id, picks: [] };
-    player.picks.push({ rarity: p.rarity, cardId: p.card_id, colors: p.colors, manaValue: p.mana_value === null ? null : Number(p.mana_value), typeLine: p.type_line });
+    player.picks.push({
+      rarity: p.rarity, cardId: p.card_id, slot: Number(p.slot), colors: p.colors, manaValue: p.mana_value === null ? null : Number(p.mana_value),
+      typeLine: p.type_line, name: p.name, oracleText: p.oracle_text,
+    });
     byUser.set(p.user_id, player);
   }
   return [...byUser.values()];
 }
 
 /**
- * Bring a locked season's lock badges up to the current rules, once
- * (`mtg_sets.lock_badges_version`). Version 24 retired the badges nearly
- * everyone earned and added group honors that compare a player's picks with
- * their group's, and picks don't change after the lock, so a season locked
- * under the old rules gets the new badges from the same picks: each locked
- * group's roster is judged as `ensureMtgGroupLock` judges a group at the lock.
- * One transaction removes the old awards, adds the new ones and marks the
- * season, and every statement checks the version, so a second run changes
- * nothing.
+ * Bring a locked season's lock badges up to the current rules, once per
+ * version (`mtg_sets.lock_badges_version`). Version 24 retired the badges
+ * nearly everyone earned and added group honors that compare a player's picks
+ * with their group's, and Version 25 added more of those. Picks don't change
+ * after the lock, so a season locked under older rules gets today's badges
+ * from the same picks: each locked group's roster is judged as
+ * `ensureMtgGroupLock` judges a group at the lock. One transaction removes the
+ * old awards and every group honor given so far, gives the group honors
+ * afresh and marks the season, and every statement checks the version, so a
+ * second run changes nothing. The badges that belong to a player (Buzzer
+ * Beater, Loyalist) are never touched.
  */
 async function upgradeMtgLockBadges(sql: ReturnType<typeof getSql>, set: MtgSetRow): Promise<{ awarded: number } | null> {
   if (!set.locked_at || Number(set.lock_badges_version ?? 1) >= MTG_LOCK_BADGES_VERSION) return null;
   const rows = (await sql`
-    SELECT r.community_id, r.user_id, p.rarity, p.slot, p.card_id, c.collector_sort, c.colors, c.mana_value, c.type_line
+    SELECT r.community_id, r.user_id, p.rarity, p.slot, p.card_id, c.collector_sort, c.colors, c.mana_value, c.type_line, c.name, c.oracle_text
     FROM newchums.mtg_group_rosters r
     JOIN newchums.mtg_group_locks l ON l.community_id = r.community_id AND l.set_id = r.set_id
     JOIN newchums.mtg_entries e ON e.user_id = r.user_id AND e.set_id = r.set_id
@@ -2074,12 +2079,16 @@ async function upgradeMtgLockBadges(sql: ReturnType<typeof getSql>, set: MtgSetR
   const stale = sql`SELECT 1 FROM newchums.mtg_sets s WHERE s.id = ${set.id} AND s.lock_badges_version < ${MTG_LOCK_BADGES_VERSION}`;
   await sql.transaction([
     sql`SELECT 1 FROM newchums.mtg_sets WHERE id = ${set.id} FOR UPDATE`,
-    // Gold Rush and Artificer used to belong to a player; as group honors they belong to a group.
+    // Gold Rush and Artificer used to belong to a player; as group honors they
+    // belong to a group. The group honors are judged afresh, so the ones given
+    // under an earlier version go too, and come back if they still hold.
     sql`
       DELETE FROM newchums.mtg_badge_awards a
       WHERE a.set_id = ${set.id} AND EXISTS (${stale})
         AND (a.badge_code = ANY(${[...MTG_RETIRED_LOCK_BADGE_CODES]}::text[])
-          OR (a.badge_code = ANY(${[...MTG_REDEFINED_LOCK_BADGE_CODES]}::text[]) AND a.community_id IS NULL))
+          OR (a.badge_code = ANY(${[...MTG_REDEFINED_LOCK_BADGE_CODES]}::text[]) AND a.community_id IS NULL)
+          OR (a.badge_code = ANY(${[...MTG_GROUP_LOCK_BADGE_CODES]}::text[]) AND a.community_id IS NOT NULL
+              AND EXISTS (SELECT 1 FROM newchums.mtg_group_locks l WHERE l.community_id = a.community_id AND l.set_id = a.set_id)))
     `,
     sql`
       INSERT INTO newchums.mtg_badge_awards (set_id, user_id, community_id, badge_code, award_key, detail)

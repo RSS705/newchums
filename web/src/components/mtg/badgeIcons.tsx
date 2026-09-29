@@ -8,43 +8,62 @@ import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 import AutoFixHighRoundedIcon from "@mui/icons-material/AutoFixHighRounded";
 import AutoStoriesRoundedIcon from "@mui/icons-material/AutoStoriesRounded";
 import BedtimeRoundedIcon from "@mui/icons-material/BedtimeRounded";
+import BlurOnRoundedIcon from "@mui/icons-material/BlurOnRounded";
+import BoltRoundedIcon from "@mui/icons-material/BoltRounded";
 import BuildRoundedIcon from "@mui/icons-material/BuildRounded";
 import CampaignRoundedIcon from "@mui/icons-material/CampaignRounded";
 import CasinoRoundedIcon from "@mui/icons-material/CasinoRounded";
+import CastleRoundedIcon from "@mui/icons-material/CastleRounded";
 import CenterFocusStrongRoundedIcon from "@mui/icons-material/CenterFocusStrongRounded";
 import CleaningServicesRoundedIcon from "@mui/icons-material/CleaningServicesRounded";
+import CompareArrowsRoundedIcon from "@mui/icons-material/CompareArrowsRounded";
+import ContentCutRoundedIcon from "@mui/icons-material/ContentCutRounded";
 import CrueltyFreeRoundedIcon from "@mui/icons-material/CrueltyFreeRounded";
+import DarkModeRoundedIcon from "@mui/icons-material/DarkModeRounded";
 import DiamondRoundedIcon from "@mui/icons-material/DiamondRounded";
+import Diversity1RoundedIcon from "@mui/icons-material/Diversity1Rounded";
+import Diversity3RoundedIcon from "@mui/icons-material/Diversity3Rounded";
 import DonutLargeRoundedIcon from "@mui/icons-material/DonutLargeRounded";
 import EmojiEventsRoundedIcon from "@mui/icons-material/EmojiEventsRounded";
 import FavoriteRoundedIcon from "@mui/icons-material/FavoriteRounded";
 import FingerprintRoundedIcon from "@mui/icons-material/FingerprintRounded";
 import FlashOnRoundedIcon from "@mui/icons-material/FlashOnRounded";
+import FlightRoundedIcon from "@mui/icons-material/FlightRounded";
 import FormatListNumberedRoundedIcon from "@mui/icons-material/FormatListNumberedRounded";
+import GeneratingTokensRoundedIcon from "@mui/icons-material/GeneratingTokensRounded";
 import GpsFixedRoundedIcon from "@mui/icons-material/GpsFixedRounded";
 import GroupsRoundedIcon from "@mui/icons-material/GroupsRounded";
 import HiveRoundedIcon from "@mui/icons-material/HiveRounded";
+import HomeWorkRoundedIcon from "@mui/icons-material/HomeWorkRounded";
 import InsightsRoundedIcon from "@mui/icons-material/InsightsRounded";
 import LightbulbRoundedIcon from "@mui/icons-material/LightbulbRounded";
 import LocalFireDepartmentRoundedIcon from "@mui/icons-material/LocalFireDepartmentRounded";
 import LocalOfferRoundedIcon from "@mui/icons-material/LocalOfferRounded";
 import LooksOneRoundedIcon from "@mui/icons-material/LooksOneRounded";
+import LooksTwoRoundedIcon from "@mui/icons-material/LooksTwoRounded";
 import MenuBookRoundedIcon from "@mui/icons-material/MenuBookRounded";
 import MilitaryTechRoundedIcon from "@mui/icons-material/MilitaryTechRounded";
 import PaidRoundedIcon from "@mui/icons-material/PaidRounded";
+import ParkRoundedIcon from "@mui/icons-material/ParkRounded";
+import PeopleAltRoundedIcon from "@mui/icons-material/PeopleAltRounded";
 import PetsRoundedIcon from "@mui/icons-material/PetsRounded";
 import PhotoCameraRoundedIcon from "@mui/icons-material/PhotoCameraRounded";
+import PlusOneRoundedIcon from "@mui/icons-material/PlusOneRounded";
 import RestaurantRoundedIcon from "@mui/icons-material/RestaurantRounded";
 import SensorsRoundedIcon from "@mui/icons-material/SensorsRounded";
+import ShieldRoundedIcon from "@mui/icons-material/ShieldRounded";
 import SportsBaseballRoundedIcon from "@mui/icons-material/SportsBaseballRounded";
 import SportsScoreRoundedIcon from "@mui/icons-material/SportsScoreRounded";
 import SsidChartRoundedIcon from "@mui/icons-material/SsidChartRounded";
 import StarsRoundedIcon from "@mui/icons-material/StarsRounded";
+import StyleRoundedIcon from "@mui/icons-material/StyleRounded";
 import TerrainRoundedIcon from "@mui/icons-material/TerrainRounded";
 import TrendingDownRoundedIcon from "@mui/icons-material/TrendingDownRounded";
 import TrendingUpRoundedIcon from "@mui/icons-material/TrendingUpRounded";
 import VerticalAlignBottomRoundedIcon from "@mui/icons-material/VerticalAlignBottomRounded";
 import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
+import WaterDropRoundedIcon from "@mui/icons-material/WaterDropRounded";
+import WhatshotRoundedIcon from "@mui/icons-material/WhatshotRounded";
 import WorkspacePremiumRoundedIcon from "@mui/icons-material/WorkspacePremiumRounded";
 import Box from "@mui/material/Box";
 import type { SvgIconProps } from "@mui/material/SvgIcon";
@@ -93,6 +112,25 @@ const BADGE_ICONS: Record<string, SvgIconComponent> = {
   instant_gratification: FlashOnRoundedIcon,
   sorcery_believer: AutoStoriesRoundedIcon,
   enchanted: AutoFixHighRoundedIcon,
+  white_knight: ShieldRoundedIcon,
+  true_blue: WaterDropRoundedIcon,
+  back_in_black: DarkModeRoundedIcon,
+  seeing_red: WhatshotRoundedIcon,
+  green_thumb: ParkRoundedIcon,
+  grey_area: BlurOnRoundedIcon,
+  landlord: HomeWorkRoundedIcon,
+  living_legend: CastleRoundedIcon,
+  superfriends: Diversity3RoundedIcon,
+  two_for_one: LooksTwoRoundedIcon,
+  kindred_spirit: Diversity1RoundedIcon,
+  frequent_flyer: FlightRoundedIcon,
+  token_effort: GeneratingTokensRoundedIcon,
+  quick_draw: StyleRoundedIcon,
+  counter_culture: PlusOneRoundedIcon,
+  removal_service: ContentCutRoundedIcon,
+  bold_move: BoltRoundedIcon,
+  two_of_a_kind: PeopleAltRoundedIcon,
+  polar_opposites: CompareArrowsRoundedIcon,
   wooden_spoon: RestaurantRoundedIcon,
   whiff_of_the_season: AirRoundedIcon,
   bust: TrendingDownRoundedIcon,
