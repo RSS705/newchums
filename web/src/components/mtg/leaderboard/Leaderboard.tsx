@@ -10,12 +10,13 @@ import Collapse from "@mui/material/Collapse";
 import Stack from "@mui/material/Stack";
 import Tab from "@mui/material/Tab";
 import Tabs from "@mui/material/Tabs";
+import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import ArrowDropDownRoundedIcon from "@mui/icons-material/ArrowDropDownRounded";
 import ArrowDropUpRoundedIcon from "@mui/icons-material/ArrowDropUpRounded";
 import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
 import LeaderboardRoundedIcon from "@mui/icons-material/LeaderboardRounded";
-import { AppCard } from "@/components/ui";
+import { AppButton, AppCard } from "@/components/ui";
 import { apiFetch, getAvatarBaseUrl } from "@/lib/apiClient";
 import { BadgeIcon } from "../badgeIcons";
 import { StandingsHeader, srOnly } from "../pageBits";
@@ -74,20 +75,38 @@ function Movement({ row }: { row: MtgLeaderboardRow }) {
 /** The row's three best badges as icons in their tier colors, and a count for
  *  the rest (spec 10.5). Phones show only the best icon and count the others,
  *  since most rows carry three or more badges from the lock and a 320 px row
- *  would otherwise leave a name about four letters. */
+ *  would otherwise leave a name about four letters. Hovering an icon names the
+ *  badge and says why it was earned; these are plain hover tooltips, not tap
+ *  ones, because the icons sit inside the row's button, and a tap opens the
+ *  row, where every badge is a chip with its name and a tap tooltip. */
 function BadgeHints({ row }: { row: MtgLeaderboardRow }) {
   if (row.badges.length === 0) return null;
   const extraWide = row.badgeCount - row.badges.length;
   const extraPhone = row.badgeCount - 1;
   const count = (n: number, display: Record<string, string>) => (n > 0 ? (
-    <Typography component="span" sx={{ display, fontSize: "0.6875rem", fontWeight: 700, color: "text.secondary", ml: "2px" }}>+{n}</Typography>
+    <Tooltip title={<span>{row.badgeCount} badges in all. Open the row to see them.</span>} placement="top" arrow>
+      <Typography component="span" sx={{ display, fontSize: "0.6875rem", fontWeight: 700, color: "text.secondary", ml: "2px" }}>+{n}</Typography>
+    </Tooltip>
   ) : null);
   return (
     <Stack direction="row" alignItems="center" aria-hidden sx={{ flexShrink: 0, gap: "4px" }}>
       {row.badges.map((b, i) => (
-        <Box key={`${b.code}-${b.name}`} sx={{ display: i === 0 ? "block" : { xs: "none", sm: "block" } }}>
-          <BadgeIcon badge={b} size={{ xs: 20, sm: 24 }} />
-        </Box>
+        // An element title, not a string, so MUI doesn't also put the words in a title attribute.
+        <Tooltip
+          key={`${b.code}-${b.name}`}
+          placement="top"
+          arrow
+          title={
+            <Box component="span" sx={{ display: "block", textAlign: "center" }}>
+              <Box component="span" sx={{ display: "block", fontWeight: 800 }}>{b.name}{b.count && b.count > 1 ? ` ×${b.count}` : ""}</Box>
+              <Box component="span" sx={{ display: "block", fontWeight: 500 }}>{b.description}</Box>
+            </Box>
+          }
+        >
+          <Box sx={{ display: i === 0 ? "flex" : { xs: "none", sm: "flex" } }}>
+            <BadgeIcon badge={b} size={{ xs: 20, sm: 24 }} />
+          </Box>
+        </Tooltip>
       ))}
       {count(extraPhone, { xs: "inline", sm: "none" })}
       {count(extraWide, { xs: "none", sm: "inline" })}
@@ -104,7 +123,6 @@ function PlayerRow({ row, open, onToggle, sinceLabel, href }: { row: MtgLeaderbo
     `${points(row.total)} points`,
     row.change !== null ? `${signed(row.change)} ${sinceLabel}` : null,
     moved > 0 ? `up ${moved}` : moved < 0 ? `down ${-moved}` : null,
-    row.rank > 1 ? `${points(row.behind)} behind the leader` : "in the lead",
     row.badgeCount > 0 ? `${row.badgeCount} ${row.badgeCount === 1 ? "badge" : "badges"}` : null,
   ].filter(Boolean).join(", ");
   const changeColor = row.change === null ? "text.secondary" : Math.round(row.change) > 0 ? UP : Math.round(row.change) < 0 ? DOWN : "text.secondary";
@@ -133,13 +151,6 @@ function PlayerRow({ row, open, onToggle, sinceLabel, href }: { row: MtgLeaderbo
                 <Box component="span" sx={{ display: { xs: "none", sm: "inline" } }}> {sinceLabel}</Box>
               </>
             )}
-            {row.rank > 1 && (
-              <>
-                {" · "}{points(row.behind)}
-                <Box component="span" sx={{ display: { xs: "none", sm: "inline" } }}> behind</Box>
-                <Box component="span" sx={{ display: { xs: "inline", sm: "none" } }}> back</Box>
-              </>
-            )}
           </Typography>
         </Box>
         <BadgeHints row={row} />
@@ -160,22 +171,25 @@ function PlayerRow({ row, open, onToggle, sinceLabel, href }: { row: MtgLeaderbo
             ))}
           </Box>
           <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.75 }}>
-            {tenths(row.total)} points in all{row.rank > 1 ? `, ${tenths(row.behind)} behind the leader` : ""}.
+            {tenths(row.total)} points in all.
           </Typography>
-          {row.badges.length > 0 && (
-            <Stack direction="row" spacing={0.5} useFlexGap flexWrap="wrap" sx={{ mt: 0.75 }}>
-              {row.badges.map((b) => <BadgeChip key={`${b.code}-${b.name}`} badge={b} />)}
-              {row.badgeCount > row.badges.length && (
-                <Typography variant="caption" fontWeight={700} color="text.secondary" sx={{ alignSelf: "center" }}>and {row.badgeCount - row.badges.length} more</Typography>
-              )}
-            </Stack>
-          )}
-          {/* The way to the player's page, at the bottom right: the same quiet outlined button as the rest of the game. */}
-          <Box sx={{ display: "flex", justifyContent: "flex-end", mt: 1 }}>
-            <Button component={NextLink} href={href} variant="outlined" color="inherit" size="small" endIcon={<ChevronRightRoundedIcon />} sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2, whiteSpace: "nowrap" }}>
+          {/* The badges on the left and the way to the player's page on the right, on one row; the button is
+              the plan page's "Send invite" kind, and drops under the badges when the row is too narrow for both.
+              No top margin where they share the row: the 44 px button already centres the 24 px chips 10 px
+              below the total, and the phone's wrapped chips keep their 6 px. */}
+          <Stack direction="row" alignItems="center" useFlexGap flexWrap="wrap" sx={{ mt: { xs: 0.75, sm: 0 }, columnGap: 1, rowGap: 0.75 }}>
+            {row.badges.length > 0 && (
+              <Stack direction="row" spacing={0.5} useFlexGap flexWrap="wrap" alignItems="center" sx={{ flex: "1 1 auto", minWidth: 0 }}>
+                {row.badges.map((b) => <BadgeChip key={`${b.code}-${b.name}`} badge={b} />)}
+                {row.badgeCount > row.badges.length && (
+                  <Typography variant="caption" fontWeight={700} color="text.secondary" sx={{ alignSelf: "center" }}>and {row.badgeCount - row.badges.length} more</Typography>
+                )}
+              </Stack>
+            )}
+            <AppButton component={NextLink} href={href} size="small" variant="outlined" endIcon={<ChevronRightRoundedIcon />} sx={{ textTransform: "none", ml: "auto", whiteSpace: "nowrap", flexShrink: 0 }}>
               See {whose} picks and stats
-            </Button>
-          </Box>
+            </AppButton>
+          </Stack>
         </Box>
       </Collapse>
     </Box>
@@ -240,7 +254,7 @@ type Item = { kind: "player"; row: MtgLeaderboardRow } | { kind: "random" };
 
 /**
  * The group's standings (spec 10.5): rank and movement, points and change,
- * points behind the leader and the top badges, with the Group Mind and a
+ * the top badges, with a
  * random-picks line placed where their points fall. A row opens to its points
  * by rarity and its badges, with a link to the player's page. The Everyone tab
  * ranks the whole season by handle. The board refreshes when the tab comes

@@ -19,7 +19,7 @@ import EmojiEventsRoundedIcon from "@mui/icons-material/EmojiEventsRounded";
 import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
 import LeaderboardRoundedIcon from "@mui/icons-material/LeaderboardRounded";
 import ShowChartRoundedIcon from "@mui/icons-material/ShowChartRounded";
-import { AppCard } from "@/components/ui";
+import { AppButton, AppCard } from "@/components/ui";
 import { apiFetch, getAvatarBaseUrl } from "@/lib/apiClient";
 import HistoryLineChart from "../charts/HistoryLineChart";
 import NumbersToggle from "../charts/NumbersToggle";
@@ -206,17 +206,19 @@ function TopFive({ top, picks, rarity, cardHref, whose, final }: { top: MtgTopCa
   const [open, setOpen] = useState(false);
   if (top.length === 0) return null;
   return (
-    <Box sx={{ mt: 0.5 }}>
-      <Button
-        variant="text"
+    <Box sx={{ mt: 1 }}>
+      {/* The plan page's "Send invite" kind of button. */}
+      <AppButton
+        size="small"
+        variant="outlined"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
         endIcon={<ExpandMoreRoundedIcon sx={{ transition: "transform 0.2s", transform: open ? "rotate(180deg)" : "none" }} />}
-        sx={{ textTransform: "none", fontWeight: 700, ml: -1, minHeight: 44 }}
+        sx={{ textTransform: "none" }}
       >
         {/* One inline span: a button lays its children out as flex items, which would drop the spaces. */}
         <span>{final ? "Top 5" : "Actual top 5"}<Box component="span" sx={srOnly}> {RARITY_PLURAL[rarity]}</Box> {when}</span>
-      </Button>
+      </AppButton>
       <Collapse in={open} unmountOnExit>
         <Stack component="ol" spacing={0.5} aria-label={`The top 5 ${RARITY_PLURAL[rarity]} ${when}`} sx={{ m: 0, p: 0, pt: 0.5 }}>
           {top.map((t) => {
