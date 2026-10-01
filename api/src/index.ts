@@ -73,7 +73,7 @@ import { MTG_USER_AGENT, MTG_SPECIALIZATION, MTG_RARITIES, MTG_SLOTS_PER_RARITY,
 import {
   checkSnapshot, computeCardScores, isDateKey, matchFeed, mtgIngestSlot, mtgIngestDateAllowed,
   mtgIngestWindow, mtgStandingsDay, parseCardDataFeed, rankGroupDay,
-  mtgSlotWeights, rankStandings, scoreEntry, shiftDateKey, type FeedRecord, type PoolCard } from "./lib/mtgScoring";
+  mtgEntryRanked, mtgSlotWeights, rankStandings, scoreEntry, shiftDateKey, type FeedRecord, type PoolCard } from "./lib/mtgScoring";
 import { MTG_BADGE_MIN_RANKED, computeSeasonBadges, type SeasonBadge, type SeasonEntry, type SeasonGroup, type SeasonPick } from "./lib/mtgBadges";
 import { checkDbRateLimit, isDbRateLimited, recordDbRateEvent } from "./lib/dbRateLimit";
 import {
@@ -2738,7 +2738,9 @@ async function mtgResultsDetails(sql: ReturnType<typeof getSql>, env: Bindings, 
     if (!cache.groups.has(key)) cache.groups.set(key, await loadMtgGroupFinal(sql, setId, season.finalSnapshotId, g.id));
     const final = cache.groups.get(key) as MtgGroupFinal;
     const me = final.ranked.find((r) => r.userId === userId);
-    if (!me) continue;
+    // A player who locked short of twenty picks was never ranked, but played: their email says so.
+    const short = final.members.find((m) => m.id === userId && m.entry_id && m.locked_pick_count !== null && !mtgEntryRanked(m.locked_pick_count));
+    if (!me && !short) continue;
     const nameOf = (id: string) => (id === userId ? "you" : final.ranked.find((r) => r.userId === id)?.name ?? "A player");
     // The champion is whoever holds the Champion badge: a group under three players has none.
     const champions = final.honors.get("champion") ?? [];
@@ -2759,7 +2761,9 @@ async function mtgResultsDetails(sql: ReturnType<typeof getSql>, env: Bindings, 
       name: g.name,
       // The season's own page, which keeps its results after the next season starts.
       url: `${web}/communities/${g.slug}/seasons/${season.set.code}`,
-      standingLine: `You finished ${ordinal(me.rank)} of ${final.ranked.length} with ${Math.round(me.total).toLocaleString("en-US")} points.`,
+      standingLine: me
+        ? `You finished ${ordinal(me.rank)} of ${final.ranked.length} with ${Math.round(me.total).toLocaleString("en-US")} points.`
+        : `You locked in ${short?.locked_pick_count} of 20 picks, so you weren't ranked this season.`,
       championLine,
       moments,
       players: final.ranked.length,
@@ -3171,7 +3175,7 @@ async function judgeMtgSeason(sql: ReturnType<typeof getSql>, set: MtgSetRow, ta
       )
     `,
     sql`
-      SELECT e.id, e.user_id, e.hide_from_everyone_board, e.completed_at, e.updated_at,
+      SELECT e.id, e.user_id, e.hide_from_everyone_board, e.completed_at, e.updated_at, e.locked_pick_count,
              s.total, s.common, s.uncommon, s.rare, s.mythic, s.slot1_points,
              EXISTS (
                SELECT 1 FROM newchums.community_members cm JOIN newchums.communities c ON c.id = cm.community_id
@@ -3194,7 +3198,7 @@ async function judgeMtgSeason(sql: ReturnType<typeof getSql>, set: MtgSetRow, ta
     `,
     // Each challenge group's players for the season: its roster.
     sql`
-      SELECT cm.community_id, cm.user_id AS id, e.id AS entry_id, e.completed_at, e.updated_at
+      SELECT cm.community_id, cm.user_id AS id, e.id AS entry_id, e.completed_at, e.updated_at, e.locked_pick_count
       FROM newchums.community_members cm
       JOIN newchums.communities c ON c.id = cm.community_id
       JOIN newchums.mtg_entries e ON e.user_id = cm.user_id AND e.set_id = ${set.id}
@@ -3237,10 +3241,10 @@ async function judgeMtgSeason(sql: ReturnType<typeof getSql>, set: MtgSetRow, ta
     picksByEntry.set(p.entry_id, list);
     collectorOrder.set(p.card_id, Number(p.collector_sort));
   }
-  const entries: SeasonEntry[] = (entryRows as { id: string; user_id: string; hide_from_everyone_board: boolean; completed_at: string | Date | null; updated_at: string | Date | null; total: string; common: string; uncommon: string; rare: string; mythic: string; slot1_points: string; in_group: boolean }[]).map((e) => ({
+  const entries: SeasonEntry[] = (entryRows as { id: string; user_id: string; hide_from_everyone_board: boolean; completed_at: string | Date | null; updated_at: string | Date | null; locked_pick_count: number | null; total: string; common: string; uncommon: string; rare: string; mythic: string; slot1_points: string; in_group: boolean }[]).map((e) => ({
     userId: e.user_id,
-    // Off the Everyone board: hidden by choice, or in no challenge group any more.
-    hidden: e.hide_from_everyone_board === true || e.in_group !== true,
+    // Off the Everyone board: hidden by choice, in no challenge group any more, or locked short of twenty picks.
+    hidden: e.hide_from_everyone_board === true || e.in_group !== true || !mtgEntryRanked(e.locked_pick_count),
     total: Number(e.total),
     slot1: Number(e.slot1_points),
     subtotals: { common: Number(e.common), uncommon: Number(e.uncommon), rare: Number(e.rare), mythic: Number(e.mythic) },
@@ -3254,7 +3258,7 @@ async function judgeMtgSeason(sql: ReturnType<typeof getSql>, set: MtgSetRow, ta
     day.set(r.entry_id, r);
     scoresBySnap.set(r.snapshot_id, day);
   }
-  type Member = { community_id: string; id: string; entry_id: string; completed_at: string | Date | null; updated_at: string | Date | null };
+  type Member = { community_id: string; id: string; entry_id: string; completed_at: string | Date | null; updated_at: string | Date | null; locked_pick_count: number | null };
   const membersByGroup = new Map<string, Member[]>();
   for (const m of memberRows as Member[]) {
     const list = membersByGroup.get(m.community_id) ?? [];
@@ -3712,6 +3716,8 @@ type MtgGroupMember = {
   entry_id: string | null;
   completed_at: string | null;
   updated_at: string | null;
+  /** How many picks the entry had when picks locked; null before the lock, or without an entry. */
+  locked_pick_count: number | null;
   /** The entry is hidden from the Everyone board; null without an entry. */
   hidden: boolean | null;
   /** Joined after the season's lock, so following along until the next season. */
@@ -3753,6 +3759,7 @@ async function loadMtgGroupMembers(sql: ReturnType<typeof getSql>, setId: string
            CASE WHEN p.plays THEN e.id END AS entry_id,
            CASE WHEN p.plays THEN e.completed_at END AS completed_at,
            CASE WHEN p.plays THEN e.updated_at END AS updated_at,
+           CASE WHEN p.plays THEN e.locked_pick_count END AS locked_pick_count,
            CASE WHEN p.plays THEN e.hide_from_everyone_board END AS hidden,
            (NOT p.plays AND p.joined > st.lock_at AND st.lock_at <= now()) AS joined_after_lock,
            p.left_group
@@ -3942,9 +3949,13 @@ app.get("/mtg/communities/:id/leaderboard", async (c) => {
             badgeCount: mine.length,
           };
         }),
+        // Members not ranked: no picks, joined after the lock, or (Version 27) locked short of twenty picks, with how many.
         noEntry: members
           .filter((m) => !rankedIds.has(m.id))
-          .map((m) => ({ userId: m.id, name: m.name, username: m.username, isViewer: m.id === viewer.id, joinedAfterLock: m.joined_after_lock })),
+          .map((m) => ({
+            userId: m.id, name: m.name, username: m.username, isViewer: m.id === viewer.id, joinedAfterLock: m.joined_after_lock,
+            lockedPicks: m.entry_id && m.locked_pick_count !== null && !mtgEntryRanked(m.locked_pick_count) ? Number(m.locked_pick_count) : null,
+          })),
         groupMind: mindPicks.length === 0 ? null : {
           total: mindNow,
           change: previous ? round(mindNow - mindTotal(previous.id)) : null,
@@ -4015,7 +4026,7 @@ app.get("/mtg/communities/:id/history", async (c) => {
     const rankOf = new Map(ranked.map((r) => [r.key, r.rank]));
     const round = (n: number) => Math.round(n * 10000) / 10000;
     const players = members
-      .filter((m) => m.entry_id && snaps.some((snap) => byDay.get(snap.id)?.has(m.entry_id as string)))
+      .filter((m) => m.entry_id && mtgEntryRanked(m.locked_pick_count) && snaps.some((snap) => byDay.get(snap.id)?.has(m.entry_id as string)))
       .map((m) => ({
         userId: m.id,
         name: m.name,
@@ -4207,6 +4218,8 @@ app.get("/mtg/communities/:id/players/:userId", async (c) => {
         hasEntry: !!player.entry_id,
         pickCount: MTG_RARITIES.reduce((n, r) => n + picks[r].length, 0),
         joinedAfterLock: player.joined_after_lock,
+        // Locked short of twenty picks, so never ranked (Version 27); null when ranked or without an entry.
+        lockedPicks: player.entry_id && player.locked_pick_count !== null && !mtgEntryRanked(player.locked_pick_count) ? Number(player.locked_pick_count) : null,
       },
       standing,
       history,
@@ -4481,6 +4494,8 @@ app.get("/mtg/sets/:code/everyone", async (c) => {
       JOIN newchums.mtg_entries e ON e.id = s.entry_id
       JOIN newchums.users u ON u.id = e.user_id
       WHERE s.snapshot_id = ${snap.id} AND e.hide_from_everyone_board = false
+        -- Only entries that locked with all twenty picks are ranked anywhere (Version 27).
+        AND (e.locked_pick_count IS NULL OR e.locked_pick_count >= ${MTG_RARITIES.length * MTG_SLOTS_PER_RARITY})
         -- Only players still in a challenge group: leaving every group takes a player off the board.
         AND EXISTS (
           SELECT 1 FROM newchums.community_members cm JOIN newchums.communities c ON c.id = cm.community_id

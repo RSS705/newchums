@@ -389,19 +389,28 @@ export type GroupMemberStanding = {
   entry_id: string | null;
   completed_at: string | Date | null;
   updated_at: string | Date | null;
+  /** How many picks the entry had when picks locked; null before the lock, or without an entry. */
+  locked_pick_count?: number | string | null;
 };
+
+/** Whether an entry is in the standings: it locked with all twenty picks (Version 27). */
+export const mtgEntryRanked = (lockedPickCount: number | string | null | undefined) =>
+  lockedPickCount === null || lockedPickCount === undefined || Number(lockedPickCount) >= MTG_RARITIES.length * MTG_SLOTS_PER_RARITY;
 
 /**
  * One day of a group's standings, ranked the way the leaderboard shows them:
- * the members with points that day. Who plays is decided before this, by the
- * group's roster for the season (`mtg_season_player`), which gives members
- * outside it no `entry_id`, so every day ranks the same players.
+ * the members with points that day who locked in all twenty picks. Who plays
+ * is decided before this, by the group's roster for the season
+ * (`mtg_season_player`), which gives members outside it no `entry_id`, so
+ * every day ranks the same players. Since Version 27 an entry that locked
+ * short of twenty is listed as unranked instead, so a half-made entry never
+ * reads as a badly made one.
  */
 export function rankGroupDay<M extends GroupMemberStanding, S extends { total: string | number; slot1_points: string | number }>(
   members: M[],
   scores: Map<string, S>,
 ) {
-  const eligible = members.filter((m) => m.entry_id !== null && scores.has(m.entry_id));
+  const eligible = members.filter((m) => m.entry_id !== null && scores.has(m.entry_id) && mtgEntryRanked(m.locked_pick_count));
   return rankStandings(eligible.map((m) => {
     const score = scores.get(m.entry_id as string) as S;
     return { key: m.id, member: m, score, total: Number(score.total), slot1: Number(score.slot1_points), completedAt: m.completed_at, updatedAt: m.updated_at };

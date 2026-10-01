@@ -15,14 +15,13 @@ import ArrowDropDownRoundedIcon from "@mui/icons-material/ArrowDropDownRounded";
 import ArrowDropUpRoundedIcon from "@mui/icons-material/ArrowDropUpRounded";
 import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
 import LeaderboardRoundedIcon from "@mui/icons-material/LeaderboardRounded";
-import PsychologyAltRoundedIcon from "@mui/icons-material/PsychologyAltRounded";
 import { AppCard } from "@/components/ui";
 import { apiFetch, getAvatarBaseUrl } from "@/lib/apiClient";
 import { BadgeIcon } from "../badgeIcons";
 import { StandingsHeader, srOnly } from "../pageBits";
 import BadgeChip from "../reveal/BadgeChip";
 import EveryoneBoard from "./EveryoneBoard";
-import { MTG_RARITIES, RARITY_LABEL, seasonQuery, type MtgLeaderboardPayload, type MtgLeaderboardRow } from "../mtgTypes";
+import { MTG_RARITIES, MTG_TOTAL_PICKS, RARITY_LABEL, seasonQuery, type MtgLeaderboardPayload, type MtgLeaderboardRow } from "../mtgTypes";
 
 type Standings = NonNullable<MtgLeaderboardPayload["standings"]>;
 
@@ -160,56 +159,49 @@ function PlayerRow({ row, open, onToggle, sinceLabel, href }: { row: MtgLeaderbo
               </Box>
             ))}
           </Box>
-          {/* The total on the left and the way to the player's page on the right, the same quiet outlined button as the rest of the game. */}
-          <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1} useFlexGap flexWrap="wrap" sx={{ mt: 1 }}>
-            <Typography variant="caption" color="text.secondary">
-              {tenths(row.total)} points in all{row.rank > 1 ? `, ${tenths(row.behind)} behind the leader` : ""}.
-            </Typography>
-            <Button component={NextLink} href={href} variant="outlined" color="inherit" size="small" endIcon={<ChevronRightRoundedIcon />} sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2, ml: "auto", whiteSpace: "nowrap" }}>
-              See {whose} picks and stats
-            </Button>
-          </Stack>
+          <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.75 }}>
+            {tenths(row.total)} points in all{row.rank > 1 ? `, ${tenths(row.behind)} behind the leader` : ""}.
+          </Typography>
           {row.badges.length > 0 && (
-            <Stack direction="row" spacing={0.5} useFlexGap flexWrap="wrap" sx={{ mt: 1 }}>
+            <Stack direction="row" spacing={0.5} useFlexGap flexWrap="wrap" sx={{ mt: 0.75 }}>
               {row.badges.map((b) => <BadgeChip key={`${b.code}-${b.name}`} badge={b} />)}
               {row.badgeCount > row.badges.length && (
                 <Typography variant="caption" fontWeight={700} color="text.secondary" sx={{ alignSelf: "center" }}>and {row.badgeCount - row.badges.length} more</Typography>
               )}
             </Stack>
           )}
+          {/* The way to the player's page, at the bottom right: the same quiet outlined button as the rest of the game. */}
+          <Box sx={{ display: "flex", justifyContent: "flex-end", mt: 1 }}>
+            <Button component={NextLink} href={href} variant="outlined" color="inherit" size="small" endIcon={<ChevronRightRoundedIcon />} sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2, whiteSpace: "nowrap" }}>
+              See {whose} picks and stats
+            </Button>
+          </Box>
         </Box>
       </Collapse>
     </Box>
   );
 }
 
-function GroupMindRow({ mind, sinceLabel }: { mind: NonNullable<Standings["groupMind"]>; sinceLabel: string }) {
-  const label = `Group Mind, the group's consensus picks, ${points(mind.total)} points${mind.change !== null ? `, ${signed(mind.change)} ${sinceLabel}` : ""}`;
-  const changeColor = mind.change === null ? "text.secondary" : Math.round(mind.change) > 0 ? UP : Math.round(mind.change) < 0 ? DOWN : "text.secondary";
+/** A member whose entry locked short of twenty picks: named, greyed, unranked, with no points. */
+function LockedShortRow({ player, picks }: { player: { userId: string; name: string | null; username: string | null; isViewer: boolean }; picks: number }) {
+  const name = displayName(player);
+  const note = `${player.isViewer ? "You" : name} locked in ${picks} of ${MTG_TOTAL_PICKS} picks, so ${player.isViewer ? "you're" : "they're"} not ranked`;
   return (
-    <Box component="li" sx={{ listStyle: "none", position: "relative", display: "flex", alignItems: "center", gap: { xs: 1, sm: 1.5 }, px: { xs: 1, sm: 1.5 }, py: 1, borderRadius: 2, border: "1px dashed", borderColor: "text.disabled", minHeight: 56 }}>
-      {/* Read as one sentence; the visible parts are hidden from screen readers. */}
-      <Box component="span" sx={srOnly}>{label}</Box>
-      <Box aria-hidden sx={{ width: 28, flexShrink: 0 }} />
-      <Box aria-hidden sx={{ width: 32, height: 32, borderRadius: "50%", bgcolor: "primary.light", color: "primary.dark", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-        <PsychologyAltRoundedIcon sx={{ fontSize: 18 }} />
-      </Box>
+    <Box component="li" aria-label={note} sx={{ listStyle: "none", display: "flex", alignItems: "center", gap: { xs: 1, sm: 1.5 }, px: { xs: 1, sm: 1.5 }, py: 1, borderRadius: 2, border: "1px dashed", borderColor: "divider", minHeight: 56, color: "text.disabled" }}>
+      <Box aria-hidden sx={{ width: 28, flexShrink: 0, textAlign: "center", fontWeight: 800 }}>{"\u2013"}</Box>
+      <Avatar aria-hidden sx={{ width: 32, height: 32, fontSize: "0.875rem", bgcolor: "grey.200", color: "text.disabled", flexShrink: 0 }}>
+        {(player.name || player.username || "?").charAt(0).toUpperCase()}
+      </Avatar>
       <Box aria-hidden sx={{ minWidth: 0, flex: 1 }}>
-        <Typography variant="body2" fontWeight={700} noWrap>Group Mind</Typography>
-        <Typography variant="caption" color="text.secondary" noWrap sx={{ display: "block" }}>
-          {mind.change !== null && <Box component="span" sx={{ color: changeColor, fontWeight: 700 }}>{signed(mind.change)}</Box>}
-          <Box component="span" sx={{ display: { xs: "inline", sm: "none" } }}>{mind.change !== null ? " · " : ""}consensus</Box>
-          <Box component="span" sx={{ display: { xs: "none", sm: "inline" } }}>{mind.change !== null ? ` ${sinceLabel} · ` : ""}the group&apos;s consensus</Box>
+        <Typography variant="body2" fontWeight={700} noWrap sx={{ color: "text.disabled" }}>{name}</Typography>
+        <Typography variant="caption" noWrap sx={{ display: "block", color: "text.disabled" }}>
+          Locked in {picks} of {MTG_TOTAL_PICKS} picks<Box component="span" sx={{ display: { xs: "none", sm: "inline" } }}>, so not ranked</Box>
         </Typography>
       </Box>
-      <Typography aria-hidden sx={{ fontWeight: 800, fontSize: { xs: "1rem", sm: "1.125rem" }, color: "text.secondary", flexShrink: 0, minWidth: 40, textAlign: "right" }}>{points(mind.total)}</Typography>
     </Box>
   );
 }
 
-/** A benchmark placed where its points fall among the players: what 20 cards
- *  chosen at random score on average. The rules keep a little length even on
- *  a 320 px phone. */
 function RandomPicksLine({ value }: { value: number }) {
   return (
     <Box component="li" sx={{ listStyle: "none", position: "relative" }}>
@@ -244,7 +236,7 @@ function UpdatedLine({ standings, nowMs }: { standings: Standings; nowMs: number
   );
 }
 
-type Item = { kind: "player"; row: MtgLeaderboardRow } | { kind: "mind" } | { kind: "random" };
+type Item = { kind: "player"; row: MtgLeaderboardRow } | { kind: "random" };
 
 /**
  * The group's standings (spec 10.5): rank and movement, points and change,
@@ -302,9 +294,9 @@ export default function Leaderboard({ communityId, slug, setCode, nowMs, firstSt
   useEffect(() => { finalLoaded.current = !!s?.isFinal; }, [s]);
   const items = useMemo<Item[]>(() => {
     if (!s || s.rows.length === 0) return [];
+    // One benchmark among the rows: what random picks score. (The Group Mind's
+    // row left the table in Version 27; it still lives on the Reveal.)
     const ghosts: Array<{ item: Item; total: number }> = [{ item: { kind: "random" }, total: s.randomPicks }];
-    if (s.groupMind) ghosts.push({ item: { kind: "mind" }, total: s.groupMind.total });
-    ghosts.sort((a, b) => b.total - a.total);
     const out: Item[] = [];
     for (const row of s.rows) {
       while (ghosts.length > 0 && ghosts[0].total > row.total) out.push(ghosts.shift()!.item);
@@ -384,8 +376,9 @@ export default function Leaderboard({ communityId, slug, setCode, nowMs, firstSt
   // Members without picks follow along; so do members who joined after picks
   // locked, who play from the next season (the roster is fixed at the lock).
   const byViewerFirst = <T extends { isViewer: boolean }>(list: T[]) => [...list].sort((a, b) => Number(b.isViewer) - Number(a.isViewer));
-  const noEntry = byViewerFirst(s.noEntry.filter((p) => !p.joinedAfterLock));
-  const lateJoiners = byViewerFirst(s.noEntry.filter((p) => p.joinedAfterLock));
+  const lockedShort = byViewerFirst(s.noEntry.filter((p) => typeof p.lockedPicks === "number"));
+  const noEntry = byViewerFirst(s.noEntry.filter((p) => !p.joinedAfterLock && typeof p.lockedPicks !== "number"));
+  const lateJoiners = byViewerFirst(s.noEntry.filter((p) => p.joinedAfterLock && typeof p.lockedPicks !== "number"));
 
   return (
     <AppCard>
@@ -411,12 +404,13 @@ export default function Leaderboard({ communityId, slug, setCode, nowMs, firstSt
           {items.map((item, i) =>
             item.kind === "player" ? (
               <PlayerRow key={item.row.userId} row={item.row} sinceLabel={sinceLabel} href={`/communities/${slug}/players/${item.row.userId}${past ? seasonQuery(setCode) : ""}`} open={openRow === item.row.userId} onToggle={() => setOpenRow((cur) => (cur === item.row.userId ? null : item.row.userId))} />
-            ) : item.kind === "mind" && s.groupMind ? (
-              <GroupMindRow key="mind" mind={s.groupMind} sinceLabel={sinceLabel} />
             ) : item.kind === "random" ? (
               <RandomPicksLine key={`random-${i}`} value={s.randomPicks} />
             ) : null,
           )}
+          {/* Players who locked in fewer than twenty picks are listed, greyed, with no rank and no points,
+              so a half-made entry never reads as a badly made one. */}
+          {lockedShort.map((p) => <LockedShortRow key={p.userId} player={p} picks={p.lockedPicks as number} />)}
         </Stack>
         {s.rows.length === 0 && (
           <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>Nobody in this group locked in picks.</Typography>

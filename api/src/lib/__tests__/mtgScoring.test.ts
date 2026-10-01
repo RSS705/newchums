@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   checkSnapshot, computeCardScores, isDateKey, matchFeed, mtgIngestDateAllowed, mtgIngestSlot, mtgIngestWindow, mtgStandingsDay,
-  MTG_SLOT_WEIGHTS, mtgSlotWeights, normalizeCardName, parseCardDataFeed, rankGroupDay, rankStandings, scoreEntry, type FeedRecord, type PoolCard,
+  MTG_SLOT_WEIGHTS, mtgEntryRanked, mtgSlotWeights, normalizeCardName, parseCardDataFeed, rankGroupDay, rankStandings, scoreEntry, type FeedRecord, type PoolCard,
 } from "../mtgScoring";
 
 /** A record shaped like 17Lands' card data feed (field names and types as served in September 2026). */
@@ -280,5 +280,13 @@ describe("rankGroupDay", () => {
   });
   it("skips members without an entry or without points that day", () => {
     expect(rankGroupDay(members, new Map([["e1", { total: 10, slot1_points: 1 }]])).map((r) => r.key)).toEqual(["ann"]);
+  });
+  it("leaves out an entry that locked short of twenty picks, and ranks one that locked with all of them", () => {
+    const stamped = [{ ...member("ann", "e1"), locked_pick_count: 20 }, { ...member("bo", "e2"), locked_pick_count: "14" }, { ...member("cy", "e3"), locked_pick_count: null }];
+    expect(rankGroupDay(stamped, scores).map((r) => [r.key, r.rank])).toEqual([["cy", 1], ["ann", 2]]);
+    expect(mtgEntryRanked(20)).toBe(true);
+    expect(mtgEntryRanked("20")).toBe(true);
+    expect(mtgEntryRanked(19)).toBe(false);
+    expect(mtgEntryRanked(null)).toBe(true);
   });
 });

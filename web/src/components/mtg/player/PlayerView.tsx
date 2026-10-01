@@ -392,6 +392,16 @@ export default function PlayerView() {
         <Box sx={{ mt: 1.25 }}>{back}</Box>
       </Box>
 
+      {!standing && typeof player.lockedPicks === "number" && (
+        <AppCard>
+          <Typography variant="body2" color="text.secondary">
+            {player.isViewer
+              ? `You locked in ${player.lockedPicks} of ${MTG_TOTAL_PICKS} picks, so you're not in the standings this season. Your picks and their numbers are below.`
+              : `${name} locked in ${player.lockedPicks} of ${MTG_TOTAL_PICKS} picks, so they're not in the standings this season.`}
+          </Typography>
+        </AppCard>
+      )}
+
       {standing && (
         <AppCard>
           <IconTitle

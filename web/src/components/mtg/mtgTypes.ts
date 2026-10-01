@@ -304,8 +304,9 @@ export type MtgLeaderboardPayload = {
     day: number | null;
     totalDays: number | null;
     rows: MtgLeaderboardRow[];
-    /** Members not ranked: no picks, or joined after picks locked (`joinedAfterLock`), so following along until the next season. */
-    noEntry: Array<{ userId: string; name: string | null; username: string | null; isViewer: boolean; joinedAfterLock?: boolean }>;
+    /** Members not ranked: no picks, joined after picks locked (`joinedAfterLock`), so following along until the
+     *  next season, or locked in fewer than all twenty picks (`lockedPicks`, the number they locked). */
+    noEntry: Array<{ userId: string; name: string | null; username: string | null; isViewer: boolean; joinedAfterLock?: boolean; lockedPicks?: number | null }>;
     groupMind: { total: number; change: number | null; atLock: boolean } | null;
     randomPicks: number;
   };
@@ -348,7 +349,11 @@ type MtgPageSet = { code: string; name: string; phase: MtgPhase; lockAt: string;
 export type MtgPlayerPayload = {
   set: MtgPageSet;
   community: { id: string; name: string; slug: string };
-  player: { userId: string; name: string | null; username: string | null; avatarUrl: string | null; isViewer: boolean; hasEntry: boolean; pickCount: number; joinedAfterLock?: boolean };
+  player: {
+    userId: string; name: string | null; username: string | null; avatarUrl: string | null; isViewer: boolean; hasEntry: boolean; pickCount: number; joinedAfterLock?: boolean;
+    /** Locked in fewer than all twenty picks, so never in the standings; the number locked. */
+    lockedPicks?: number | null;
+  };
   standing: null | {
     date: string;
     previousDate: string | null;

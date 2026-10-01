@@ -1,9 +1,7 @@
 "use client";
 
 import { useEffect, useId, useState } from "react";
-import Box from "@mui/material/Box";
 import Skeleton from "@mui/material/Skeleton";
-import Typography from "@mui/material/Typography";
 import ShowChartRoundedIcon from "@mui/icons-material/ShowChartRounded";
 import { AppCard } from "@/components/ui";
 import { apiFetch } from "@/lib/apiClient";
@@ -77,11 +75,6 @@ export default function GroupHistory({ communityId, setCode, past = false }: { c
         tableOpen={numbersOpen}
         tableId={numbersId}
       />
-      {data.dates.length === 1 && (
-        <Box sx={{ mt: 1 }}>
-          <Typography variant="caption" color="text.secondary">The lines start once there is a second day of standings.</Typography>
-        </Box>
-      )}
     </AppCard>
   );
 }
