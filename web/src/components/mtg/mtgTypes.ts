@@ -386,6 +386,14 @@ export type MtgCardPagePayload = {
   links: { scryfall: string; seventeenLands: string };
 };
 
+/** GET /mtg/communities/:id/history: every player's points on every published day, oldest first. */
+export type MtgHistoryPayload = {
+  set: { code: string; name: string };
+  dates: Array<{ date: string; takenAt: string; isFinal: boolean }>;
+  players: Array<{ userId: string; name: string | null; username: string | null; isViewer: boolean; rank: number | null; totals: Array<number | null> }>;
+  randomPicks: number;
+};
+
 export type MtgEveryoneRow = { rank: number; handle: string | null; total: number; isViewer: boolean };
 
 /** GET /mtg/sets/:code/everyone */

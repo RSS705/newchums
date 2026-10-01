@@ -15,6 +15,7 @@ import { apiFetch } from "@/lib/apiClient";
 import SeasonTimeline from "./SeasonTimeline";
 import { rememberChallengeGroup } from "./challengeGroup";
 import RevealSummary from "./reveal/RevealSummary";
+import GroupHistory from "./leaderboard/GroupHistory";
 import Leaderboard from "./leaderboard/Leaderboard";
 import PreSeasonStandings from "./leaderboard/PreSeasonStandings";
 import SeasonResults from "./results/SeasonResults";
@@ -310,6 +311,8 @@ export default function MtgChallengeHome({ communityId, communityName, slug, isM
         />
       ) : isMember && standingsLive && <Leaderboard communityId={communityId} slug={slug} setCode={set.code} nowMs={nowMs} firstStandingsAt={firstStandingsAt} />}
       {revealOpen && isMember && <RevealSummary communityId={communityId} slug={slug} />}
+      {/* Everyone's points on one chart, under the Reveal, from the first standings on. */}
+      {isMember && standingsLive && !!set.standings && <GroupHistory communityId={communityId} setCode={set.code} />}
 
       {isMember && pastSeasons.length > 0 && (
         <AppCard>

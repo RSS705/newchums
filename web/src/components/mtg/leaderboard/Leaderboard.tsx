@@ -151,17 +151,24 @@ function PlayerRow({ row, open, onToggle, sinceLabel, href }: { row: MtgLeaderbo
           <Typography variant="body2" fontWeight={700} sx={{ display: { sm: "none" }, mb: 0.75, overflowWrap: "anywhere" }}>
             {row.isViewer ? "You" : row.name || (row.username ? `@${row.username}` : "Member")}
           </Typography>
+          {/* The rarity subtotals, each value tight against its name. */}
           <Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(2, minmax(0, 1fr))", sm: "repeat(4, minmax(0, 1fr))" }, gap: { xs: 0.75, sm: 1 } }}>
             {MTG_RARITIES.map((r) => (
-              <Box key={r} sx={{ textAlign: "center", py: 0.75, borderRadius: 1.5, border: "1px solid", borderColor: "divider" }}>
-                <Typography sx={{ fontWeight: 800, fontSize: "0.9375rem" }}>{row.subtotals[r].toFixed(1)}</Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.6875rem" }}>{RARITY_LABEL[r]}</Typography>
+              <Box key={r} sx={{ textAlign: "center", py: 0.625, px: 0.5, borderRadius: 1.5, border: "1px solid", borderColor: "divider" }}>
+                <Typography sx={{ fontWeight: 800, fontSize: "0.9375rem", lineHeight: 1.15 }}>{row.subtotals[r].toFixed(1)}</Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ display: "block", fontSize: "0.6875rem", lineHeight: 1.2, mt: "1px" }}>{RARITY_LABEL[r]}</Typography>
               </Box>
             ))}
           </Box>
-          <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.75 }}>
-            {tenths(row.total)} points in all{row.rank > 1 ? `, ${tenths(row.behind)} behind the leader` : ""}.
-          </Typography>
+          {/* The total on the left and the way to the player's page on the right, the same quiet outlined button as the rest of the game. */}
+          <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1} useFlexGap flexWrap="wrap" sx={{ mt: 1 }}>
+            <Typography variant="caption" color="text.secondary">
+              {tenths(row.total)} points in all{row.rank > 1 ? `, ${tenths(row.behind)} behind the leader` : ""}.
+            </Typography>
+            <Button component={NextLink} href={href} variant="outlined" color="inherit" size="small" endIcon={<ChevronRightRoundedIcon />} sx={{ textTransform: "none", fontWeight: 600, borderRadius: 2, ml: "auto", whiteSpace: "nowrap" }}>
+              See {whose} picks and stats
+            </Button>
+          </Stack>
           {row.badges.length > 0 && (
             <Stack direction="row" spacing={0.5} useFlexGap flexWrap="wrap" sx={{ mt: 1 }}>
               {row.badges.map((b) => <BadgeChip key={`${b.code}-${b.name}`} badge={b} />)}
@@ -170,9 +177,6 @@ function PlayerRow({ row, open, onToggle, sinceLabel, href }: { row: MtgLeaderbo
               )}
             </Stack>
           )}
-          <Button component={NextLink} href={href} variant="text" size="small" endIcon={<ChevronRightRoundedIcon />} sx={{ textTransform: "none", fontWeight: 700, mt: 0.75, ml: -1, minHeight: 40 }}>
-            See {whose} picks and stats
-          </Button>
         </Box>
       </Collapse>
     </Box>

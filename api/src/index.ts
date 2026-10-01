@@ -69,7 +69,7 @@ import {
   hardDeleteUser,
 } from "./lib/adminHardDelete";
 import { KUDOS_TAGS, KUDOS_MAX_PER_PLAN, KUDOS_WINDOW_MS, isKudosTag, kudosTagInfo } from "./lib/kudos";
-import { MTG_USER_AGENT, MTG_SPECIALIZATION, MTG_RARITIES, MTG_SLOTS_PER_RARITY, MTG_LIST_MAX, MTG_GROUP_LOCK_BADGE_CODES, MTG_LOCK_BADGE_CODES, MTG_LOCK_BADGES_VERSION, MTG_REDEFINED_LOCK_BADGE_CODES, MTG_RETIRED_LOCK_BADGE_CODES, type GroupLockPlayer, type MtgRarity, type MtgSetRow, type ValidatedPick, MTG_BADGES, MTG_FINALIZE_GRACE_MS, badgeDescription, badgeLabel, buildIcsEvent, compareBadges, computeEntryBadges, computeGroupLockBadges, computeGroupMind, easternDateKey, easternHour, easternToUtc, formatEasternDate, formatEasternLong, formatEasternShort, mtgLatestLockAt, mtgLockWarningAt, mtgMorningAfter, mtgPhase, mtgFinalizeDue, mtgPicksOpen, mtgPicksOpenAt, mtgResultsEmailAt, mtgRevealedEmailAt, mtgTimeline, ordinal, revealFunFact, syncScryfallSet, validateEntryPicks } from "./lib/mtg";
+import { MTG_USER_AGENT, MTG_SPECIALIZATION, MTG_RARITIES, MTG_SLOTS_PER_RARITY, MTG_LIST_MAX, MTG_GROUP_LOCK_BADGE_CODES, MTG_LOCK_BADGE_CODES, MTG_LOCK_BADGES_VERSION, MTG_REDEFINED_LOCK_BADGE_CODES, MTG_RETIRED_LOCK_BADGE_CODES, type GroupLockPlayer, type MtgRarity, type MtgSetRow, type ValidatedPick, MTG_BADGES, MTG_FINALIZE_GRACE_MS, badgeDescription, badgeLabel, buildIcsEvent, compareBadges, computeEntryBadges, computeGroupLockBadges, computeGroupMind, easternDateKey, easternHour, easternToUtc, formatEasternDate, formatEasternLong, formatEasternShort, mtgFirstStandingsAt, mtgLatestLockAt, mtgLockWarningAt, mtgMorningAfter, mtgPhase, mtgFinalizeDue, mtgPicksOpen, mtgPicksOpenAt, mtgResultsEmailAt, mtgRevealedEmailAt, mtgTimeline, ordinal, revealFunFact, syncScryfallSet, validateEntryPicks } from "./lib/mtg";
 import {
   checkSnapshot, computeCardScores, isDateKey, matchFeed, mtgIngestSlot, mtgIngestDateAllowed,
   mtgIngestWindow, mtgStandingsDay, parseCardDataFeed, rankGroupDay,
@@ -1130,6 +1130,10 @@ async function mtgSetPayload(sql: ReturnType<typeof getSql>, set: MtgSetRow) {
     SELECT snapshot_date::text AS snapshot_date, taken_at FROM newchums.mtg_snapshots
     WHERE set_id = ${set.id} ORDER BY snapshot_date DESC LIMIT 1
   `) as { snapshot_date: string; taken_at: string }[];
+  // The first day's standings, once published: the timeline shows when they really came.
+  const firstStandings = latestStandings.length === 0 ? [] : ((await sql`
+    SELECT taken_at FROM newchums.mtg_snapshots WHERE set_id = ${set.id} ORDER BY snapshot_date ASC LIMIT 1
+  `) as { taken_at: string | Date }[]);
   const now = new Date();
   return {
     code: set.code,
@@ -1141,7 +1145,7 @@ async function mtgSetPayload(sql: ReturnType<typeof getSql>, set: MtgSetRow) {
       picksOpenAt: set.picks_open_at, lockAt: set.lock_at, arenaReleaseAt: set.arena_release_at,
       tabletopReleaseAt: set.tabletop_release_at, finalAt: set.final_at,
     },
-    timeline: mtgTimeline(set, now),
+    timeline: mtgTimeline(set, now, { firstStandingsAt: firstStandings[0]?.taken_at ?? null }),
     pool,
     poolTotal: Object.values(pool).reduce((a, b) => a + b, 0),
     galleryComplete: !!set.gallery_complete_at && now.getTime() >= new Date(set.gallery_complete_at).getTime(),
@@ -2455,7 +2459,7 @@ async function processMtgRevealedEmails(sql: ReturnType<typeof getSql>, env: Bin
   const sendBy = sendAt + 36 * 3600000;
   if (now < sendAt || now >= sendBy) return;
 
-  const firstStandings = set.arena_release_at ? mtgMorningAfter(set.arena_release_at) : null;
+  const firstStandings = set.arena_release_at ? mtgFirstStandingsAt(set.arena_release_at) : null;
   const payload = JSON.stringify({
     setName: set.name,
     lockAtLabel: formatEasternLong(set.lock_at),
@@ -3967,6 +3971,73 @@ const MTG_EVERYONE_ROWS = 100;
  * and the viewer's own picks to compare. Members and super admins; another
  * player's page opens at the lock (spec 12.6), your own before it.
  */
+/**
+ * GET /mtg/communities/:id/history?set= (Version 26): every player's points on
+ * every published day, for the group's chart. Members and super admins, after
+ * the lock. Players are the group's roster for the season, ranked as the
+ * leaderboard ranks them on the latest day; a day a player has no score for
+ * (joined the standings late, say) is null.
+ */
+app.get("/mtg/communities/:id/history", async (c) => {
+  const payload = await requireAuth(c);
+  if (!payload?.email) return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  const communityId = c.req.param("id");
+  if (!MTG_UUID_RE.test(communityId)) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
+  const sql = getSql(c.env);
+  try {
+    const access = await mtgGroupAccess(sql, payload.email, communityId);
+    if (!access.ok) return c.json({ ok: false, error: access.error }, access.status);
+    const { viewer } = access;
+    const set = await loadMtgSet(sql, mtgSeasonParam(c));
+    if (!set) return c.json({ ok: false, error: "NO_SEASON" }, 404);
+    if (Date.now() < new Date(set.lock_at).getTime())
+      return c.json({ ok: false, error: "SEALED", message: "Standings start after the lock" }, 403);
+    const [snaps, members] = await Promise.all([
+      mtgRows<{ id: string; snapshot_date: string; taken_at: string; is_final: boolean }>(sql`
+        SELECT id, snapshot_date::text AS snapshot_date, taken_at, is_final FROM newchums.mtg_snapshots
+        WHERE set_id = ${set.id} ORDER BY snapshot_date ASC
+      `),
+      loadMtgGroupMembers(sql, set.id, communityId),
+    ]);
+    const entryIds = members.map((m) => m.entry_id).filter((x): x is string => !!x);
+    const scoreRows = snaps.length === 0 || entryIds.length === 0 ? [] : ((await sql`
+      SELECT snapshot_id, entry_id, total, slot1_points
+      FROM newchums.mtg_entry_scores WHERE entry_id = ANY(${entryIds}::uuid[]) AND snapshot_id = ANY(${snaps.map((x) => x.id)}::uuid[])
+    `) as { snapshot_id: string; entry_id: string; total: string; slot1_points: string }[]);
+    const byDay = new Map<string, Map<string, { total: string; slot1_points: string }>>();
+    for (const r of scoreRows) {
+      const day = byDay.get(r.snapshot_id) ?? new Map<string, { total: string; slot1_points: string }>();
+      day.set(r.entry_id, r);
+      byDay.set(r.snapshot_id, day);
+    }
+    const latest = snaps[snaps.length - 1];
+    const ranked = latest ? rankGroupDay(members, byDay.get(latest.id) ?? new Map()) : [];
+    const rankOf = new Map(ranked.map((r) => [r.key, r.rank]));
+    const round = (n: number) => Math.round(n * 10000) / 10000;
+    const players = members
+      .filter((m) => m.entry_id && snaps.some((snap) => byDay.get(snap.id)?.has(m.entry_id as string)))
+      .map((m) => ({
+        userId: m.id,
+        name: m.name,
+        username: m.username,
+        isViewer: m.id === viewer.id,
+        rank: rankOf.get(m.id) ?? null,
+        totals: snaps.map((snap) => { const row = byDay.get(snap.id)?.get(m.entry_id as string); return row ? round(Number(row.total)) : null; }),
+      }))
+      .sort((a, b) => (a.rank ?? Number.MAX_SAFE_INTEGER) - (b.rank ?? Number.MAX_SAFE_INTEGER) || (a.name ?? a.username ?? "").localeCompare(b.name ?? b.username ?? ""));
+    return c.json({
+      ok: true,
+      set: { code: set.code, name: set.name },
+      dates: snaps.map((snap) => ({ date: snap.snapshot_date, takenAt: snap.taken_at, isFinal: snap.is_final })),
+      players,
+      randomPicks: 1000,
+    });
+  } catch (err) {
+    console.error("[GET /mtg/communities/:id/history]", err);
+    return c.json({ ok: false, error: "SERVER_ERROR" }, 500);
+  }
+});
+
 app.get("/mtg/communities/:id/players/:userId", async (c) => {
   const payload = await requireAuth(c);
   if (!payload?.email) return c.json({ ok: false, error: "UNAUTHORIZED" }, 401);
@@ -17614,6 +17685,14 @@ app.get("/events/:id", async (c) => {
       if (!userId) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
       if (!viewerIsSuperAdmin) return c.json({ ok: false, error: "NOT_FOUND" }, 404);
     }
+    // An invite-only plan's address is its invitation (October 2026). It is
+    // listed nowhere, so the only way to have the address is to have been
+    // sent it, by the host or by a guest passing it on; twice a guest's friend
+    // arrived with the bare address and was turned away. The address now
+    // grants what the share link grants: a signed-out visitor gets the invite
+    // view and the light sign-up, and anyone signed in can RSVP (the gate in
+    // POST /events/:id/rsvp is gone). QA plans keep their token gate above.
+    if (event.visibility === "invite_only" && !event.is_qa) tokenGrantsAccess = true;
 
     // Blocked pairs: a plan hosted by someone in a blocked pair with the
     // authenticated viewer answers with the same existence-hiding 404 the QA
@@ -18205,29 +18284,9 @@ app.post("/events/:id/rsvp", async (c) => {
         return c.json({ ok: false, error: "EVENT_LOCKED", message: "This plan is locked and not accepting new participants" }, 403);
     }
 
-    // Invite-only gate: non-invited users cannot RSVP to invite-only plans.
-    // Bypassed by a valid share_token (came in via Copy Link) or a valid
-    // invite_token (came in via the email-invite link). The invite_token
-    // bypass mirrors the QA-plan check above and is the safety net for the
-    // email-mismatch case where GET adoption couldn't link the row but the
-    // viewer still holds a valid signed invite.
-    if (event.visibility === "invite_only" && existingRsvp.length === 0) {
-      const invited = (await sql`SELECT 1 FROM newchums.event_invites WHERE event_id = ${eventId} AND user_id = ${userId} LIMIT 1`) as unknown[];
-      if (invited.length === 0) {
-        const shareToken = typeof body.share_token === "string" ? body.share_token : null;
-        const hasValidShareToken = shareToken ? await verifyShareToken(shareToken, eventId, c.env.NEXTAUTH_SECRET) : false;
-        let hasValidInviteToken = false;
-        if (!hasValidShareToken) {
-          const inviteToken = typeof body.invite_token === "string" ? body.invite_token : null;
-          if (inviteToken) {
-            const decoded = await verifyInviteToken(inviteToken, c.env.NEXTAUTH_SECRET);
-            hasValidInviteToken = decoded?.eventId === eventId;
-          }
-        }
-        if (!hasValidShareToken && !hasValidInviteToken)
-          return c.json({ ok: false, error: "INVITE_ONLY", message: "This plan is invite only. Ask the host for a share link or invite." }, 403);
-      }
-    }
+    // No invite-only gate here since October 2026: an invite-only plan's
+    // address is its invitation (see GET /events/:id), so anyone signed in
+    // who has it may RSVP. The QA gate above and the approval gate below stand.
 
     // Require-approval gate: non-invited users without an existing RSVP must
     // go through the request flow.

@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useId, useMemo, useState } from "react";
 import NextLink from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import Avatar from "@mui/material/Avatar";
@@ -22,6 +22,7 @@ import ShowChartRoundedIcon from "@mui/icons-material/ShowChartRounded";
 import { AppCard } from "@/components/ui";
 import { apiFetch, getAvatarBaseUrl } from "@/lib/apiClient";
 import HistoryLineChart from "../charts/HistoryLineChart";
+import NumbersToggle from "../charts/NumbersToggle";
 import { loadChallengeGroup, type ChallengeGroupRef } from "../challengeGroup";
 import { BackButton, IconTitle, StatTile, srOnly } from "../pageBits";
 import BadgeChip from "../reveal/BadgeChip";
@@ -333,6 +334,8 @@ export default function PlayerView() {
 
   const cardHref = useCallback((id: string) => `/communities/${slug}/cards/${id}${seasonQuery(season)}`, [slug, season]);
   const data = load.kind === "ready" ? load.data : null;
+  const [numbersOpen, setNumbersOpen] = useState(false);
+  const numbersId = useId();
   const chartPoints = useMemo(
     () => (data ? data.history.map((h) => ({ key: h.date, label: formatDayKey(h.date), value: h.total, detail: h.rank !== null ? ordinal(h.rank) : undefined })) : []),
     [data],
@@ -426,7 +429,12 @@ export default function PlayerView() {
 
       {data.history.length > 0 && lastPoint && (
         <AppCard>
-          <IconTitle icon={<ShowChartRoundedIcon sx={{ fontSize: 18 }} />} title="Points over time" caption="Each morning's standing, recalculated from the season so far." />
+          <IconTitle
+            icon={<ShowChartRoundedIcon sx={{ fontSize: 18 }} />}
+            title="Points over time"
+            caption="Each day's standing, recalculated from the season so far."
+            action={<NumbersToggle open={numbersOpen} onToggle={() => setNumbersOpen((v) => !v)} tableId={numbersId} />}
+          />
           <HistoryLineChart
             valueName="Points"
             detailName="Group rank"
@@ -434,6 +442,8 @@ export default function PlayerView() {
             format={whole}
             reference={{ value: 1000, label: "Random picks score about 1,000" }}
             summary={`${name}'s points on ${days(data.history.length)}, ${whole(lastPoint.total)} on the latest.`}
+            tableOpen={numbersOpen}
+            tableId={numbersId}
           />
         </AppCard>
       )}

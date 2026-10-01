@@ -2629,21 +2629,13 @@ export default function EventDetailClient({
   // Effective confirmation status: local override (immediate) takes priority over server state
   const effectiveConfirmStatus = localConfirmStatus ?? event.myConfirmationStatus;
 
-  // Invite-only gate: logged-in users who are not invited and don't have a share/invite token
-  // cannot RSVP. They see an informational message instead of RSVP buttons.
-  const showInviteOnlyGate =
-    event.visibility === "invite_only" &&
-    !event.isHost &&
-    !event.isInvited &&
-    !event.hasRsvp &&
-    !shareTokenRef.current &&
-    isAuthenticated !== false;
+  // An invite-only plan's address is its invitation (October 2026): anyone
+  // who has it can RSVP, so there is no longer a gate for the uninvited.
 
   // Show request-to-join CTA instead of RSVP buttons when approval is required,
   // user is not the host, not invited, and has no existing RSVP.
   // Unauthenticated share-link visitors see the lightweight signup card instead.
   const showRequestToJoin =
-    !showInviteOnlyGate &&
     event.requireApproval &&
     !event.isHost &&
     !event.isInvited &&
@@ -3637,20 +3629,6 @@ export default function EventDetailClient({
                 )
               ) : null}
             </>
-          ) : showInviteOnlyGate ? (
-            <Stack spacing={1.5} sx={{ py: 1 }}>
-              <Stack
-                direction="row"
-                alignItems="center"
-                spacing={1}
-                sx={{ p: 1.5, bgcolor: "grey.50", borderRadius: 2 }}
-              >
-                <LockRoundedIcon sx={{ fontSize: 18, color: "text.secondary" }} />
-                <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.8125rem", lineHeight: 1.6 }}>
-                  This plan is invite only. Ask the host to send you a share link or invite to join.
-                </Typography>
-              </Stack>
-            </Stack>
           ) : isAuthenticated === false ? (
             <PlanSignupCard
               planUrlWithTokens={(() => {

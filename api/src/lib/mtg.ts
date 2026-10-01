@@ -75,8 +75,10 @@ export type TimelineEntry = {
   status: "done" | "now" | "upcoming";
 };
 
-/** The dates that matter to players, in order, with a status each. */
-export function mtgTimeline(set: MtgSetRow, now: Date = new Date()): TimelineEntry[] {
+/** The dates that matter to players, in order, with a status each. Once the
+ *  first standings exist, `firstStandingsAt` is when they were published, and
+ *  the timeline shows that instead of the expected time. */
+export function mtgTimeline(set: MtgSetRow, now: Date = new Date(), opts: { firstStandingsAt?: string | Date | null } = {}): TimelineEntry[] {
   const t = now.getTime();
   const entries: Array<Omit<TimelineEntry, "status">> = [];
   if (set.previews_start_at) {
@@ -100,9 +102,13 @@ export function mtgTimeline(set: MtgSetRow, now: Date = new Date()): TimelineEnt
     });
   }
   if (set.arena_release_at) {
-    entries.push({ key: "arena", label: "Arena launch", at: set.arena_release_at, detail: "Premier Draft opens and 17Lands starts collecting games." });
-    const firstStandings = mtgMorningAfter(set.arena_release_at); // 9 AM ET the morning after
-    entries.push({ key: "first_standings", label: "First standings", at: firstStandings.toISOString(), detail: "Day 1 of scoring. The first few days swing a lot." });
+    entries.push({ key: "arena", label: "Arena launch", at: set.arena_release_at, detail: "Premier Draft opens. 17Lands' first numbers usually arrive about a day later." });
+    const published = opts.firstStandingsAt ? new Date(opts.firstStandingsAt) : null;
+    entries.push({
+      key: "first_standings", label: "First standings",
+      at: (published ?? mtgFirstStandingsAt(set.arena_release_at)).toISOString(),
+      detail: published ? "Day 1 of scoring. The first few days swing a lot." : "Day 1 of scoring, once 17Lands has a day of games. The first few days swing a lot.",
+    });
   }
   if (set.tabletop_release_at) {
     entries.push({ key: "paper", label: "Paper release", at: set.tabletop_release_at, detail: "The set arrives in stores." });
@@ -1250,6 +1256,19 @@ export function computeGroupMind(picks: MindPickInput[], order: Map<string, numb
     ranked.slice(0, MTG_SLOTS_PER_RARITY).forEach((t, i) => rows.push({ rarity, slot: i + 1, cardId: t.cardId, votes: t.votes, pickers: t.users.size }));
   }
   return rows;
+}
+
+/**
+ * When the first standings are expected: 9:00 AM Eastern two days after the
+ * Arena launch. 17Lands publishes a set's numbers once it has a day of games,
+ * so for Reality Fracture (launched Tuesday, September 29, 2026 at 2 PM ET)
+ * every attempt on the Wednesday morning and afternoon found an empty feed
+ * and the first standings came at 8 PM, the day's last attempt. The job still
+ * tries from the morning after the launch (Day 1 is still that day), so an
+ * early feed is picked up early; the promise to players is the later time.
+ */
+export function mtgFirstStandingsAt(arenaReleaseAt: string | Date): Date {
+  return mtgMorningAfter(mtgMorningAfter(arenaReleaseAt));
 }
 
 /** 9:00 AM Eastern on the Eastern calendar day after an instant. */

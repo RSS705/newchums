@@ -1,8 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
 import Box from "@mui/material/Box";
-import Button from "@mui/material/Button";
 import Typography from "@mui/material/Typography";
 import { useTheme } from "@mui/material/styles";
 import { CartesianGrid, LabelList, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -25,6 +23,10 @@ type Props = {
   reference?: { value: number; label: string };
   /** What the chart shows, for screen readers. */
   summary: string;
+  /** Whether the table of every value is open. Controlled by the card's title row (`NumbersToggle`). */
+  tableOpen: boolean;
+  /** The table's id, which the toggle names in `aria-controls`. */
+  tableId: string;
 };
 
 /** One step off the white card surface; solid hairlines, never dashed. */
@@ -46,14 +48,12 @@ function rankTicks([first, last]: [number, number]): number[] {
  * 2 px line in the brand accent, a ringed end dot labelled with the latest
  * value, a solid hairline grid, and a crosshair tooltip that snaps to the
  * nearest day. One series needs no legend; the card's title names it. Every
- * value is also in the table behind "Show the numbers", so the tooltip never
- * gates one.
+ * value is also in the table behind the card's "Show the numbers" button, so
+ * the tooltip never gates one.
  */
-export default function HistoryLineChart({ valueName, detailName, points, format, invert = false, domain, reference, summary }: Props) {
+export default function HistoryLineChart({ valueName, detailName, points, format, invert = false, domain, reference, summary, tableOpen, tableId }: Props) {
   const theme = useTheme();
   const accent = theme.palette.primary.main;
-  const [showTable, setShowTable] = useState(false);
-  const tableId = useId();
   const last = points.length - 1;
 
   const values = points.map((p) => p.value).concat(reference ? [reference.value] : []);
@@ -136,18 +136,8 @@ export default function HistoryLineChart({ valueName, detailName, points, format
           <Typography variant="caption" sx={{ color: AXIS_TEXT, lineHeight: 1.3 }}>{reference.label}</Typography>
         </Box>
       )}
-      <Button
-        size="small"
-        variant="text"
-        onClick={() => setShowTable((v) => !v)}
-        aria-expanded={showTable}
-        aria-controls={showTable ? tableId : undefined}
-        sx={{ textTransform: "none", fontWeight: 700, minHeight: 44, px: 1, ml: -1 }}
-      >
-        {showTable ? "Hide the numbers" : "Show the numbers"}
-      </Button>
-      {showTable && (
-        <Box id={tableId} sx={{ overflowX: "auto" }}>
+      {tableOpen && (
+        <Box id={tableId} sx={{ overflowX: "auto", mt: 1 }}>
           <Box
             component="table"
             sx={{

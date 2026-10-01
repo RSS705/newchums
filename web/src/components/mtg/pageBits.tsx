@@ -11,16 +11,19 @@ import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 export const srOnly = { position: "absolute", width: "1px", height: "1px", padding: 0, margin: "-1px", overflow: "hidden", clip: "rect(0 0 0 0)", whiteSpace: "nowrap", border: 0 } as const;
 
 /** A card section's heading: a tinted icon disc, the title, and an optional caption. */
-export function IconTitle({ icon, title, caption }: { icon: React.ReactNode; title: string; caption?: React.ReactNode }) {
+export function IconTitle({ icon, title, caption, action }: { icon: React.ReactNode; title: string; caption?: React.ReactNode; action?: React.ReactNode }) {
   return (
-    <Stack direction="row" spacing={1.25} alignItems="center" sx={{ mb: 1.5 }}>
+    <Stack direction="row" alignItems="center" flexWrap="wrap" useFlexGap sx={{ columnGap: 1.25, rowGap: 1, mb: 1.5 }}>
       <Box aria-hidden sx={{ width: 32, height: 32, borderRadius: "50%", bgcolor: "primary.light", color: "primary.dark", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
         {icon}
       </Box>
-      <Box sx={{ minWidth: 0 }}>
+      <Box sx={{ minWidth: 0, flex: "1 1 200px" }}>
         <Typography variant="h6" component="h2" fontWeight={800} sx={{ fontSize: "1.0625rem", lineHeight: 1.2 }}>{title}</Typography>
         {caption && <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>{caption}</Typography>}
       </Box>
+      {/* A small action at the row's right, such as a chart's "Show the numbers"; on a
+          narrow phone it drops under the title, still at the right. */}
+      {action && <Box sx={{ ml: "auto", flexShrink: 0 }}>{action}</Box>}
     </Stack>
   );
 }

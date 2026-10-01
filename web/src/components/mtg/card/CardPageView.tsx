@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import NextLink from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import Avatar from "@mui/material/Avatar";
@@ -19,6 +19,7 @@ import ShowChartRoundedIcon from "@mui/icons-material/ShowChartRounded";
 import { AppCard } from "@/components/ui";
 import { apiFetch, getAvatarBaseUrl } from "@/lib/apiClient";
 import HistoryLineChart from "../charts/HistoryLineChart";
+import NumbersToggle from "../charts/NumbersToggle";
 import { loadChallengeGroup, type ChallengeGroupRef } from "../challengeGroup";
 import { BackButton, IconTitle, StatTile, srOnly } from "../pageBits";
 import {
@@ -82,6 +83,8 @@ export default function CardPageView() {
   const [showBack, setShowBack] = useState(false);
   // Bumped by Try again, which reruns the load below.
   const [attempt, setAttempt] = useState(0);
+  const [numbersOpen, setNumbersOpen] = useState(false);
+  const numbersId = useId();
 
   useEffect(() => {
     if (!slug || !cardId) return;
@@ -215,7 +218,12 @@ export default function CardPageView() {
 
       {data.history.length > 0 && (
         <AppCard>
-          <IconTitle icon={<ShowChartRoundedIcon sx={{ fontSize: 18 }} />} title="Rank over time" caption={`Its rank among ${RARITY_PLURAL[rarity]} each morning. First is at the top.`} />
+          <IconTitle
+            icon={<ShowChartRoundedIcon sx={{ fontSize: 18 }} />}
+            title="Rank over time"
+            caption={`Its rank among ${RARITY_PLURAL[rarity]} each day. First is at the top.`}
+            action={rankedDays.length > 0 ? <NumbersToggle open={numbersOpen} onToggle={() => setNumbersOpen((v) => !v)} tableId={numbersId} /> : undefined}
+          />
           {rankedDays.length > 0 && lastRanked ? (
             <HistoryLineChart
               valueName="Rank"
@@ -225,6 +233,8 @@ export default function CardPageView() {
               invert
               domain={[1, mostRanked]}
               summary={`${card.name}'s rank among ${RARITY_PLURAL[rarity]} on ${rankedDays.length === 1 ? "1 day" : `each of ${rankedDays.length} days`}, ${ordinal(lastRanked.rank as number)} on the latest.`}
+              tableOpen={numbersOpen}
+              tableId={numbersId}
             />
           ) : (
             <Typography variant="body2" color="text.secondary">Not ranked on any day yet: 17Lands doesn&apos;t publish a win rate until a card has enough games in hand.</Typography>

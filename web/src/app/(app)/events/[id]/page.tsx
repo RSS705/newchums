@@ -355,7 +355,9 @@ export async function generateMetadata({
     if (ev.isQa && !tokenAccess) {
       return PRIVATE_FALLBACK_METADATA;
     }
-    // invite_only: same token-gated pattern.
+    // invite_only: the API treats the bare address as the invitation and
+    // answers with the invite access state, so the unfurl shows the plan the
+    // way a share link's does. Kept as a guard for an older API answer.
     if (ev.visibility === "invite_only" && !tokenAccess) {
       return PRIVATE_FALLBACK_METADATA;
     }
@@ -408,8 +410,10 @@ export async function generateMetadata({
     const canonicalPath = `/events/${encodeURIComponent(id)}`;
 
     // QA plans are never indexable, even with a valid token. Tokenized
-    // URLs in general are personal share links and shouldn't be indexed.
-    const noindex = hasToken || !!ev.isQa;
+    // URLs in general are personal share links and shouldn't be indexed, and
+    // an invite-only plan's address is its invitation (it unfurls for the
+    // person it was sent to, but is listed nowhere).
+    const noindex = hasToken || !!ev.isQa || ev.visibility === "invite_only";
 
     return {
       title,

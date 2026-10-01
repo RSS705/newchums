@@ -177,7 +177,7 @@ Visibility × community-linkage matrix (applies to all three feeds):
 |---|---|---|---|
 | `public` | Yes | Shown | Shown; `hide_from_explore` governs non-member visibility |
 | `chums_only` | Yes | Shown only to host, host's on-NewChums chums, and RSVP'd viewers | Same chums_only rule; `hide_from_explore` layers on top |
-| `invite_only` | No (server forces `community_ids = []` on POST and PATCH) | Never shown | Hidden except to viewers already RSVP'd |
+| `invite_only` | No (server forces `community_ids = []` on POST and PATCH) | Never shown | Hidden except to viewers already RSVP'd. The plan's address is its invitation: anyone who has it can view and join (October 2026) |
 
 Toggle states (per plan, shown only when a community is selected and `visibility != 'invite_only'`):
 

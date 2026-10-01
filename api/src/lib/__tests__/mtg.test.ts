@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { MTG_BADGES, MTG_FINALIZE_GRACE_MS, collectorSort, easternHour, mtgFinalizeDue, mtgPhase, mtgPicksOpenAt, mtgResultsEmailAt, mtgTimeline, syncScryfallSet, type MtgSetRow } from "../mtg";
+import { MTG_BADGES, MTG_FINALIZE_GRACE_MS, collectorSort, easternHour, mtgFinalizeDue, mtgFirstStandingsAt, mtgPhase, mtgPicksOpenAt, mtgResultsEmailAt, mtgTimeline, syncScryfallSet, type MtgSetRow } from "../mtg";
 
 // Reality Fracture as seeded by migration 123.
 const fra: MtgSetRow = {
@@ -51,6 +51,20 @@ describe("mtgTimeline", () => {
     expect(entries.filter((e) => e.status === "now")).toHaveLength(1);
     expect(entries.some((e) => e.key === "picks_open")).toBe(false);
     expect(entries[entries.length - 1].key).toBe("final");
+  });
+
+  it("expects the first standings two mornings after the Arena launch, and shows when they really came", () => {
+    // Reality Fracture launched Tuesday, September 29, 2026 at 2 PM ET; 17Lands had no numbers until Wednesday evening.
+    const launch = { ...fra, arena_release_at: "2026-09-29T18:00:00Z" };
+    expect(mtgFirstStandingsAt(launch.arena_release_at).toISOString()).toBe("2026-10-01T13:00:00.000Z");
+    const expected = mtgTimeline(launch, new Date("2026-09-30T12:00:00Z")).find((e) => e.key === "first_standings");
+    expect(expected?.at).toBe("2026-10-01T13:00:00.000Z");
+    expect(expected?.detail).toMatch(/once 17Lands has a day of games/);
+    expect(mtgTimeline(launch).find((e) => e.key === "arena")?.detail).toBe("Premier Draft opens. 17Lands' first numbers usually arrive about a day later.");
+    const published = mtgTimeline(launch, new Date("2026-10-01T12:00:00Z"), { firstStandingsAt: "2026-10-01T00:00:29Z" }).find((e) => e.key === "first_standings");
+    expect(published?.at).toBe("2026-10-01T00:00:29.000Z");
+    expect(published?.status).toBe("done");
+    expect(published?.detail).toBe("Day 1 of scoring. The first few days swing a lot.");
   });
 
   it("puts the lock ahead of prereleases that start at the same moment", () => {
