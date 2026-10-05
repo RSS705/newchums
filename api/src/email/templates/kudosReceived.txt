@@ -2,16 +2,16 @@
 
 {{greeting}}
 
-{{bodyText}}
+{{leadText}}
 
----
+{{#tags}}
+  {{emoji}} {{label}}{{#times}} {{.}}{{/times}}
+{{/tags}}
 
-{{planTitle}}
-{{#planDate}}{{.}}{{#planLocation}} · {{.}}{{/planLocation}}
-{{/planDate}}{{^planDate}}{{#planLocation}}{{.}}
-{{/planLocation}}{{/planDate}}
----
+{{#givenAt}}
+{{.}}
 
+{{/givenAt}}
 {{ctaText}}: {{ctaUrl}}
 
 {{ctaHelperText}}

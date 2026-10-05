@@ -33,6 +33,7 @@
  {"name":"communities-host","url":"/communities","role":"host"},
  {"name":"communities-out","url":"/communities"},
  {"name":"u-maximilian","url":"/u/maximilian-featherstonehaugh"},
+ {"name":"u-maximilian-owner","url":"/u/maximilian-featherstonehaugh","role":"host"},
  {"name":"u-al","url":"/u/al"},
  {"name":"roadmap-host","url":"/roadmap","role":"host"},
  {"name":"yourplan-admin","url":"/your-plan","role":"admin"},

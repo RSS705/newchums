@@ -107,6 +107,40 @@ INSERT INTO newchums.event_invites (event_id, user_id, email, invited_by) VALUES
  ('00000000-0000-4000-a100-000000000001','00000000-0000-4000-9100-00000000000b',NULL,'00000000-0000-4000-9100-000000000001')
 ON CONFLICT DO NOTHING;
 
+-- Tags (kudos) on public profiles. Maximilian gets 25 different tags, more
+-- than three rows hold at any width, so the grid's "Show more" button is on
+-- the page, and they include the catalogue's longest labels and longest
+-- single words ("Actually Made a Reservation", "Professional Yapper"),
+-- which is what a narrow tile has to survive. One is hidden, so the owner
+-- route shows the dimmed state. Al gets four, the count that used to spill
+-- its fourth tag into a chip. A slot is one (plan, giver, recipient), so the
+-- rows spread over the nine plans and several givers; newer rows sort first
+-- among equal counts.
+INSERT INTO newchums.kudos (plan_id, giver_user_id, recipient_user_id, tag, created_at)
+SELECT ('00000000-0000-4000-a100-00000000000' || (1 + (n % 9)))::uuid,
+       ('00000000-0000-4000-9100-00000000000' || (2 + (n / 9)))::uuid,
+       '00000000-0000-4000-9100-000000000001'::uuid, tag, NOW() - (n || ' minutes')::interval
+FROM (VALUES
+ (0,'actually_made_a_reservation'), (1,'punches_above_their_weight'), (2,'laughs_at_their_own_jokes'), (3,'reads_the_card_eventually'),
+ (4,'cannot_be_taken_anywhere'), (5,'misplays_with_confidence'), (6,'carries_the_conversation'), (7,'only_here_for_the_snacks'),
+ (8,'needs_adult_supervision'), (9,'remembers_what_you_said'), (10,'refreshingly_normal'), (11,'delightfully_unhinged'),
+ (12,'reads_the_instructions'), (13,'chronically_online'), (14,'professional_yapper'), (15,'good_energy'),
+ (16,'quick_wit'), (17,'banter_merchant'), (18,'social_glue'), (19,'warm'),
+ (20,'kind'), (21,'perfect_curve'), (22,'would_recommend'), (23,'absolute_unit'),
+ (24,'always_prepared'), (25,'good_energy'), (26,'good_energy'), (27,'quick_wit'),
+ (28,'actually_made_a_reservation')
+) AS t(n, tag)
+ON CONFLICT DO NOTHING;
+INSERT INTO newchums.kudos_hidden_tags (user_id, tag) VALUES
+ ('00000000-0000-4000-9100-000000000001','kind')
+ON CONFLICT DO NOTHING;
+INSERT INTO newchums.kudos (plan_id, giver_user_id, recipient_user_id, tag) VALUES
+ ('00000000-0000-4000-a100-000000000001','00000000-0000-4000-9100-000000000002','00000000-0000-4000-9100-000000000003','perfect_curve'),
+ ('00000000-0000-4000-a100-000000000002','00000000-0000-4000-9100-000000000002','00000000-0000-4000-9100-000000000003','would_recommend'),
+ ('00000000-0000-4000-a100-000000000001','00000000-0000-4000-9100-000000000004','00000000-0000-4000-9100-000000000003','absolute_unit'),
+ ('00000000-0000-4000-a100-000000000001','00000000-0000-4000-9100-000000000005','00000000-0000-4000-9100-000000000003','always_prepared')
+ON CONFLICT DO NOTHING;
+
 INSERT INTO newchums.user_contacts (user_id, type, linked_user_id, contact_name) VALUES
  ('00000000-0000-4000-9100-000000000001','on_newchums','00000000-0000-4000-9100-000000000002','Konstantinos Papadopoulos'),
  ('00000000-0000-4000-9100-000000000001','on_newchums','00000000-0000-4000-9100-000000000003','Al B')

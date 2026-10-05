@@ -41,6 +41,10 @@ function bySource(badges: Badge[]) {
  * The trophy case (spec 10.8): every MTG Card Evaluation Challenge badge the
  * player has earned, grouped by set, newest season first. Visible to anyone
  * who can see the profile; renders nothing for someone who hasn't played.
+ *
+ * Not mounted anywhere since 2026-10-05: Rob took the section off the public
+ * profile for now. Kept, with `GET /public/users/:handle/mtg-badges`, so
+ * putting it back is one line in PublicProfileView.
  */
 export default function ProfileMtgBadgesSection({ handle, viewerLoggedIn }: Props) {
   const [seasons, setSeasons] = useState<Season[] | null>(null);

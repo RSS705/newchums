@@ -26,7 +26,6 @@ import ProfileChumsSection from "./ProfileChumsSection";
 import ProfileCommunitiesSection from "./ProfileCommunitiesSection";
 import ProfileHobbiesSection from "./ProfileHobbiesSection";
 import ProfileSectionHeader from "./ProfileSectionHeader";
-import ProfileMtgBadgesSection from "./ProfileMtgBadgesSection";
 import PublicProfileKudosSection from "./PublicProfileKudosSection";
 
 export type PublicProfileUser = {
@@ -356,9 +355,10 @@ export default function PublicProfileView({ user, avatarBaseUrl, isOwner, chumAc
         />
       )}
 
-      {/* The MTG Card Evaluation Challenge trophy case: badges by season, with
-          private groups unnamed to non-members. Empty renders nothing. */}
-      {ownerHandleSlug && <ProfileMtgBadgesSection handle={ownerHandleSlug} viewerLoggedIn={!!viewerLoggedIn} />}
+      {/* The MTG Card Evaluation Challenge trophy case (ProfileMtgBadgesSection)
+          is off the profile for now, at Rob's request on 2026-10-05. The
+          component and its endpoint are kept; to bring it back, import it
+          here and mount it with `handle` and `viewerLoggedIn`. */}
 
       {/* Public connections section, self-contained card, hidden if owner toggled it off or list is empty */}
       {ownerHandleSlug && !user.is_hidden_chum_list && (

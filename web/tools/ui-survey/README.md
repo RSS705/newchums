@@ -13,8 +13,9 @@ maximal display names ("Maximilian Featherstonehaugh-Wellesley",
 "@konstantinospapadop"), a long title, a long location, a long DM, every
 plan lifecycle state (published, draft, past, cancelled mid-confirmation),
 a hobby-less plan, an open confirmation window with mixed
-confirmed/pending/declined chips, zero/one/twelve attendees, and an
-invited-but-unresponded viewer.
+confirmed/pending/declined chips, zero/one/twelve attendees, an
+invited-but-unresponded viewer, and a profile with 25 tags that include
+the catalogue's longest labels (one of them hidden by its owner).
 
 ## Run it
 

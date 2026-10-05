@@ -1,6 +1,6 @@
 # UI Patterns
 
-Last Updated: 2026-07-14
+Last Updated: 2026-10-05
 
 A living catalog of reusable UI patterns extracted from real surfaces in the
 NewChums codebase. Use this as a reference when building new screens; pick a
@@ -34,6 +34,7 @@ points you at it.
 - [Single-line meta row](#single-line-meta-row)
 - [Three-zone discovery card](#three-zone-discovery-card)
 - [Entity picker dialog](#entity-picker-dialog)
+- [Even tile grid with row paging](#even-tile-grid-with-row-paging)
 - [How to add a new pattern](#how-to-add-a-new-pattern)
 
 ---
@@ -625,6 +626,53 @@ Also consumed by the Inbox's "New message" picker,
 - Mobile: `PaperProps` margins `m: { xs: 2, sm: 3 }` and `maxHeight:
   calc(100dvh - 32px)` per the app's dialog convention; rows are 60px+ touch
   targets.
+
+---
+
+## Even tile grid with row paging
+
+**What it is.** A set of small items (profile tags) shown as tiles that are
+all the same size, however many there are. The grid reads its own width and
+decides the columns from that: a few items fill the row, more shrink the
+tiles toward squares, and after three rows a "Show N more" button adds three
+rows per press and then turns into "Show fewer". Nothing overflows into a
+second shape (no "the first three are tiles, the rest are chips").
+
+**When to use it.**
+- A collection where every item has equal standing and the count is open
+  ended (tags, badges, small stat tiles).
+- The container's width does not follow the viewport (the profile column
+  changes with the sidebar), so breakpoints cannot pick the columns.
+
+**When NOT to use it.**
+- Items with different importance. Give the important ones their own layout
+  instead of pretending they are equal.
+- Long text per item. A tile holds an icon, a number and a short label.
+- A known, small, fixed set (three or four stats). A plain grid with
+  breakpoint columns is simpler.
+
+**Where it lives.**
+Canonical implementation: [web/src/components/publicProfile/PublicProfileKudosSection.tsx](../web/src/components/publicProfile/PublicProfileKudosSection.tsx) (`layoutFor` and the grid below it)
+
+**Key conventions.**
+- Measure the grid in a ref callback (so the first paint already has the
+  right columns) and keep it current with a `ResizeObserver`; do not read
+  the viewport.
+- Two widths drive the columns: a minimum (96 px, three across a 375 px
+  phone, two at 320) and a preferred width (132 px) that adds a column per
+  132 px on wider containers, so tiles stay about as wide as they are tall.
+- While everything fits in three rows, spread the tiles evenly over the rows
+  (four items on a phone are two and two). Once paging starts, every row is
+  full, so pressing the button never changes the size of a tile.
+- `grid-auto-rows: 1fr` keeps every row as tall as the tallest, so one long
+  label cannot make one row of tiles bigger than the others.
+- Reserve room for any state line a tile can gain (the owner's "Hidden"), so
+  toggling one tile never resizes the grid.
+- Verify with the catalogue's longest labels at 320 and 375 px; that is the
+  case the harness seeds (`web/tools/ui-survey/seed.sql`, tags on
+  Maximilian's profile).
+- The paging button is the small outlined `AppButton`, centred under the
+  grid. "Show fewer" brings the section back into view.
 
 ---
 

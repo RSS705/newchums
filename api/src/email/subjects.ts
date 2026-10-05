@@ -61,7 +61,7 @@ export const SUBJECTS = {
   planWrapUp_host: "Give tags and save chums from {{planTitle}}",
   runItAgain: "Want to run {{planTitle}} again?",
   planReminder: "Tomorrow: {{planTitle}}",
-  kudosReceived_one: "You got a tag at {{planTitle}}",
+  kudosReceived_one: "You got a tag{{#tagName}}: {{.}}{{/tagName}}",
   kudosReceived_many: "You got {{count}} tags",
   // MTG Card Evaluation Challenge (spec section 8)
   mtgWelcome: "You're in {{communityName}} for {{setName}}",

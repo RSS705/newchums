@@ -1376,7 +1376,12 @@ export const sendMtgIngestAlertEmail = async (
 /** "You got a tag" notice (kudos internally), sent once daily to a recipient for whatever
  *  arrived since the last run. Batched per recipient: three kudos in one
  *  sitting send one email, not three. Givers are never named, matching the
- *  anonymous shelf on the profile. */
+ *  anonymous shelf on the profile.
+ *
+ *  The tags are the point of the email (Rob, 2026-10-05: they were a
+ *  sentence with a small icon, under a plan name in bold), so each one is a
+ *  card of its own with a large emoji, the subject names the tag, and the
+ *  plan is one small line under the cards. */
 export const sendKudosReceivedEmail = async (
   env: Bindings,
   {
@@ -1400,14 +1405,10 @@ export const sendKudosReceivedEmail = async (
   },
 ) => {
   const single = count <= 1;
-  const tagLine = tags
-    .map((t) => `${t.emoji} ${t.label}${t.count > 1 ? ` ×${t.count}` : ""}`)
-    .join(", ");
-  const planTitle = planTitles[0] ?? null;
-  const whereLine =
-    planTitles.length === 0 ? "" :
-    planTitles.length === 1 ? ` at ${planTitles[0]}` :
-    ` at ${planTitles.slice(0, -1).join(", ")} and ${planTitles[planTitles.length - 1]}`;
+  const givenAt =
+    planTitles.length === 0 ? null :
+    planTitles.length === 1 ? `Given at ${planTitles[0]}` :
+    `Given at ${planTitles.slice(0, -1).join(", ")} and ${planTitles[planTitles.length - 1]}`;
   return dispatch(
     env,
     to,
@@ -1415,14 +1416,17 @@ export const sendKudosReceivedEmail = async (
     {
       heading: single ? "Someone tagged you" : `${count} tags came your way`,
       greeting: `Hi ${recipientName},`,
-      bodyText: `${single ? "Someone from your plan tagged you" : `People from your plan${planTitles.length > 1 ? "s" : ""} tagged you`}${whereLine}: ${tagLine}. Tags are anonymous and collect on your profile.`,
+      // Without a tag to show (one that has left the catalogue), the lead-in stands alone.
+      leadText: `${single ? "Someone from your plan" : `People from your plan${planTitles.length > 1 ? "s" : ""}`} ${tags.length === 0 ? "tagged you." : `gave you ${single ? "this tag" : "these tags"}:`}`,
+      // One card each. `times` only when a tag came more than once.
+      tags: tags.map((t) => ({ emoji: t.emoji, label: t.label, times: t.count > 1 ? `×${t.count}` : null })),
+      givenAt,
       ctaText: single ? "See it on your profile" : "See them on your profile",
       ctaHelperText: "Tags are anonymous and collect on your profile for anyone who visits it.",
       recipientName,
       count,
-      planTitle,
-      planDate: null,
-      planLocation: null,
+      // The subject of a single tag names it; null leaves the subject at "You got a tag".
+      tagName: single && tags[0] ? `${tags[0].emoji} ${tags[0].label}` : null,
       ctaUrl: kudosUrl,
       unsubscribeUrl: hasContent(unsubscribeUrl) ? unsubscribeUrl : null,
     },

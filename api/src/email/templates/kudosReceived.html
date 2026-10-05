@@ -63,33 +63,38 @@
                 {{greeting}}
               </p>
 
-              <!-- Body copy -->
-              <p style="margin: 0 0 22px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 15px; color: #4B5563; line-height: 1.6;">
-                {{bodyText}}
+              <!-- Lead-in -->
+              <p style="margin: 0 0 14px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 15px; color: #4B5563; line-height: 1.6;">
+                {{leadText}}
               </p>
 
-              <!-- Plan summary (compact, single line) -->
-              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-bottom: 24px; border-left: 3px solid #E65B13;">
+              <!-- The tags: the point of the email, so each one is its own card with a large emoji. -->
+              {{#tags}}
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-bottom: 10px; background-color: #FFF4EC; border: 1px solid #F8D3BD; border-radius: 12px; border-collapse: separate;">
                 <tr>
-                  <td style="padding: 4px 0 4px 14px;">
-                    <p style="margin: 0 0 2px 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 16px; font-weight: 700; color: #1F2937; line-height: 1.35;">
-                      {{planTitle}}
-                    </p>
-                    {{#planDate}}
-                    <p style="margin: 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 13px; color: #6B7280; line-height: 1.5;">
-                      {{.}}{{#planLocation}} &nbsp;&middot;&nbsp; {{.}}{{/planLocation}}
-                    </p>
-                    {{/planDate}}
-                    {{^planDate}}
-                    {{#planLocation}}
-                    <p style="margin: 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 13px; color: #6B7280; line-height: 1.5;">
-                      {{.}}
-                    </p>
-                    {{/planLocation}}
-                    {{/planDate}}
+                  <td width="62" style="width: 62px; padding: 14px 0 14px 16px; vertical-align: middle; font-size: 32px; line-height: 1;">
+                    {{emoji}}
                   </td>
+                  <td style="padding: 14px 12px 14px 0; vertical-align: middle; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 20px; font-weight: 700; color: #1F2937; line-height: 1.25;">
+                    {{label}}
+                  </td>
+                  {{#times}}
+                  <td align="right" style="padding: 14px 16px 14px 0; vertical-align: middle; white-space: nowrap; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 17px; font-weight: 700; color: #C44D10; line-height: 1.25;">
+                    {{.}}
+                  </td>
+                  {{/times}}
                 </tr>
               </table>
+              {{/tags}}
+
+              <!-- Where they came from, kept small: the tags are the news, not the plan. -->
+              {{#givenAt}}
+              <p style="margin: 2px 0 0 0; font-family: 'Gabarito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 13px; color: #6B7280; line-height: 1.5;">
+                {{.}}
+              </p>
+              {{/givenAt}}
+
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr><td style="height: 22px; font-size: 0; line-height: 0;">&nbsp;</td></tr></table>
 
               <!-- CTA button -->
               <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-bottom: 10px;">
