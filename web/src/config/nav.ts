@@ -10,7 +10,6 @@ import CalendarMonthRoundedIcon from "@mui/icons-material/CalendarMonthRounded";
 import FeedbackRoundedIcon from "@mui/icons-material/FeedbackRounded";
 import ForumRoundedIcon from "@mui/icons-material/ForumRounded";
 import BarChartRoundedIcon from "@mui/icons-material/BarChartRounded";
-import QueryStatsRoundedIcon from "@mui/icons-material/QueryStatsRounded";
 import ShieldRoundedIcon from "@mui/icons-material/ShieldRounded";
 import QrCode2RoundedIcon from "@mui/icons-material/QrCode2Rounded";
 import WorkspacePremiumRoundedIcon from "@mui/icons-material/WorkspacePremiumRounded";
@@ -55,7 +54,6 @@ export const createEventHref = "/events/create";
 
 export const superAdminNavItems: NavItem[] = [
   { label: "KPIs", href: "/admin/kpis", icon: BarChartRoundedIcon },
-  { label: "Growth", href: "/admin/growth", icon: QueryStatsRoundedIcon },
   { label: "Users", href: "/admin/chums", icon: PeopleRoundedIcon },
   { label: "Safety", href: "/admin/safety", icon: ShieldRoundedIcon },
   { label: "Interests", href: "/admin/interests", icon: StyleRoundedIcon },

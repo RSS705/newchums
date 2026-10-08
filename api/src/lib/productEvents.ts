@@ -42,10 +42,9 @@ export type ProductEventName =
   | "plan_reached_3_rsvps"
   | "plan_copied"
   | "run_again_nudge_sent"
-  // Growth experiment stage-6 host-signal: a guest-origin account touching
-  // the create page. Client-reported via POST /product-signals, repeatable
-  // (the client de-dupes per session; the research view counts DISTINCT
-  // users anyway).
+  // Host-intent signal: a signed-in account touching the create page.
+  // Client-reported via POST /product-signals, repeatable (the client
+  // de-dupes per session; readers should count DISTINCT users anyway).
   | "create_page_visited";
 
 export type ProductEvent = {

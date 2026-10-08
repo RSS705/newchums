@@ -239,8 +239,8 @@ export default function AdminChumsClient() {
     }
   }
 
-  // Growth-experiment founder rule: flips users.research_excluded (the
-  // account leaves research numerators; its plans stay exposure sources).
+  // Research exclusion: flips users.research_excluded (the account leaves
+  // KPI numerators; its plans stay exposure sources).
   // Reversible, so no confirm dialog; optimistic with rollback on failure.
   async function toggleResearchExclusion(row: UserRow) {
     const next = !row.research_excluded;

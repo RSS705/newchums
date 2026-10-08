@@ -242,7 +242,7 @@ export default function CreateEventClient() {
   const [selectedPresetSlug, setSelectedPresetSlug] = useState<string | null>(null);
   const [presetRendering, setPresetRendering] = useState(false);
 
-  // Growth experiment stage-6 host-signal: any visit to the create page by
+  // Host-intent signal: any visit to the create page by
   // a signed-in account, reported once per browser session. Fire-and-forget.
   useEffect(() => {
     try {

@@ -48,7 +48,7 @@ export default function LandingLayout({
   children: ReactNode;
   isLoggedIn?: boolean;
 }) {
-  // Growth experiment: remember the first interesting arrival (UTM or
+  // Attribution: remember the first interesting arrival (UTM or
   // share-linked plan) so it can be stamped after signup.
   useEffect(() => {
     captureAttributionLanding();

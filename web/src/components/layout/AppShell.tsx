@@ -104,7 +104,7 @@ type AppShellProps = {
 type NavProfile = { avatar_url?: string | null; name?: string | null; username?: string | null; role?: string | null };
 
 export default function AppShell({ children, user, passwordSetupPending, passwordSetupUserKey }: AppShellProps) {
-  // Growth experiment: a signed-in session reports the stored first-touch
+  // Attribution: a signed-in session reports the stored first-touch
   // attribution once; the server only stamps young unattributed accounts,
   // so established accounts no-op forever after the first call.
   React.useEffect(() => {

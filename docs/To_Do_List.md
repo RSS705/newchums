@@ -31,8 +31,8 @@ side effect.
 | # | Item | Effort | Status |
 |---|------|--------|--------|
 | 11 | Resend free-plan ceiling (~100 emails/day) covers all transactional mail; overflow fails silently. Upgrade pre-emptively or alert on rejected sends. | S | Open |
-| 12 | Web push / PWA install. Email is the only off-site channel; day-of logistics want push. Park until after the growth experiment reads out. | L | Open |
-| 13 | Growth experiment debrief: read the Growth tab cohorts against the pre-registered questions (creative winner, cost per attributed signup, share-loop depth) and decide round 2. | S | Open |
+| 12 | Web push / PWA install. Email is the only off-site channel; day-of logistics want push. Parked. | L | Open |
+| 13 | Growth experiment debrief (the August 2026 Meta ad test). | S | Dropped 2026-10-08: the $50 test ran and produced zero signups; paid ads are abandoned, and the Growth tab, the Meta Pixel and the plan document were removed. |
 | 14 | Google Places JS: google.maps.places.Autocomplete is deprecated for NEW customers (console notice on create forms and profile). Existing keys keep working and no shutdown is scheduled; migrate to PlaceAutocompleteElement when convenient. Found in the 2026-08-28 system sweep. | M | Open |
 | 15 | Recharts logs a transient width(-1)/height(-1) warning on /admin/kpis at mobile width during mount; charts render correctly, dev-console noise only. Found in the 2026-08-28 system sweep. | S | Open |
 

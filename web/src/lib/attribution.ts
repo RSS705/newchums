@@ -3,18 +3,18 @@
 import { apiFetch } from "@/lib/apiClient";
 
 /**
- * First-touch acquisition attribution (docs/Growth_Experiment_Plan.md §6.2).
+ * First-touch acquisition attribution (migration 115).
  *
  * `captureAttributionLanding()` runs on every public page load and remembers
- * the FIRST interesting arrival in localStorage: UTM parameters (ads,
- * community posts) or a share/invite-linked plan visit. First touch wins;
- * later loads never overwrite it.
+ * the FIRST interesting arrival in localStorage: UTM parameters (a tagged
+ * link in a community post or any hand-shared link) or a share/invite-linked
+ * plan visit. First touch wins; later loads never overwrite it.
  *
  * `reportAttribution()` runs once the visitor is signed in and hands the
  * stored touch to POST /me/attribution, which stamps it only onto a young,
  * still-unattributed account. The server-side invite/share stamp inside
  * GET /events/:id is authoritative and usually wins the race; this path
- * exists for arrivals the server can't see, chiefly ad clicks that go
+ * exists for arrivals the server can't see, chiefly tagged links that go
  * through an OAuth redirect and lose their query string.
  *
  * localStorage rather than a cookie: it survives the OAuth round trip on
@@ -104,20 +104,6 @@ export async function reportAttribution(): Promise<void> {
     if (res.ok) {
       window.localStorage.setItem(SENT_KEY, "1");
       window.localStorage.removeItem(KEY);
-      // The server stamps a young, previously-unattributed account exactly
-      // once, which makes { stamped: true } the cleanest "this browser just
-      // signed up" moment across all three signup flows (credentials,
-      // Google, magic link). The Meta ad campaign optimizes on this event;
-      // fbq is only present in production when the pixel id is configured,
-      // so this is a no-op everywhere else.
-      try {
-        const data = (await res.json()) as { ok?: boolean; stamped?: boolean };
-        if (data.stamped === true) {
-          (window as { fbq?: (a: string, b: string) => void }).fbq?.("track", "CompleteRegistration");
-        }
-      } catch {
-        /* body parse is best-effort; attribution already succeeded */
-      }
     }
   } catch {
     /* retried on a later page load */

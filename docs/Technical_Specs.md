@@ -1823,7 +1823,7 @@ Two channels, one catalogue:
 | `second_plan_created` | Plan insert where this is the host's second non-QA plan; the real retention signal. Once per user. | none (row carries `user_id`, `event_id`) | First-party |
 | `plan_reached_3_rsvps` | The moment a plan gains its third non-host "going" RSVP (direct RSVP or join-request approval). Once per plan; row's `user_id` is the host. | none (row carries `user_id`, `event_id`) | First-party |
 | `run_again_nudge_sent` | The hourly cron sent a "Run it again" host nudge (bell + email) for a wrapped-up plan. Once per plan (enforced by `events.run_again_nudge_processed_at`, not an index). Surfaced in `GET /admin/kpis/funnel` as `nudgesSent`, with `nudgeConversions`/`nudgeConvertedHosts` counting post-nudge `plan_copied` rows for the nudged plan by the nudged host (an upper bound: the nudge CTA and the in-app Run-it-again button share the same `?copy_from=` URL, so click-source is not attributable). Rendered as three rows in the KPIs Host loop table. | none (row carries `user_id` = host, `event_id`) | First-party |
-| `create_page_visited` | Signed-in visit to /events/create, client-reported via POST /product-signals once per browser session (growth experiment stage-6 host-signal; the research view counts DISTINCT users). | server |
+| `create_page_visited` | Signed-in visit to /events/create, client-reported via POST /product-signals once per browser session (a host-intent signal; count DISTINCT users). | server |
 
 **Pre-existing GA-only events (feedback_* removed July 2026 with the rating form):** (plan feedback flow, `attendee_count` param and friends; see §8 Plan feedback), `signup_step_completed` (`step`), `signup_google_clicked`, `hero_cta_clicked` (`cta`).
 
@@ -1833,20 +1833,24 @@ Two channels, one catalogue:
 
 ---
 
-## Growth-experiment attribution (migration 115)
+## Signup attribution (migration 115)
 
-Every account can carry how it arrived (docs/Growth_Experiment_Plan.md): `users.signup_source`,
-`signup_utm`, `origin_event_id`, `origin_host_user_id`, `attribution_method`
-('utm' | 'invite' | 'share' | 'organic' | 'backfill_invite' | 'manual'), `attributed_at`, plus
-`research_excluded` (the founder rule: out of every research numerator, hosted plans stay as
-exposure sources; super-admin toggle on /admin/chums, audited). Generation is computed by walking
-`origin_host_user_id`, never stored. Stamping: token-verified invite/share arrivals are stamped
-server-side inside GET /events/:id (young unattributed accounts only, QA plans never become
-lineage roots); ad/organic arrivals are captured first-touch into localStorage by
-`web/src/lib/attribution.ts` and reported once via POST /me/attribution. Backfill from historical
-invite records is migration 116 (idempotent; run only after test-account cleanup). The research
-view is /admin/growth backed by GET /admin/research/growth; the read-only cleanup audit is
-scripts/research_account_audit.sh.
+Every account can carry how it arrived: `users.signup_source`, `signup_utm`, `origin_event_id`,
+`origin_host_user_id`, `attribution_method` ('utm' | 'invite' | 'share' | 'organic' |
+'backfill_invite' | 'manual'), `attributed_at`, plus `research_excluded` (the admin's own test
+accounts leave KPI numerators while their hosted plans stay as exposure sources; super-admin toggle
+on /admin/chums, audited). Generation is computed by walking `origin_host_user_id`, never stored.
+Stamping: token-verified invite/share arrivals are stamped server-side inside GET /events/:id
+(young unattributed accounts only, QA plans never become lineage roots); arrivals through a tagged
+link (`utm_source` and friends, for community posts or any hand-shared link) or organic arrivals are
+captured first-touch into localStorage by `web/src/lib/attribution.ts` and reported once via
+POST /me/attribution. Backfill from historical invite records is migration 116 (idempotent). The
+growth loop card on /admin/kpis (`GET /admin/kpis/growth-loop`) reads the lineage.
+
+This was built for the August 2026 Meta ad test, which ran at $50, produced no signups and was
+abandoned on 2026-10-08. The test's research view (/admin/growth), the Meta Pixel, its
+CompleteRegistration event and the plan document were removed then; the attribution columns and
+the loop card stay because they describe the product's own share-link growth loop.
 
 ## 13) Wrangler and Deploy Configuration (Invariants)
 

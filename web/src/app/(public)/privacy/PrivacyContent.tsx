@@ -9,7 +9,7 @@ export default function PrivacyContent() {
     <LegalPageContent
       title="Privacy Policy"
       effectiveDateLine="Effective Date: April 1, 2026"
-      lastUpdatedLine="Last Updated: September 1, 2026"
+      lastUpdatedLine="Last Updated: October 8, 2026"
       intro={
         <>
           NewChums is operated by <strong>OurModule</strong>{" "}
@@ -176,11 +176,8 @@ export default function PrivacyContent() {
                 and fraud prevention.
               </Typography>
               <Typography variant="body1">
-                We also use analytics and advertising measurement tools, currently Google Analytics and
-                the Meta (Facebook) Pixel. These tools use cookies or similar identifiers to help us
-                understand how the Service is used and to measure whether our advertising results in
-                sign-ups. Meta may receive limited information about your visit (such as pages viewed and
-                whether an account was created) and processes it under its own privacy policy.
+                We also use an analytics tool, currently Google Analytics, which uses cookies or similar
+                identifiers to help us understand how the Service is used.
               </Typography>
               <Typography variant="body1">
                 You may be able to control some cookie behavior through your browser settings. However,
@@ -264,7 +261,7 @@ export default function PrivacyContent() {
                 <li><Typography variant="body1">Axiom</Typography></li>
                 <li><Typography variant="body1">Google sign-in or similar authentication tools</Typography></li>
                 <li><Typography variant="body1">map or places services</Typography></li>
-                <li><Typography variant="body1">analytics and advertising measurement services, including Google Analytics and the Meta (Facebook) Pixel</Typography></li>
+                <li><Typography variant="body1">analytics services, including Google Analytics</Typography></li>
               </ul>
               <Typography variant="body1">
                 These providers may process information on our behalf and may store or process data in
